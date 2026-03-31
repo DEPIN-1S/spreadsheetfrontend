@@ -42,23 +42,42 @@ export default function DocumentEditor({ docName, setActivePath }) {
     const resizeStartWidth = useRef(0);
 
     const handleColResizeStart = (e, col) => {
-        e.preventDefault();
+        const isTouch = e.type === 'touchstart';
+        const clientX = isTouch ? e.touches[0].clientX : e.clientX;
+
+        // Prevent scrolling on touch
+        if (isTouch) {
+             // e.preventDefault(); // Might interfere with some browsers if not passive: false elsewhere
+        } else {
+             e.preventDefault();
+        }
         e.stopPropagation();
+        
         setResizingCol(col.id);
-        resizeStartX.current = e.clientX;
+        resizeStartX.current = clientX;
         resizeStartWidth.current = col.width || 220;
 
-        const onMouseMove = (moveEvent) => {
-            const delta = moveEvent.clientX - resizeStartX.current;
+        const onMove = (moveEvent) => {
+            if (moveEvent.type === 'touchmove') {
+                moveEvent.preventDefault();
+            }
+            const currentX = moveEvent.type === 'touchmove' ? moveEvent.touches[0].clientX : moveEvent.clientX;
+            const delta = currentX - resizeStartX.current;
             const newWidth = Math.max(80, resizeStartWidth.current + delta);
             setColumns(prev => prev.map(c => c.id === col.id ? { ...c, width: newWidth } : c));
         };
 
-        const onMouseUp = async (upEvent) => {
-            document.removeEventListener('mousemove', onMouseMove);
-            document.removeEventListener('mouseup', onMouseUp);
+        const onEnd = async (endEvent) => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onEnd);
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', onEnd);
+            
             setResizingCol(null);
-            const finalWidth = Math.max(80, resizeStartWidth.current + (upEvent.clientX - resizeStartX.current));
+            
+            const currentX = endEvent.type === 'touchend' ? endEvent.changedTouches[0].clientX : endEvent.clientX;
+            const finalWidth = Math.max(80, resizeStartWidth.current + (currentX - resizeStartX.current));
+            
             // Persist width to backend
             try {
                 await apiClient.put(`/sheets/${docName}/columns/${col.id}`, { width: finalWidth });
@@ -67,8 +86,10 @@ export default function DocumentEditor({ docName, setActivePath }) {
             }
         };
 
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onEnd);
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onEnd);
     };
 
     const COLOR_PALETTE = [
@@ -1397,7 +1418,8 @@ export default function DocumentEditor({ docName, setActivePath }) {
                                     {/* Resize handle */}
                                     <div
                                         onMouseDown={(e) => handleColResizeStart(e, col)}
-                                        className="absolute top-0 right-0 h-full w-2.5 cursor-col-resize z-30 group/resize flex items-center justify-center hover:bg-blue-500/10 transition-colors"
+                                        onTouchStart={(e) => handleColResizeStart(e, col)}
+                                        className="absolute top-0 right-0 h-full w-5 -mr-0.5 cursor-col-resize z-30 group/resize flex items-center justify-center hover:bg-blue-500/10 transition-colors"
                                         onClick={(e) => e.stopPropagation()}
                                     >
                                         <div className="w-1 h-full bg-blue-500/0 group-hover/resize:bg-blue-500/40 transition-all relative">
