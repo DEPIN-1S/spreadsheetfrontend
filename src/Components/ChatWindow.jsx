@@ -3,9 +3,10 @@ import { useState, useRef, useEffect } from "react";
 import { PiPaperPlaneTiltBold } from "react-icons/pi";
 
 import apiClient from "../api/apiClient";
+import { getMediaUrl } from "../utils/media";
 import Swal from "sweetalert2";
 
-const BACKEND_URL = import.meta.env.VITE_API_BASE_URL?.replace('/api', '') || 'http://localhost:6041';
+
 
 const formatDateSeparator = (dateStr) => {
     if (!dateStr) return '';
@@ -151,9 +152,9 @@ export default function ChatWindow({ selectedUser, setSelectedUser, onMessageSen
                     id: msg.id,
                     senderId: msg.senderId,
                     text: msg.message || "",
-                    audioUrl: msg.fileType === 'audio' && msg.fileUrl ? `${BACKEND_URL}${msg.fileUrl}` : null,
-                    imageUrl: msg.fileType === 'image' && msg.fileUrl ? `${BACKEND_URL}${msg.fileUrl}` : null,
-                    fileUrl: msg.fileType === 'file' && msg.fileUrl ? `${BACKEND_URL}${msg.fileUrl}` : null,
+                    audioUrl: msg.fileType === 'audio' && msg.fileUrl ? getMediaUrl(msg.fileUrl) : null,
+                    imageUrl: msg.fileType === 'image' && msg.fileUrl ? getMediaUrl(msg.fileUrl) : null,
+                    fileUrl: msg.fileType === 'file' && msg.fileUrl ? getMediaUrl(msg.fileUrl) : null,
                     fileType: msg.fileType,
                     time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                     isMine,
@@ -190,9 +191,9 @@ export default function ChatWindow({ selectedUser, setSelectedUser, onMessageSen
                         id: msg.id,
                         senderId: msg.senderId,
                         text: msg.message || "",
-                        audioUrl: msg.fileType === 'audio' && msg.fileUrl ? `${BACKEND_URL}${msg.fileUrl}` : null,
-                        imageUrl: msg.fileType === 'image' && msg.fileUrl ? `${BACKEND_URL}${msg.fileUrl}` : null,
-                        fileUrl: msg.fileType === 'file' && msg.fileUrl ? `${BACKEND_URL}${msg.fileUrl}` : null,
+                        audioUrl: msg.fileType === 'audio' && msg.fileUrl ? getMediaUrl(msg.fileUrl) : null,
+                        imageUrl: msg.fileType === 'image' && msg.fileUrl ? getMediaUrl(msg.fileUrl) : null,
+                        fileUrl: msg.fileType === 'file' && msg.fileUrl ? getMediaUrl(msg.fileUrl) : null,
                         fileType: msg.fileType,
                         time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                         isMine: String(msg.senderId) === String(currentUser.id),
@@ -312,8 +313,8 @@ export default function ChatWindow({ selectedUser, setSelectedUser, onMessageSen
                 id: msg.id,
                 senderId: msg.senderId,
                 text: msg.message || file.name,
-                imageUrl: isImage && msg.fileUrl ? `${BACKEND_URL}${msg.fileUrl}` : null,
-                fileUrl: !isImage && msg.fileUrl ? `${BACKEND_URL}${msg.fileUrl}` : null,
+                imageUrl: isImage && msg.fileUrl ? getMediaUrl(msg.fileUrl) : null,
+                fileUrl: !isImage && msg.fileUrl ? getMediaUrl(msg.fileUrl) : null,
                 fileType: msg.fileType,
                 time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                 isMine: true,
@@ -373,7 +374,7 @@ export default function ChatWindow({ selectedUser, setSelectedUser, onMessageSen
                         id: msg.id,
                         senderId: msg.senderId,
                         text: "",
-                        audioUrl: msg.fileUrl ? `${BACKEND_URL}${msg.fileUrl}` : null,
+                        audioUrl: msg.fileUrl ? getMediaUrl(msg.fileUrl) : null,
                         time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                         isMine: true,
                         rawDate: d.toISOString()

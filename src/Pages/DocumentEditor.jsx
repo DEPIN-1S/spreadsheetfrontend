@@ -12,6 +12,7 @@ import { BsPaintBucket, BsSortAlphaDown, BsSortAlphaDownAlt, BsFilter, BsWhatsap
 import { BiStrikethrough, BiArrowToLeft, BiArrowToRight } from "react-icons/bi";
 import { TbMathFunction } from "react-icons/tb";
 import apiClient from "../api/apiClient";
+import { getMediaUrl } from "../utils/media";
 import { formatCurrency, parseCurrencyInput, SUPPORTED_CURRENCIES, getCurrencySymbol } from "../utils/currencyUtils";
 import ShareModal from "../components/ShareModal";
 import jsPDF from "jspdf";
@@ -1211,7 +1212,7 @@ export default function DocumentEditor({ docName, setActivePath }) {
                             if (Array.isArray(imgs) && imgs.length > 0) {
                                 let firstImageUrl = imgs[0].url;
                                 if (!firstImageUrl.startsWith('http')) {
-                                    firstImageUrl = `${import.meta.env.VITE_API_BASE_URL?.replace('/api', '') || 'http://localhost:6041'}${firstImageUrl}`;
+                                    firstImageUrl = getMediaUrl(firstImageUrl);
                                 }
                                 const base64 = await fetchImageAsBase64(firstImageUrl);
                                 if (base64) {
@@ -1651,7 +1652,7 @@ export default function DocumentEditor({ docName, setActivePath }) {
                                                                     return (
                                                                         <div className="relative inline-flex mt-px">
                                                                             <img
-                                                                                src={`${import.meta.env.VITE_API_BASE_URL?.replace('/api', '') || 'http://localhost:6041'}${imgs[0].url}`}
+                                                                                src={getMediaUrl(imgs[0].url)}
                                                                                 alt="img"
                                                                                 className="h-8 w-14 object-cover bg-white rounded border border-gray-200 shrink-0 shadow-sm"
                                                                             />
@@ -2250,10 +2251,10 @@ export default function DocumentEditor({ docName, setActivePath }) {
                                         <div 
                                             key={index} 
                                             className="group relative aspect-square bg-gray-100 rounded-lg border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-zoom-in"
-                                            onClick={() => setSelectedPreviewImage(`${import.meta.env.VITE_API_BASE_URL?.replace('/api', '') || 'http://localhost:6041'}${img.url}`)}
+                                            onClick={() => setSelectedPreviewImage(getMediaUrl(img.url))}
                                         >
                                             <img
-                                                src={`${import.meta.env.VITE_API_BASE_URL?.replace('/api', '') || 'http://localhost:6041'}${img.url}`}
+                                                src={getMediaUrl(img.url)}
                                                 alt={img.fileName || 'Cell Image'}
                                                 className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                                                 loading="lazy"
@@ -2362,7 +2363,7 @@ export default function DocumentEditor({ docName, setActivePath }) {
                                             </div>
                                             <div className="flex items-center gap-2 ml-4">
                                                 <a
-                                                    href={`${import.meta.env.VITE_API_BASE_URL?.replace('/api', '') || 'http://localhost:6041'}${doc.url}`}
+                                                    href={getMediaUrl(doc.url)}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
                                                     className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
