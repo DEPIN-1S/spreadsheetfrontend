@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { FiSearch, FiSliders, FiPlus, FiFileText, FiFolder, FiMenu, FiX, FiMoreVertical, FiEdit2, FiTrash2, FiChevronRight, FiMove, FiDownload } from "react-icons/fi";
+import { FiSearch, FiPlus, FiFileText, FiFolder, FiMenu, FiX, FiMoreVertical, FiEdit2, FiTrash2, FiChevronRight, FiMove } from "react-icons/fi";
 import { BsFileEarmarkSpreadsheet } from "react-icons/bs";
 import apiClient from "../api/apiClient";
 
@@ -128,25 +128,9 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
         setIsDocModalOpen(false);
     };
 
-    const importInputRef = useRef(null);
 
-    const handleImportBackup = async (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
 
-        try {
-            const text = await file.text();
-            const backupData = JSON.parse(text);
 
-            await apiClient.post('/sheets/import', backupData);
-            fetchItems();
-            setIsDropdownOpen(false);
-            event.target.value = null; // reset input
-        } catch (error) {
-            console.error("Error importing backup:", error);
-            alert("Failed to restore backup. Invalid file format.");
-        }
-    };
 
     const navigateToFolder = (folderId, folderTitle) => {
         setCurrentFolderId(folderId);
@@ -307,11 +291,7 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                             />
                         </div>
 
-                        {/* Sort Button */}
-                        <button className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-full text-sm text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer">
-                            <FiSliders className="w-4 h-4" />
-                            Sort
-                        </button>
+
 
                         {/* New Document Button */}
                         <div className="relative">
@@ -343,19 +323,7 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                                         <FiFolder className="w-4 h-4 text-blue-500" />
                                         New Folder
                                     </button>
-                                    <button className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer text-left">
-                                        <BsFileEarmarkSpreadsheet className="w-4 h-4 text-green-600" />
-                                        Import from Excel
-                                    </button>
-                                    <button 
-                                        onClick={() => {
-                                            if (importInputRef.current) importInputRef.current.click();
-                                        }}
-                                        className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer text-left"
-                                    >
-                                        <FiDownload className="w-4 h-4 text-purple-600" />
-                                        Restore from Backup
-                                    </button>
+
                                 </div>
                             )}
                         </div>
@@ -439,14 +407,7 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                 )}
             </div>
 
-            {/* Hidden Input for Backup Restore */}
-            <input 
-                type="file" 
-                accept=".json" 
-                ref={importInputRef} 
-                className="hidden" 
-                onChange={handleImportBackup} 
-            />
+
 
             {/* Create Folder Modal */}
             {isModalOpen && (
@@ -764,10 +725,8 @@ function FileCard({ title, date, onClick, onRename, onMove, onDelete }) {
     return (
         <div className="group relative flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:shadow-sm transition-shadow bg-white">
             <div className="flex items-center gap-3 overflow-hidden cursor-pointer" onClick={onClick}>
-                <div className="shrink-0 text-[#C1C9D6]">
-                    <svg className="w-10 h-10" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
-                    </svg>
+                <div className="shrink-0 text-emerald-600 bg-emerald-50 p-2 rounded-lg">
+                    <BsFileEarmarkSpreadsheet className="w-8 h-8" />
                 </div>
                 <div>
                     <h3 className="text-sm font-semibold text-gray-800 truncate">{title}</h3>

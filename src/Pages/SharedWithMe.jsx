@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { FiSearch, FiSliders, FiMenu, FiMoreVertical, FiDownload, FiEye } from "react-icons/fi";
+import { FiSearch, FiMenu, FiMoreVertical, FiEye } from "react-icons/fi";
 import { BsFileEarmarkSpreadsheet } from "react-icons/bs";
 import apiClient from "../api/apiClient";
 
@@ -76,11 +76,7 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                             />
                         </div>
 
-                        {/* Sort Button */}
-                        <button className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-full text-sm text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer">
-                            <FiSliders className="w-4 h-4" />
-                            Sort
-                        </button>
+
                     </div>
                 </div>
 
@@ -172,10 +168,8 @@ function SharedFileCard({ item, onClick }) {
     return (
         <div onClick={onClick} className="group relative flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:shadow-sm transition-shadow bg-white cursor-pointer">
             <div className="flex items-center gap-3 overflow-hidden">
-                <div className="shrink-0 text-[#C1C9D6]">
-                    <svg className="w-10 h-10" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
-                    </svg>
+                <div className="shrink-0 text-emerald-600 bg-emerald-50 p-2 rounded-lg">
+                    <BsFileEarmarkSpreadsheet className="w-8 h-8" />
                 </div>
                 <div>
                     <h3 className="text-sm font-semibold text-gray-800 truncate" title={item.title}>{item.title}</h3>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { io } from "socket.io-client";
+import { getSocket } from "../api/socket";
 import {
     FiCornerUpLeft, FiCornerUpRight, FiBold, FiItalic, FiUnderline,
     FiType, FiAlignLeft, FiAlignCenter, FiAlignRight, FiSearch,
@@ -177,25 +177,8 @@ export default function DocumentEditor({ docName, setActivePath }) {
     useEffect(() => {
         if (!docName) return;
 
-        const getSocketUrl = () => {
-            try {
-                const base = apiClient.defaults.baseURL || "";
-                if (base.startsWith('http')) {
-                    const url = new URL(base);
-                    return `${url.protocol}//${url.host}`;
-                }
-            } catch (e) {
-                console.error("Error parsing baseURL for socket", e);
-            }
-            return window.location.origin;
-        };
-        const socketUrl = getSocketUrl();
         const token = localStorage.getItem('accessToken');
-        
-        const socket = io(socketUrl, {
-            auth: { token },
-            transports: ['websocket', 'polling']
-        });
+        const socket = getSocket(token);
 
         socket.on("connect", () => {
             console.log("Connected to spreadsheet socket");

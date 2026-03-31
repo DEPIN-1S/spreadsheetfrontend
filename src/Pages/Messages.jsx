@@ -1,11 +1,11 @@
 import { FiMenu, FiSearch, FiEdit, FiMic, FiImage, FiFileText } from "react-icons/fi";
 import { useState, useEffect, useRef } from "react";
-import { io as socketIO } from "socket.io-client";
+import { getSocket } from "../api/socket";
 import ChatWindow from "../Components/ChatWindow";
 import NewChatModal from "../Components/NewChatModal";
 import apiClient from "../api/apiClient";
 
-const SOCKET_URL = import.meta.env.VITE_API_BASE_URL?.replace('/api', '') || 'http://localhost:6041';
+
 
 export default function Messages({ setMobileOpen }) {
     const [searchQuery, setSearchQuery] = useState("");
@@ -26,12 +26,8 @@ export default function Messages({ setMobileOpen }) {
             return;
         }
 
-        console.log("Connecting to Socket at:", SOCKET_URL);
-        const socket = socketIO(SOCKET_URL, {
-            auth: { token },
-            reconnection: true,
-            reconnectionAttempts: 5
-        });
+        console.log("Connecting to Socket...");
+        const socket = getSocket(token);
         socketRef.current = socket;
 
         socket.on("connect", () => {
