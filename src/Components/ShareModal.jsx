@@ -144,8 +144,8 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
     };
 
     const handleShare = async () => {
-        const email = selectedUser ? selectedUser.email : searchQuery.trim();
-        if (!email) return;
+        const phone = selectedUser ? selectedUser.phone : searchQuery.trim();
+        if (!phone) return;
         setSharing(true);
         setError("");
         try {
@@ -156,7 +156,7 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
             });
 
             await apiClient.post(`/sheets/${sheetId}/share`, {
-                email,
+                phone,
                 role,
                 columnAccess: filteredAccess
             });
@@ -221,7 +221,7 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
             });
 
             await apiClient.post(`/sheets/${sheetId}/share`, {
-                email: member.User?.email,
+                phone: member.User?.phone,
                 role: member.role,
                 columnAccess: filteredAccess
             });
@@ -284,7 +284,7 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
                                         )}
                                         <div className="flex items-baseline gap-2 min-w-0">
                                             <span className="text-sm font-semibold text-blue-900 truncate">{selectedUser.name}</span>
-                                            <span className="text-[11px] text-blue-600/70 truncate hidden sm:block">({selectedUser.email})</span>
+                                            <span className="text-[11px] text-blue-600/70 truncate hidden sm:block">({selectedUser.phone || selectedUser.email})</span>
                                         </div>
                                         <button
                                             onClick={() => {
@@ -311,7 +311,7 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
                                                     setShowColumnSection(false);
                                                 }
                                             }}
-                                            placeholder="Search by name or email..."
+                                            placeholder="Search by name or phone..."
                                             className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                                             onKeyDown={(e) => { if (e.key === "Enter" && selectedUser) handleShare(); }}
                                             onFocus={() => {
@@ -339,7 +339,7 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
                                                 )}
                                                 <div className="min-w-0 flex-1">
                                                     <p className="text-sm font-medium text-gray-800 truncate">{user.name}</p>
-                                                    <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                                                    <p className="text-xs text-gray-500 truncate">{user.phone || 'No phone'}</p>
                                                 </div>
                                                 <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded uppercase font-medium shrink-0">{user.role}</span>
                                             </div>
@@ -450,7 +450,7 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
                                                     <div className="truncate">
                                                         <div className="font-medium text-sm text-gray-800 truncate">{member.User?.name || "Unknown"}</div>
                                                         <div className="flex items-center gap-2">
-                                                            <span className="text-xs text-gray-500 truncate">{member.User?.email}</span>
+                                                            <span className="text-xs text-gray-500 truncate">{member.User?.phone || member.User?.email}</span>
                                                             <button
                                                                 onClick={() => isEditingCols ? setEditingMemberColPerms(null) : handleEditMemberColumns(member.userId)}
                                                                 className="text-[10px] text-blue-600 bg-blue-50 hover:bg-blue-100 px-1.5 py-0.5 rounded font-medium transition-colors flex items-center gap-0.5 shrink-0"

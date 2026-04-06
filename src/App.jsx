@@ -16,6 +16,7 @@ function App() {
         return localStorage.getItem('accessToken') ? '/my-files' : '/login';
     });
     const [currentDocName, setCurrentDocName] = useState("");
+    const [returnPath, setReturnPath] = useState('/my-files');
 
     const toggleCollapse = () => setIsCollapsed((prev) => !prev);
 
@@ -44,6 +45,7 @@ function App() {
                         setMobileOpen={setMobileOpen}
                         setActivePath={setActivePath}
                         setCurrentDocName={setCurrentDocName}
+                        setReturnPath={setReturnPath}
                     />
                 )}
                 {activePath === "/shared" && (
@@ -51,6 +53,7 @@ function App() {
                         setMobileOpen={setMobileOpen}
                         setActivePath={setActivePath}
                         setCurrentDocName={setCurrentDocName}
+                        setReturnPath={setReturnPath}
                     />
                 )}
                 {activePath === "/users" && (
@@ -66,6 +69,7 @@ function App() {
                     <DocumentEditor
                         docName={currentDocName}
                         setActivePath={setActivePath}
+                        returnPath={returnPath}
                     />
                 )}
             </div>

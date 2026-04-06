@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { FiMenu, FiEdit2, FiTrash2, FiSearch, FiUserPlus, FiX, FiUser, FiMail, FiLock, FiPhone, FiShield, FiEye, FiEyeOff } from "react-icons/fi";
 import apiClient from "../api/apiClient";
+import Swal from "sweetalert2";
 
 export default function Users({ setMobileOpen }) {
     const [searchQuery, setSearchQuery] = useState("");
@@ -10,13 +11,11 @@ export default function Users({ setMobileOpen }) {
     // Modal state
     const [showModal, setShowModal] = useState(false); // add/edit modal
     const [editingUser, setEditingUser] = useState(null); // null = add mode, object = edit mode
-    const [formData, setFormData] = useState({ name: '', email: '', password: '', phone: '', role: 'staff' });
+    const [formData, setFormData] = useState({ name: '', email: '', phone: '', role: 'staff' });
     const [formError, setFormError] = useState('');
     const [formLoading, setFormLoading] = useState(false);
-    const [showPassword, setShowPassword] = useState(false);
 
-    // Delete confirmation
-    const [deleteConfirm, setDeleteConfirm] = useState(null);
+    // Delete confirmation loading
     const [deleteLoading, setDeleteLoading] = useState(false);
 
     // Current user from localStorage
@@ -42,6 +41,7 @@ export default function Users({ setMobileOpen }) {
     // ── Search Filter ────────────────────────────────────────────────────────────
     const filteredUsers = users.filter(user =>
         user.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        user.phone?.includes(searchQuery) ||
         user.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         user.role?.toLowerCase().includes(searchQuery.toLowerCase())
     );
@@ -49,14 +49,14 @@ export default function Users({ setMobileOpen }) {
     // ── Add/Edit Modal ───────────────────────────────────────────────────────────
     const openAddModal = () => {
         setEditingUser(null);
-        setFormData({ name: '', email: '', password: '', phone: '', role: 'staff' });
+        setFormData({ name: '', email: '', phone: '', role: 'staff' });
         setFormError('');
         setShowModal(true);
     };
 
     const openEditModal = (user) => {
         setEditingUser(user);
-        setFormData({ name: user.name || '', email: user.email || '', password: '', phone: user.phone || '', role: user.role || 'staff' });
+        setFormData({ name: user.name || '', email: user.email || '', phone: user.phone || '', role: user.role || 'staff' });
         setFormError('');
         setShowModal(true);
     };
@@ -64,7 +64,7 @@ export default function Users({ setMobileOpen }) {
     const closeModal = () => {
         setShowModal(false);
         setEditingUser(null);
-        setFormData({ name: '', email: '', password: '', phone: '', role: 'staff' });
+        setFormData({ name: '', email: '', phone: '', role: 'staff' });
         setFormError('');
     };
 
@@ -77,19 +77,17 @@ export default function Users({ setMobileOpen }) {
             if (editingUser) {
                 // Edit mode
                 const payload = { name: formData.name, email: formData.email, phone: formData.phone, role: formData.role };
-                if (formData.password) payload.password = formData.password;
                 await apiClient.put(`/user/${editingUser.id}`, payload);
             } else {
                 // Add mode
-                if (!formData.password || formData.password.length < 6) {
-                    setFormError('Password must be at least 6 characters');
+                if (!formData.phone || formData.phone.length < 10) {
+                    setFormError('Phone number is required (at least 10 digits)');
                     setFormLoading(false);
                     return;
                 }
                 await apiClient.post('/user/register', {
                     name: formData.name,
                     email: formData.email,
-                    password: formData.password,
                     phone: formData.phone,
                     role: formData.role
                 });
@@ -104,15 +102,33 @@ export default function Users({ setMobileOpen }) {
     };
 
     // ── Delete ────────────────────────────────────────────────────────────────────
-    const handleDelete = async (userId) => {
+    const handleDelete = async (user) => {
+        const result = await Swal.fire({
+            title: 'Delete User?',
+            text: `Are you sure you want to deactivate ${user.name}? This will revoke their access.`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: 'Delete',
+            cancelButtonText: 'Cancel',
+            customClass: {
+                popup: 'rounded-2xl',
+                confirmButton: 'rounded-xl px-5',
+                cancelButton: 'rounded-xl px-5'
+            }
+        });
+
+        if (!result.isConfirmed) return;
+
         setDeleteLoading(true);
         try {
-            await apiClient.delete(`/user/${userId}`);
-            setDeleteConfirm(null);
+            await apiClient.delete(`/user/${user.id}`);
+            Swal.fire({ icon: 'success', title: 'Deleted', text: 'User deactivated.', timer: 1500, showConfirmButton: false, customClass: { popup: 'rounded-2xl' } });
             fetchUsers();
         } catch (err) {
             console.error('Failed to delete user:', err);
-            alert(err.response?.data?.message || 'Failed to delete user.');
+            Swal.fire({ icon: 'error', title: 'Error', text: err.response?.data?.message || 'Failed to delete user.', customClass: { popup: 'rounded-2xl' } });
         } finally {
             setDeleteLoading(false);
         }
@@ -204,7 +220,7 @@ export default function Users({ setMobileOpen }) {
                                                     </div>
                                                     <div className="ml-4">
                                                         <div className="text-sm font-medium text-gray-900">{user.name}</div>
-                                                        <div className="text-sm text-gray-500">{user.email}</div>
+                                                        <div className="text-sm text-gray-500">{user.phone || 'No phone'} {user.email && `• ${user.email}`}</div>
                                                     </div>
                                                 </div>
                                             </td>
@@ -227,7 +243,7 @@ export default function Users({ setMobileOpen }) {
                                                     </button>
                                                     {user.id !== currentUser?.id && user.role !== 'superadmin' && (
                                                         <button
-                                                            onClick={() => setDeleteConfirm(user)}
+                                                            onClick={() => handleDelete(user)}
                                                             className="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 p-2 rounded-lg transition-colors"
                                                             title="Delete User"
                                                         >
@@ -308,43 +324,18 @@ export default function Users({ setMobileOpen }) {
                                 </div>
                             </div>
 
-                            {/* Password */}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                                    Password {editingUser && <span className="text-gray-400 font-normal">(leave empty to keep current)</span>}
-                                </label>
-                                <div className="relative">
-                                    <FiLock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                                    <input
-                                        type={showPassword ? "text" : "password"}
-                                        value={formData.password}
-                                        onChange={(e) => setFormData(f => ({ ...f, password: e.target.value }))}
-                                        className="block w-full pl-10 pr-12 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-sm transition-all"
-                                        placeholder={editingUser ? '••••••••' : 'Min 6 characters'}
-                                        required={!editingUser}
-                                        minLength={editingUser ? 0 : 6}
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowPassword(!showPassword)}
-                                        className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-gray-400 hover:text-indigo-600 transition-colors"
-                                    >
-                                        {showPassword ? <FiEyeOff size={16} /> : <FiEye size={16} />}
-                                    </button>
-                                </div>
-                            </div>
-
                             {/* Phone */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Phone <span className="text-gray-400 font-normal">(optional)</span></label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Phone <span className="text-red-500">*</span></label>
                                 <div className="relative">
                                     <FiPhone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
                                     <input
                                         type="tel"
                                         value={formData.phone}
-                                        onChange={(e) => setFormData(f => ({ ...f, phone: e.target.value }))}
+                                        onChange={(e) => setFormData(f => ({ ...f, phone: e.target.value.replace(/\D/g, '').slice(0, 15) }))}
                                         className="block w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-sm transition-all"
-                                        placeholder="+91 9876543210"
+                                        placeholder="9876543210"
+                                        required
                                     />
                                 </div>
                             </div>
@@ -400,37 +391,6 @@ export default function Users({ setMobileOpen }) {
                 </div>
             )}
 
-            {/* ── Delete Confirmation Modal ────────────────────────────────────── */}
-            {deleteConfirm && (
-                <div className="fixed inset-0 bg-black/50 z-70 flex items-center justify-center p-4" onClick={() => setDeleteConfirm(null)}>
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                        <div className="p-6 text-center">
-                            <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
-                                <FiTrash2 className="w-6 h-6 text-red-500" />
-                            </div>
-                            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete User</h3>
-                            <p className="text-sm text-gray-500 mb-6">
-                                Are you sure you want to deactivate <strong>{deleteConfirm.name}</strong>? This will revoke their access.
-                            </p>
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={() => setDeleteConfirm(null)}
-                                    className="flex-1 py-2.5 px-4 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={() => handleDelete(deleteConfirm.id)}
-                                    disabled={deleteLoading}
-                                    className="flex-1 py-2.5 px-4 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
-                                >
-                                    {deleteLoading ? 'Deleting...' : 'Delete'}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
         </main>
     );
 }

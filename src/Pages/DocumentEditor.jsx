@@ -18,12 +18,14 @@ import ShareModal from "../components/ShareModal";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-export default function DocumentEditor({ docName, setActivePath }) {
+export default function DocumentEditor({ docName, setActivePath, returnPath }) {
     const [sheetData, setSheetData] = useState(null);
     const [rows, setRows] = useState([]);
     const [columns, setColumns] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+    const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+    const [exportSelectedColumns, setExportSelectedColumns] = useState({});
     const [searchQuery, setSearchQuery] = useState('');
     const [appliedSearchQuery, setAppliedSearchQuery] = useState('');
 
@@ -1154,27 +1156,36 @@ export default function DocumentEditor({ docName, setActivePath }) {
         }
     };
 
-    const handleExportPDF = async () => {
+    const executePDFExport = async () => {
         try {
+            setIsExportModalOpen(false);
             setIsLoading(true);
             const doc = new jsPDF('landscape');
             doc.text(`${sheetData?.name || 'Spreadsheet'} - Export`, 14, 15);
 
-            const tableCols = columns.map(c => ({ header: c.name, dataKey: c.id }));
+            const colsToExport = columns.filter(c => exportSelectedColumns[c.id]);
+            const tableCols = colsToExport.map(c => ({ header: c.name, dataKey: c.id }));
 
             const tableData = [];
             const imagesToDraw = {};
             const rowBackgrounds = {}; // To store computed row colors for PDF
 
-            const fetchImageAsBase64 = async (url) => {
+            const fetchImageAndDimensions = async (url) => {
                 try {
                     const response = await fetch(url);
                     const blob = await response.blob();
-                    return new Promise((resolve) => {
+                    const base64 = await new Promise((resolve) => {
                         const reader = new FileReader();
                         reader.onloadend = () => resolve(reader.result);
                         reader.readAsDataURL(blob);
                     });
+                    const dimensions = await new Promise((resolve) => {
+                        const img = new Image();
+                        img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+                        img.onerror = () => resolve({ width: 1, height: 1 });
+                        img.src = base64;
+                    });
+                    return { base64, ...dimensions };
                 } catch (e) {
                     console.error("Failed to load image", e);
                     return null;
@@ -1210,7 +1221,7 @@ export default function DocumentEditor({ docName, setActivePath }) {
                 }
                 rowBackgrounds[i] = computedRowBg;
 
-                for (const col of columns) {
+                for (const col of colsToExport) {
                     const cell = row.cells?.find(c => c.columnId === col.id);
                     let val = cell?.computedValue ?? cell?.rawValue ?? '';
 
@@ -1235,13 +1246,19 @@ export default function DocumentEditor({ docName, setActivePath }) {
                                 if (!firstImageUrl.startsWith('http')) {
                                     firstImageUrl = getMediaUrl(firstImageUrl);
                                 }
-                                const base64 = await fetchImageAsBase64(firstImageUrl);
-                                if (base64) {
-                                    imagesToDraw[`${i}_${col.id}`] = base64;
+                                const imgData = await fetchImageAndDimensions(firstImageUrl);
+                                if (imgData && imgData.base64) {
+                                    imagesToDraw[`${i}_${col.id}`] = imgData;
+                                    val = '\n\n'; // Force reasonable cell height for the image naturally
+                                } else {
+                                    val = '';
                                 }
+                            } else {
+                                val = '';
                             }
-                        } catch (e) { }
-                        val = ''; // We will draw the image manually
+                        } catch (e) {
+                            val = '';
+                        }
                     }
 
                     rowData[col.id] = val;
@@ -1249,14 +1266,31 @@ export default function DocumentEditor({ docName, setActivePath }) {
                 tableData.push(rowData);
             }
 
+            // Append Calculate Row if any
+            const hasCalc = colsToExport.some(col => columnCalcMode[col.id]);
+            if (hasCalc) {
+                const calcRow = {};
+                for (const col of colsToExport) {
+                    if (columnCalcMode[col.id]) {
+                        const mode = columnCalcMode[col.id]; // 'total' or 'average'
+                        const val = getColumnCalcValue(col.id, mode);
+                        calcRow[col.id] = `${mode === 'total' ? 'Total' : 'Avg'}: ${val}`;
+                    } else {
+                        calcRow[col.id] = '';
+                    }
+                }
+                tableData.push(calcRow);
+            }
+
             autoTable(doc, {
                 startY: 20,
                 theme: 'grid',
+                tableWidth: 'wrap',
                 columns: tableCols,
                 body: tableData,
                 styles: { 
                     fontSize: 8, 
-                    cellPadding: 3, 
+                    cellPadding: 1.5, 
                     valign: 'middle', 
                     lineColor: [180, 180, 180], 
                     lineWidth: 0.1,
@@ -1269,8 +1303,8 @@ export default function DocumentEditor({ docName, setActivePath }) {
                     lineWidth: 0.1,
                     fontStyle: 'bold'
                 },
-                columnStyles: columns.reduce((acc, col) => {
-                    if (col.type === 'multi_image') acc[col.id] = { minCellWidth: 25 };
+                columnStyles: colsToExport.reduce((acc, col) => {
+                    if (col.type === 'multi_image') acc[col.id] = { minCellWidth: 20 };
                     if (col.type === 'number' || col.type === 'currency' || col.type === 'formula') {
                         acc[col.id] = { ...acc[col.id], halign: 'right' };
                     }
@@ -1279,9 +1313,16 @@ export default function DocumentEditor({ docName, setActivePath }) {
                 didParseCell: (data) => {
                     if (data.section === 'body') {
                         const colId = data.column.dataKey;
-                        const colDef = columns.find(c => c.id === colId);
+                        const colDef = colsToExport.find(c => c.id === colId);
                         const rowIndex = data.row.index;
                         
+                        // Handle calc row formatting
+                        if (hasCalc && rowIndex === tableData.length - 1) {
+                            data.cell.styles.fontStyle = 'bold';
+                            data.cell.styles.fillColor = [240, 240, 240];
+                            return;
+                        }
+
                         // Background color priority: Column Color > Row Color
                         const bgColorHex = colDef?.bgColor || rowBackgrounds[rowIndex];
                         const rgb = hexToRgb(bgColorHex);
@@ -1289,25 +1330,36 @@ export default function DocumentEditor({ docName, setActivePath }) {
                             data.cell.styles.fillColor = rgb;
                         }
 
-                        if (colDef && colDef.type === 'multi_image') {
-                            data.cell.styles.minCellHeight = 20;
-                        }
                     }
                 },
                 didDrawCell: (data) => {
                     if (data.section === 'body') {
-                        const imgBase64 = imagesToDraw[`${data.row.index}_${data.column.dataKey}`];
-                        if (imgBase64) {
+                        const imgData = imagesToDraw[`${data.row.index}_${data.column.dataKey}`];
+                        if (imgData) {
                             const cellWidth = data.cell.width;
                             const cellHeight = data.cell.height;
-                            const imgWidth = Math.min(cellWidth - 4, 18);
-                            const imgHeight = Math.min(cellHeight - 4, 12);
-                            const x = data.cell.x + (cellWidth - imgWidth) / 2;
-                            const y = data.cell.y + (cellHeight - imgHeight) / 2;
+                            
+                            const maxBoxWidth = Math.min(cellWidth - 4, 18);
+                            const maxBoxHeight = Math.min(cellHeight - 4, 12);
+                            
+                            const imgAspect = imgData.width / imgData.height;
+                            const boxAspect = maxBoxWidth / maxBoxHeight;
+                            
+                            let finalImgWidth, finalImgHeight;
+                            if (imgAspect > boxAspect) {
+                                finalImgWidth = maxBoxWidth;
+                                finalImgHeight = maxBoxWidth / imgAspect;
+                            } else {
+                                finalImgHeight = maxBoxHeight;
+                                finalImgWidth = maxBoxHeight * imgAspect;
+                            }
+
+                            const x = data.cell.x + (cellWidth - finalImgWidth) / 2;
+                            const y = data.cell.y + (cellHeight - finalImgHeight) / 2;
                             try {
-                                doc.addImage(imgBase64, 'JPEG', x, y, imgWidth, imgHeight);
+                                doc.addImage(imgData.base64, 'JPEG', x, y, finalImgWidth, finalImgHeight);
                             } catch (e) {
-                                try { doc.addImage(imgBase64, 'PNG', x, y, imgWidth, imgHeight); } catch (e2) { }
+                                try { doc.addImage(imgData.base64, 'PNG', x, y, finalImgWidth, finalImgHeight); } catch (e2) { }
                             }
                         }
                     }
@@ -1321,6 +1373,13 @@ export default function DocumentEditor({ docName, setActivePath }) {
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const handleExportPDF = () => {
+        const initialMap = {};
+        columns.forEach(c => initialMap[c.id] = true);
+        setExportSelectedColumns(initialMap);
+        setIsExportModalOpen(true);
     };
 
     const renderColumnIcon = (type) => {
@@ -1346,9 +1405,9 @@ export default function DocumentEditor({ docName, setActivePath }) {
             <div className="bg-[#0f172a] text-white flex items-center justify-between px-4 py-4 shrink-0">
                 <div className="flex items-center gap-4">
                     <button
-                        onClick={() => setActivePath('/my-files')}
+                        onClick={() => setActivePath(returnPath || '/my-files')}
                         className="p-2 hover:bg-white/10 rounded-full transition-colors flex items-center justify-center"
-                        title="Back to My Files"
+                        title="Back"
                     >
                         <FiArrowLeft className="w-5 h-5 text-gray-300" />
                     </button>
@@ -1375,9 +1434,19 @@ export default function DocumentEditor({ docName, setActivePath }) {
                             <span className="hidden sm:block">Share</span>
                         </button>
                     )}
+                    <button
+                        onClick={handleExportPDF}
+                        className="flex items-center gap-2 px-3 sm:px-4 py-1.5 bg-white/10 hover:bg-white/20 rounded-full text-sm font-medium transition-colors"
+                        title="Export to PDF"
+                    >
+                        <FiFileText className="w-4 h-4" />
+                        <span className="hidden sm:block">Download PDF</span>
+                    </button>
+
                     {/* <button
                         onClick={handleDownloadBackup}
                         className="flex items-center gap-2 px-3 sm:px-4 py-1.5 bg-white/10 hover:bg-white/20 rounded-full text-sm font-medium transition-colors"
+                        title="Download JSON Backup"
                     >
                         <FiDownload className="w-4 h-4" />
                         <span className="hidden sm:block">Backup</span>
@@ -1435,12 +1504,12 @@ export default function DocumentEditor({ docName, setActivePath }) {
                                             }
                                         }}
                                     >
-                                        <div className="flex items-center gap-2 overflow-hidden flex-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                                        <div className="flex items-center gap-2 overflow-hidden flex-1 lg:opacity-80 lg:group-hover:opacity-100 opacity-100 transition-opacity">
                                             {renderColumnIcon(col.type)}
                                             <span className={`truncate block font-medium transition-colors ${col.permission !== 'view' ? 'group-hover:text-blue-600 cursor-pointer' : 'cursor-default'}`}>{col.name}</span>
                                         </div>
                                         {col.permission !== 'view' && (
-                                            <FiChevronDown className={`w-3.5 h-3.5 shrink-0 ml-2 cursor-pointer transition-transform ${activeColumnMenu === col.id ? 'text-blue-600 rotate-180 opacity-100' : 'text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100'}`} />
+                                            <FiChevronDown className={`w-3.5 h-3.5 shrink-0 ml-2 cursor-pointer transition-transform ${activeColumnMenu === col.id ? 'text-blue-600 rotate-180 opacity-100' : 'text-gray-400 hover:text-gray-600 lg:opacity-0 lg:group-hover:opacity-100 opacity-100'}`} />
                                         )}
                                     </div>
 
@@ -1775,82 +1844,84 @@ export default function DocumentEditor({ docName, setActivePath }) {
                             </tr>
                         )}
                     </tbody>
-                </table>
-
-                {/* Bottom Calculation Bar */}
-                <div className="flex border-t border-b border-gray-200 bg-[#f8fafc] sticky bottom-0 z-30 shrink-0 w-max h-10">
-                    <div
-                        onClick={handleAddRow}
-                        className="w-12 min-w-12 shrink-0 border-r border-gray-200 bg-[#475569] hover:bg-[#334155] transition-colors flex items-center justify-center cursor-pointer sticky left-0 z-10"
-                        title="Add Row"
-                    >
-                        <FiPlus className="w-4 h-4 text-white" />
-                    </div>
-                    {columns.map((col) => {
-                        const mode = columnCalcMode[col.id];
-                        const calcValue = mode ? getColumnCalcValue(col.id, mode) : null;
-                        const isNonCalcType = col.type === 'text' || col.type === 'multi_image' || col.type === 'comment' || col.type === 'image' || col.type === 'pdf' || col.type === 'date';
-
-                        return (
-                            <div
-                                key={col.id}
-                                className={`shrink-0 border-r border-gray-200 bg-[#f8fafc] relative ${resizingCol === col.id ? 'bg-blue-50/20' : ''}`}
-                                style={{ width: col.width || 220, minWidth: col.width || 220 }}
+                    {/* Bottom Calculation Bar */}
+                    <tfoot className="sticky bottom-0 z-30 bg-[#f8fafc] shadow-[0_-1px_0_#e5e7eb,0_1px_0_#e5e7eb]">
+                        <tr className="h-10">
+                            <td
+                                onClick={handleAddRow}
+                                className="w-12 min-w-12 border-r border-gray-200 bg-[#475569] hover:bg-[#334155] transition-colors p-0 sticky left-0 z-30 cursor-pointer"
+                                title="Add Row"
                             >
-                                {isNonCalcType ? null : mode ? (
-                                    /* Show calculated value */
-                                    <div className="flex items-center justify-between h-full px-3 py-1.5">
-                                        <span className="text-xs text-gray-500 font-medium">
-                                            {mode === 'total' ? 'Total' : 'Avg'}:
-                                        </span>
-                                        <span className="text-sm font-semibold text-gray-800">{calcValue}</span>
-                                        <button
-                                            onClick={() => setColumnCalcMode(prev => ({ ...prev, [col.id]: null }))}
-                                            className="ml-1 text-gray-400 hover:text-gray-600 transition-colors"
-                                            title="Clear"
-                                        >
-                                            <FiX className="w-3 h-3" />
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="relative h-full flex items-center">
-                                        <button
-                                            onClick={() => setActiveCalcDropdown(activeCalcDropdown === col.id ? null : col.id)}
-                                            className="flex items-center gap-1.5 w-full h-full px-3 text-sm text-[#475569] hover:text-[#3b82f6] hover:bg-blue-50/30 transition-colors outline-none"
-                                        >
-                                            <span className="font-normal">Calculate</span>
-                                            <FiChevronDown className={`w-3 h-3 transition-transform ${activeCalcDropdown === col.id ? 'rotate-180' : ''}`} />
-                                        </button>
+                                <div className="flex items-center justify-center w-full h-full">
+                                    <FiPlus className="w-4 h-4 text-white" />
+                                </div>
+                            </td>
+                            {columns.map((col) => {
+                                const mode = columnCalcMode[col.id];
+                                const calcValue = mode ? getColumnCalcValue(col.id, mode) : null;
+                                const isNonCalcType = col.type === 'text' || col.type === 'multi_image' || col.type === 'comment' || col.type === 'image' || col.type === 'pdf' || col.type === 'date';
 
-                                        {activeCalcDropdown === col.id && (
-                                            <div className="absolute bottom-full left-0 mb-1 w-36 bg-white rounded shadow-lg border border-gray-200 py-1 z-50">
+                                return (
+                                    <td
+                                        key={col.id}
+                                        className={`border-r border-gray-200 bg-[#f8fafc] relative p-0 ${resizingCol === col.id ? 'bg-blue-50/20' : ''}`}
+                                    >
+                                        {isNonCalcType ? null : mode ? (
+                                            /* Show calculated value */
+                                            <div className="flex items-center justify-between h-full px-3 py-1.5 min-h-[40px]">
+                                                <span className="text-xs text-gray-500 font-medium whitespace-nowrap">
+                                                    {mode === 'total' ? 'Total' : 'Avg'}:
+                                                </span>
+                                                <span className="text-sm font-semibold text-gray-800 ml-1">{calcValue}</span>
                                                 <button
-                                                    onClick={() => {
-                                                        setColumnCalcMode(prev => ({ ...prev, [col.id]: 'total' }));
-                                                        setActiveCalcDropdown(null);
-                                                    }}
-                                                    className="w-full text-left px-4 py-1.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                                                    onClick={() => setColumnCalcMode(prev => ({ ...prev, [col.id]: null }))}
+                                                    className="ml-auto text-gray-400 hover:text-gray-600 transition-colors"
+                                                    title="Clear"
                                                 >
-                                                    Show Total
-                                                </button>
-                                                <button
-                                                    onClick={() => {
-                                                        setColumnCalcMode(prev => ({ ...prev, [col.id]: 'average' }));
-                                                        setActiveCalcDropdown(null);
-                                                    }}
-                                                    className="w-full text-left px-4 py-1.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                                                >
-                                                    Show Average
+                                                    <FiX className="w-3 h-3" />
                                                 </button>
                                             </div>
+                                        ) : (
+                                            <div className="relative h-full flex items-center min-h-[40px]">
+                                                <button
+                                                    onClick={() => setActiveCalcDropdown(activeCalcDropdown === col.id ? null : col.id)}
+                                                    className="flex items-center gap-1.5 w-full h-full px-3 text-sm text-[#475569] hover:text-[#3b82f6] hover:bg-blue-50/30 transition-colors outline-none whitespace-nowrap"
+                                                >
+                                                    <span className="font-normal">Calculate</span>
+                                                    <FiChevronDown className={`w-3 h-3 transition-transform shrink-0 ${activeCalcDropdown === col.id ? 'rotate-180' : ''}`} />
+                                                </button>
+
+                                                {activeCalcDropdown === col.id && (
+                                                    <div className="absolute bottom-full left-0 mb-1 w-36 bg-white rounded shadow-lg border border-gray-200 py-1 z-50">
+                                                        <button
+                                                            onClick={() => {
+                                                                setColumnCalcMode(prev => ({ ...prev, [col.id]: 'total' }));
+                                                                setActiveCalcDropdown(null);
+                                                            }}
+                                                            className="w-full text-left px-4 py-1.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
+                                                        >
+                                                            Show Total
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                setColumnCalcMode(prev => ({ ...prev, [col.id]: 'average' }));
+                                                                setActiveCalcDropdown(null);
+                                                            }}
+                                                            className="w-full text-left px-4 py-1.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors whitespace-nowrap"
+                                                        >
+                                                            Show Average
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
                                         )}
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    })}
-                    <div className="w-12 min-w-12 shrink-0 bg-[#f8fafc] sticky right-0 z-10"></div>
-                </div>
+                                    </td>
+                                );
+                            })}
+                            <td className="w-12 min-w-12 bg-[#f8fafc] sticky right-0 z-10 border-l border-gray-200"></td>
+                        </tr>
+                    </tfoot>
+                </table>
             </div>
 
             {/* Cell Context Menu */}
@@ -2281,7 +2352,7 @@ export default function DocumentEditor({ docName, setActivePath }) {
                                                 className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                                                 loading="lazy"
                                             />
-                                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-2 pt-6 opacity-0 group-hover:opacity-100 transition-opacity flex justify-between items-end">
+                                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-2 pt-6 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity flex justify-between items-end">
                                                 <div className="text-[10px] text-white/90 truncate pr-2">
                                                     {img.fileName}
                                                 </div>
@@ -2606,6 +2677,16 @@ export default function DocumentEditor({ docName, setActivePath }) {
                 sheetId={docName}
             />
 
+            {/* PDF Export Selection Modal */}
+            <PDFExportModal
+                isOpen={isExportModalOpen}
+                onClose={() => setIsExportModalOpen(false)}
+                columns={columns}
+                selectedColumns={exportSelectedColumns}
+                setSelectedColumns={setExportSelectedColumns}
+                onExport={executePDFExport}
+            />
+
             {/* Image Zoom/Preview Modal */}
             {selectedPreviewImage && (
                 <div 
@@ -2766,6 +2847,88 @@ const ColumnDeleteConfirmModal = ({ isOpen, onClose, onConfirm, columnName }) =>
                 >
                     <FiX className="w-5 h-5" />
                 </button>
+            </div>
+        </div>
+    );
+};
+
+const PDFExportModal = ({ isOpen, onClose, onExport, columns, selectedColumns, setSelectedColumns }) => {
+    if (!isOpen) return null;
+
+    const setAllPermissions = (value) => {
+        const next = {};
+        columns.forEach(c => next[c.id] = value);
+        setSelectedColumns(next);
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in duration-200">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+                    <h2 className="text-xl font-semibold text-gray-800">Export as PDF</h2>
+                    <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors">
+                        <FiX className="w-5 h-5" />
+                    </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-6">
+                    <div className="mb-2 text-sm text-gray-600">Select which columns to export into the PDF.</div>
+                    
+                    <div className="mb-5 border border-blue-100 rounded-xl bg-blue-50/30 p-4">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                                <FiColumns className="w-4 h-4 text-blue-600" />
+                                <h4 className="text-sm font-semibold text-gray-800">Column Granular Access</h4>
+                            </div>
+                            <div className="flex gap-1">
+                                <button onClick={() => setAllPermissions(true)} className="text-[10px] bg-white border border-gray-200 px-2 py-0.5 rounded hover:bg-gray-100 font-medium text-gray-600 transition-colors">Select All</button>
+                                <button onClick={() => setAllPermissions(false)} className="text-[10px] bg-white border border-gray-200 px-2 py-0.5 rounded hover:bg-gray-100 font-medium text-gray-600 transition-colors">Deselect All</button>
+                            </div>
+                        </div>
+
+                        <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
+                            {columns.map((col) => {
+                                const isChecked = !!selectedColumns[col.id];
+                                return (
+                                    <div key={col.id} className="flex items-center justify-between gap-3 px-3 py-2 bg-white rounded-lg border border-gray-100 transition-colors">
+                                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                                            <input
+                                                type="checkbox"
+                                                checked={isChecked}
+                                                onChange={(e) => {
+                                                    const checked = e.target.checked;
+                                                    setSelectedColumns(prev => ({ ...prev, [col.id]: checked }));
+                                                }}
+                                                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                            />
+                                            <div className="flex flex-col min-w-0">
+                                                <span className={`text-sm ${isChecked ? 'text-gray-800' : 'text-gray-400'} truncate`}>{col.name}</span>
+                                                <span className="text-[9px] text-gray-400 uppercase font-medium">{col.type}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-3 rounded-b-2xl shrink-0">
+                    <button
+                        onClick={onClose}
+                        className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={onExport}
+                        disabled={Object.values(selectedColumns).filter(Boolean).length === 0}
+                        className="px-5 py-2 text-sm font-medium text-white rounded-lg transition-colors shadow-sm bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                        <FiDownload className="w-4 h-4" />
+                        Download PDF
+                    </button>
+                </div>
             </div>
         </div>
     );

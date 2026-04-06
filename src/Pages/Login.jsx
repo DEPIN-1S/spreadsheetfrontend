@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FiMail, FiLock, FiArrowRight, FiEye, FiEyeOff } from 'react-icons/fi';
+import { FiPhone, FiKey, FiArrowRight, FiCheckCircle, FiArrowLeft } from 'react-icons/fi';
 import { LuFileSpreadsheet } from 'react-icons/lu';
 import apiClient from '../api/apiClient';
 const FloatingCharacters = () => {
@@ -50,18 +50,36 @@ const FloatingCharacters = () => {
 };
 
 export default function Login({ setActivePath }) {
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [showPassword, setShowPassword] = useState(false);
+    const [phone, setPhone] = useState('');
+    const [otp, setOtp] = useState('');
+    const [step, setStep] = useState(1); // 1 = Phone, 2 = OTP
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
-    const handleLogin = async (e) => {
+    const handleSendOtp = async (e) => {
+        e.preventDefault();
+        setError('');
+        if (phone.length < 10) {
+            setError('Please enter a valid 10-digit phone number.');
+            return;
+        }
+        setLoading(true);
+        try {
+            await apiClient.post('/user/send-otp', { phone });
+            setStep(2);
+        } catch (err) {
+            setError(err.response?.data?.message || 'Failed to send OTP. Please try again.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleVerifyOtp = async (e) => {
         e.preventDefault();
         setError('');
         setLoading(true);
         try {
-            const response = await apiClient.post('/user/login', { email, password });
+            const response = await apiClient.post('/user/verify-otp', { phone, otp });
             if (response.data?.data?.accessToken) {
                 // Successful login
                 localStorage.setItem('accessToken', response.data.data.accessToken);
@@ -74,7 +92,7 @@ export default function Login({ setActivePath }) {
                 setActivePath('/my-files');
             }
         } catch (err) {
-            setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
+            setError(err.response?.data?.message || 'Invalid OTP. Please check and try again.');
         } finally {
             setLoading(false);
         }
@@ -129,9 +147,19 @@ export default function Login({ setActivePath }) {
                     <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-100 rounded-full blur-3xl opacity-50 -mr-10 -mt-10"></div>
 
                     <div className="relative z-10">
-                        <div className="text-center mb-8">
+                        <div className="text-center mb-8 relative">
+                            {step === 2 && (
+                                <button 
+                                    onClick={() => { setStep(1); setError(''); setOtp(''); }} 
+                                    className="absolute left-0 top-1/2 -translate-y-1/2 text-gray-400 hover:text-indigo-600 p-2 transition-colors"
+                                >
+                                    <FiArrowLeft size={20} />
+                                </button>
+                            )}
                             <h2 className="text-[28px] font-bold text-[#0F172A] mb-3">Welcome Back!</h2>
-                            <p className="text-gray-500 text-sm">Log in to your workspace</p>
+                            <p className="text-gray-500 text-sm">
+                                {step === 1 ? 'Log in using your phone number' : `Enter the OTP sent to ${phone}`}
+                            </p>
                         </div>
 
                         {error && (
@@ -140,61 +168,68 @@ export default function Login({ setActivePath }) {
                             </div>
                         )}
 
-                        <form onSubmit={handleLogin} className="space-y-5">
-                            <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                    Email Address
-                                </label>
-                                <div className="relative">
-                                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                                        <FiMail className="text-gray-400" size={18} />
+                        {step === 1 ? (
+                            <form onSubmit={handleSendOtp} className="space-y-5">
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                        Phone Number
+                                    </label>
+                                    <div className="relative">
+                                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                            <FiPhone className="text-gray-400" size={18} />
+                                        </div>
+                                        <input
+                                            type="tel"
+                                            className="block w-full pl-11 pr-4 py-3 border border-gray-200 bg-white rounded-xl focus:ring-2 focus:ring-indigo-600 focus:border-transparent outline-none transition-all shadow-sm text-gray-900 font-medium"
+                                            placeholder="9876543210"
+                                            value={phone}
+                                            onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 15))}
+                                            required
+                                        />
                                     </div>
-                                    <input
-                                        type="email"
-                                        className="block w-full pl-11 pr-4 py-3 border border-gray-200 bg-white rounded-xl focus:ring-2 focus:ring-indigo-600 focus:border-transparent outline-none transition-all shadow-sm text-gray-900 font-medium"
-                                        placeholder="admin@example.com"
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        required
-                                    />
                                 </div>
-                            </div>
 
-                            <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                    Password
-                                </label>
-                                <div className="relative">
-                                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                                        <FiLock className="text-gray-400" size={18} />
+                                <button
+                                    type="submit"
+                                    disabled={loading || phone.length < 5}
+                                    className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-semibold py-3.5 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 group shadow-md shadow-indigo-600/20 mt-4"
+                                >
+                                    {loading ? 'Sending OTP...' : 'Send Login Code'}
+                                    <FiArrowRight className="group-hover:translate-x-1 transition-transform" />
+                                </button>
+                            </form>
+                        ) : (
+                            <form onSubmit={handleVerifyOtp} className="space-y-5">
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                        One Time Password (OTP)
+                                    </label>
+                                    <div className="relative">
+                                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                            <FiKey className="text-gray-400" size={18} />
+                                        </div>
+                                        <input
+                                            type="text"
+                                            className="block w-full pl-11 pr-4 py-3 border border-gray-200 bg-white rounded-xl focus:ring-2 focus:ring-indigo-600 focus:border-transparent outline-none transition-all shadow-sm text-gray-900 font-medium tracking-widest"
+                                            placeholder="Enter 4-digit code"
+                                            value={otp}
+                                            onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                                            required
+                                            autoFocus
+                                        />
                                     </div>
-                                    <input
-                                        type={showPassword ? "text" : "password"}
-                                        className="block w-full pl-11 pr-12 py-3 border border-gray-200 bg-white rounded-xl focus:ring-2 focus:ring-indigo-600 focus:border-transparent outline-none transition-all shadow-sm text-gray-900 font-medium"
-                                        placeholder="Enter your password"
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        required
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowPassword(!showPassword)}
-                                        className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-400 hover:text-indigo-600 transition-colors"
-                                    >
-                                        {showPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
-                                    </button>
                                 </div>
-                            </div>
 
-                            <button
-                                type="submit"
-                                disabled={loading}
-                                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-semibold py-3.5 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 group shadow-md shadow-indigo-600/20 mt-4"
-                            >
-                                {loading ? 'Logging in...' : 'Continue'}
-                                <FiArrowRight className="group-hover:translate-x-1 transition-transform" />
-                            </button>
-                        </form>
+                                <button
+                                    type="submit"
+                                    disabled={loading || otp.length < 4}
+                                    className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-semibold py-3.5 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 group shadow-md shadow-indigo-600/20 mt-4"
+                                >
+                                    {loading ? 'Verifying...' : 'Verify & Login'}
+                                    <FiCheckCircle className="transition-transform" />
+                                </button>
+                            </form>
+                        )}
                     </div>
                 </div>
             </div>

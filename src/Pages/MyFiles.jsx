@@ -2,13 +2,15 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { FiSearch, FiPlus, FiFileText, FiFolder, FiMenu, FiX, FiMoreVertical, FiEdit2, FiTrash2, FiChevronRight, FiMove } from "react-icons/fi";
 import { BsFileEarmarkSpreadsheet } from "react-icons/bs";
 import apiClient from "../api/apiClient";
+import Swal from "sweetalert2";
 
-export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocName }) {
+export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocName, setReturnPath }) {
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isDocModalOpen, setIsDocModalOpen] = useState(false);
     const [newFolderName, setNewFolderName] = useState("");
     const [newDocName, setNewDocName] = useState("");
+    const [searchQuery, setSearchQuery] = useState("");
 
     // Unified Items State
     const [items, setItems] = useState([]);
@@ -20,7 +22,6 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
 
     // Modal States
     const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
-    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
     const [activeItemId, setActiveItemId] = useState(null);
     const [renameItemName, setRenameItemName] = useState("");
@@ -120,6 +121,7 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
             const newSheet = response.data.data;
             fetchItems();
             setCurrentDocName(newSheet.id);
+            setReturnPath('/my-files');
             setActivePath('/document-editor');
         } catch (error) {
             console.error("Error creating document:", error);
@@ -201,35 +203,63 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
         setMoveDestinationId(null);
     };
 
-    const openDeleteModal = (id) => {
-        setActiveItemId(id);
-        setIsDeleteModalOpen(true);
-    };
-
-    const handleDeleteItem = async () => {
-        if (activeItemId === null) return;
-
-        const itemToDelete = items.find(i => i.id === activeItemId);
+    const openDeleteModal = async (id) => {
+        const itemToDelete = items.find(i => i.id === id);
         if (!itemToDelete) return;
 
-        try {
-            if (itemToDelete.type === "folder") {
-                await apiClient.delete(`/folders/${activeItemId}`);
-            } else {
-                await apiClient.delete(`/sheets/${activeItemId}`);
+        const isFolder = itemToDelete.type === "folder";
+
+        const result = await Swal.fire({
+            title: 'Delete Item?',
+            text: `Are you sure you want to delete this${isFolder ? ' folder and all items inside' : ''}? This action cannot be undone.`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: 'Delete',
+            cancelButtonText: 'Cancel',
+            customClass: {
+                popup: 'rounded-2xl',
+                confirmButton: 'rounded-xl px-5',
+                cancelButton: 'rounded-xl px-5'
             }
+        });
+
+        if (!result.isConfirmed) return;
+
+        try {
+            if (isFolder) {
+                await apiClient.delete(`/folders/${id}`);
+            } else {
+                await apiClient.delete(`/sheets/${id}`);
+            }
+            Swal.fire({ icon: 'success', title: 'Deleted', text: 'Item removed.', timer: 1500, showConfirmButton: false, customClass: { popup: 'rounded-2xl' } });
             fetchItems();
         } catch (error) {
             console.error("Error deleting item:", error);
+            Swal.fire({ icon: 'error', title: 'Error', text: 'Failed to delete item.', customClass: { popup: 'rounded-2xl' } });
         }
+    };
 
-        setIsDeleteModalOpen(false);
-        setActiveItemId(null);
+    const handleDuplicateItem = async (id, title, type) => {
+        try {
+            const endpoint = type === "folder" ? `/folders/${id}/duplicate` : `/sheets/${id}/duplicate`;
+            await apiClient.post(endpoint, { name: `${title} (Copy)` });
+            fetchItems();
+        } catch (error) {
+            console.error("Error duplicating item:", error);
+        }
     };
 
     // Filter items for current view
-    const currentFolders = items.filter(item => item.parentId === currentFolderId && item.type === "folder");
-    const currentFiles = items.filter(item => item.parentId === currentFolderId && item.type === "file");
+    const currentFolders = items.filter(item => {
+        if (searchQuery) return item.type === "folder" && item.title.toLowerCase().includes(searchQuery.toLowerCase());
+        return item.parentId === currentFolderId && item.type === "folder";
+    });
+    const currentFiles = items.filter(item => {
+        if (searchQuery) return item.type === "file" && item.title.toLowerCase().includes(searchQuery.toLowerCase());
+        return item.parentId === currentFolderId && item.type === "file";
+    });
     const isFolderEmpty = currentFolders.length === 0 && currentFiles.length === 0;
 
     // Helper for Move Modal to get all folders except active item and its descendents
@@ -286,6 +316,8 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                             <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
                             <input
                                 type="text"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
                                 placeholder="Search file, folder ..."
                                 className="pl-9 pr-4 py-2 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-64"
                             />
@@ -371,6 +403,7 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                                             onClick={() => navigateToFolder(folder.id, folder.title)}
                                             onRename={() => openRenameModal(folder.id, folder.title)}
                                             onMove={() => openMoveModal(folder.id)}
+                                            onDuplicate={() => handleDuplicateItem(folder.id, folder.title, "folder")}
                                             onDelete={() => openDeleteModal(folder.id)}
                                         />
                                     ))}
@@ -393,10 +426,12 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                                             date={file.date}
                                             onClick={() => {
                                                 setCurrentDocName(file.id);
+                                                setReturnPath('/my-files');
                                                 setActivePath('/document-editor');
                                             }}
                                             onRename={() => openRenameModal(file.id, file.title)}
                                             onMove={() => openMoveModal(file.id)}
+                                            onDuplicate={() => handleDuplicateItem(file.id, file.title, "file")}
                                             onDelete={() => openDeleteModal(file.id)}
                                         />
                                     ))}
@@ -533,36 +568,6 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                 </div>
             )}
 
-            {/* Delete Folder Modal */}
-            {isDeleteModalOpen && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden p-6">
-                        <div className="flex flex-col items-center text-center">
-                            <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4">
-                                <FiTrash2 className="w-6 h-6 text-red-600" />
-                            </div>
-                            <h2 className="text-lg font-bold text-gray-900 mb-2">Delete Item</h2>
-                            <p className="text-sm text-gray-500 mb-6">
-                                Are you sure you want to delete this? If it's a folder, all items inside will be deleted. This action cannot be undone.
-                            </p>
-                            <div className="flex items-center gap-3 w-full">
-                                <button
-                                    onClick={() => setIsDeleteModalOpen(false)}
-                                    className="flex-1 px-4 py-2 border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 font-medium transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleDeleteItem}
-                                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium transition-colors"
-                                >
-                                    Delete
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Move Folder Modal */}
             {isMoveModalOpen && (
@@ -620,7 +625,7 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
     );
 }
 
-function FolderCard({ title, date, onClick, onRename, onMove, onDelete }) {
+function FolderCard({ title, date, onClick, onRename, onMove, onDuplicate, onDelete }) {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const menuRef = useRef(null);
 
@@ -659,7 +664,7 @@ function FolderCard({ title, date, onClick, onRename, onMove, onDelete }) {
                         e.stopPropagation();
                         setIsMenuOpen(!isMenuOpen);
                     }}
-                    className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100"
+                    className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity focus:opacity-100"
                 >
                     <FiMoreVertical className="w-5 h-5" />
                 </button>
@@ -693,6 +698,17 @@ function FolderCard({ title, date, onClick, onRename, onMove, onDelete }) {
                             onClick={(e) => {
                                 e.stopPropagation();
                                 setIsMenuOpen(false);
+                                onDuplicate();
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 text-left"
+                        >
+                            <FiPlus className="w-4 h-4 text-gray-400" />
+                            Duplicate
+                        </button>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setIsMenuOpen(false);
                                 onDelete();
                             }}
                             className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 text-left"
@@ -707,7 +723,7 @@ function FolderCard({ title, date, onClick, onRename, onMove, onDelete }) {
     );
 }
 
-function FileCard({ title, date, onClick, onRename, onMove, onDelete }) {
+function FileCard({ title, date, onClick, onRename, onMove, onDuplicate, onDelete }) {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const menuRef = useRef(null);
 
@@ -741,7 +757,7 @@ function FileCard({ title, date, onClick, onRename, onMove, onDelete }) {
                         e.stopPropagation();
                         setIsMenuOpen(!isMenuOpen);
                     }}
-                    className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100"
+                    className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity focus:opacity-100"
                 >
                     <FiMoreVertical className="w-5 h-5" />
                 </button>
@@ -770,6 +786,17 @@ function FileCard({ title, date, onClick, onRename, onMove, onDelete }) {
                         >
                             <FiMove className="w-4 h-4 text-gray-400" />
                             Move
+                        </button>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setIsMenuOpen(false);
+                                onDuplicate();
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 text-left"
+                        >
+                            <FiPlus className="w-4 h-4 text-gray-400" />
+                            Duplicate
                         </button>
                         <button
                             onClick={(e) => {

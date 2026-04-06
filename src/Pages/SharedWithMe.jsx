@@ -3,7 +3,7 @@ import { FiSearch, FiMenu, FiMoreVertical, FiEye } from "react-icons/fi";
 import { BsFileEarmarkSpreadsheet } from "react-icons/bs";
 import apiClient from "../api/apiClient";
 
-export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentDocName }) {
+export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentDocName, setReturnPath }) {
     const [searchQuery, setSearchQuery] = useState("");
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -121,6 +121,7 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                                                 if (file.fileType === 'doc') {
                                                     // Pass the ID instead of the title to the DocumentEditor
                                                     setCurrentDocName(file.id);
+                                                    setReturnPath('/shared');
                                                     setActivePath('/document-editor');
                                                 }
                                             }}
@@ -145,9 +146,6 @@ function SharedFolderCard({ item }) {
                         <path d="M2 6a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
                     </svg>
                 </div>
-                <button className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <FiMoreVertical className="w-5 h-5" />
-                </button>
             </div>
             <div>
                 <h3 className="text-sm font-semibold text-gray-800 truncate" title={item.title}>{item.title}</h3>
@@ -175,12 +173,6 @@ function SharedFileCard({ item, onClick }) {
                     <h3 className="text-sm font-semibold text-gray-800 truncate" title={item.title}>{item.title}</h3>
                     <p className="text-xs text-gray-400 mt-1">{item.date}</p>
                 </div>
-            </div>
-
-            <div className="relative">
-                <button className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100">
-                    <FiMoreVertical className="w-5 h-5" />
-                </button>
             </div>
         </div>
     );

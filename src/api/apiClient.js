@@ -53,7 +53,7 @@ apiClient.interceptors.response.use(
         // If 401 and we haven't tried to refresh yet
         if (error.response && error.response.status === 401 && !originalRequest._retry) {
             // Don't try to refresh if the failing request is itself a refresh or login
-            if (originalRequest.url?.includes('/user/refresh') || originalRequest.url?.includes('/user/login')) {
+            if (originalRequest.url?.includes('/user/refresh') || originalRequest.url?.includes('/user/verify-otp') || originalRequest.url?.includes('/user/send-otp')) {
                 forceLogout();
                 return Promise.reject(error);
             }

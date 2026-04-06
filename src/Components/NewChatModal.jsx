@@ -35,8 +35,9 @@ export default function NewChatModal({ isOpen, onClose, onSelectUser }) {
     if (!isOpen) return null;
 
     const filteredUsers = users.filter((user) =>
-        user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        user.email.toLowerCase().includes(searchQuery.toLowerCase())
+        user.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        user.phone?.includes(searchQuery) ||
+        user.email?.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     const handleBackdropClick = (e) => {
@@ -71,7 +72,7 @@ export default function NewChatModal({ isOpen, onClose, onSelectUser }) {
                         <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
                         <input
                             type="text"
-                            placeholder="Search by name or email..."
+                            placeholder="Search by name or phone..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
@@ -118,7 +119,7 @@ export default function NewChatModal({ isOpen, onClose, onSelectUser }) {
                                         )}
                                         <div>
                                             <p className="text-sm font-semibold text-gray-900">{user.name}</p>
-                                            <p className="text-xs text-gray-500">{user.email}</p>
+                                            <p className="text-xs text-gray-500">{user.phone || 'No phone'}</p>
                                         </div>
                                     </div>
                                 </div>
