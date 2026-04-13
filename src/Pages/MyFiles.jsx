@@ -4,7 +4,7 @@ import { BsFileEarmarkSpreadsheet } from "react-icons/bs";
 import apiClient from "../api/apiClient";
 import Swal from "sweetalert2";
 
-export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocName, setReturnPath }) {
+export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocName, setReturnPath, currentFolderId, setCurrentFolderId, path, setPath }) {
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isDocModalOpen, setIsDocModalOpen] = useState(false);
@@ -15,10 +15,6 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
     // Unified Items State
     const [items, setItems] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
-
-    // Navigation State
-    const [currentFolderId, setCurrentFolderId] = useState(null);
-    const [path, setPath] = useState([{ id: null, title: "My Files" }]);
 
     // Modal States
     const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);

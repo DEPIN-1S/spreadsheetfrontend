@@ -17,6 +17,8 @@ function App() {
     });
     const [currentDocName, setCurrentDocName] = useState("");
     const [returnPath, setReturnPath] = useState('/my-files');
+    const [myFilesCurrentFolderId, setMyFilesCurrentFolderId] = useState(null);
+    const [myFilesPath, setMyFilesPath] = useState([{ id: null, title: "My Files" }]);
 
     const toggleCollapse = () => setIsCollapsed((prev) => !prev);
 
@@ -46,6 +48,10 @@ function App() {
                         setActivePath={setActivePath}
                         setCurrentDocName={setCurrentDocName}
                         setReturnPath={setReturnPath}
+                        currentFolderId={myFilesCurrentFolderId}
+                        setCurrentFolderId={setMyFilesCurrentFolderId}
+                        path={myFilesPath}
+                        setPath={setMyFilesPath}
                     />
                 )}
                 {activePath === "/shared" && (

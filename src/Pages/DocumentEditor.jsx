@@ -18,7 +18,7 @@ import ShareModal from "../components/ShareModal";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-export default function DocumentEditor({ docName, setActivePath, returnPath }) {
+export default function DocumentEditor({ docName, setActivePath, returnPath, isNested = false }) {
     const [sheetData, setSheetData] = useState(null);
     const [rows, setRows] = useState([]);
     const [columns, setColumns] = useState([]);
@@ -37,6 +37,10 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
     const [showUpdateConfirmModal, setShowUpdateConfirmModal] = useState(false);
     const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
     const [columnToDelete, setColumnToDelete] = useState(null);
+    const [showEnableRowModal, setShowEnableRowModal] = useState(false);
+    const [rowToEnable, setRowToEnable] = useState(null);
+    const [nestedSheetsMapping, setNestedSheetsMapping] = useState({});
+    const [activeNestedSheetId, setActiveNestedSheetId] = useState(null);
 
     // Column resize state
     const [resizingCol, setResizingCol] = useState(null);
@@ -159,6 +163,13 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
             setColumns(mappedCols);
 
             setRows(data.grid);
+
+            // Populate mapping for nested sheets
+            const mapping = {};
+            data.grid.forEach(row => {
+                if (row.nestedSheetId) mapping[row.id] = row.nestedSheetId;
+            });
+            setNestedSheetsMapping(mapping);
         } catch (error) {
             console.error("Error fetching sheet data:", error);
         } finally {
@@ -179,6 +190,13 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
                 const existing = prev.find(c => c.id === col.id);
                 return { ...col, width: existing?.width || col.width || 220 };
             }));
+
+            // Populate mapping for nested sheets
+            const mapping = {};
+            data.grid.forEach(row => {
+                if (row.nestedSheetId) mapping[row.id] = row.nestedSheetId;
+            });
+            setNestedSheetsMapping(mapping);
         } catch (error) {
             console.error("Error refreshing formula values:", error);
         }
@@ -259,7 +277,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
     }, [docName]);
 
     // Context Menu State
-    const [activeColumnMenu, setActiveColumnMenu] = useState(null);
+    const [activeColumnMenu, setActiveColumnMenu] = useState(null); // { id, x, y }
     const menuRef = useRef(null);
     const rowColorPickerRef = useRef(null);
 
@@ -336,6 +354,10 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
     const [newColumnName, setNewColumnName] = useState('');
     const [newColumnType, setNewColumnType] = useState('text');
     const [newColumnCurrencyCode, setNewColumnCurrencyCode] = useState('INR');
+    const [newNestedSheetName, setNewNestedSheetName] = useState('');
+    const [showRenameSubSheetModal, setShowRenameSubSheetModal] = useState(false);
+    const [renamingSubSheetId, setRenamingSubSheetId] = useState(null);
+    const [renamingSubSheetName, setRenamingSubSheetName] = useState('');
 
     // Formula Builder State
     const [isFormulaModalOpen, setIsFormulaModalOpen] = useState(false);
@@ -588,13 +610,30 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
 
     const handleUpdateColumn = () => {
         if (!newColumnName.trim()) return;
+        
+        if (editingColId) {
+            const originalCol = columns.find(c => c.id === editingColId);
+            const nameChanged = originalCol?.name !== newColumnName.trim();
+            const typeChanged = originalCol?.type !== newColumnType;
+            
+            if (!nameChanged && !typeChanged) {
+                // Only styling (color, bold, etc) or nothing changed, save directly
+                performUpdateColumn();
+                return;
+            }
+        }
+        
         setShowUpdateConfirmModal(true);
     };
 
     const performUpdateColumn = async () => {
         setShowUpdateConfirmModal(false);
-        // If it's a formula, intercept the save to open the formula builder
-        if (newColumnType === 'formula') {
+        
+        const originalCol = editingColId ? columns.find(c => c.id === editingColId) : null;
+        const isTypeChanged = originalCol ? originalCol.type !== newColumnType : true;
+
+        // If it's a new formula column or explicitly changed to formula, open the formula builder
+        if (newColumnType === 'formula' && isTypeChanged) {
             setPendingFormulaColumnDesc({
                 name: newColumnName,
                 type: newColumnType,
@@ -719,11 +758,66 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
         }
     };
 
+    const updateColumnStyle = async (colId, stylePatch) => {
+        try {
+            // stylePatch = { bgColor, isBold, isItalic }
+            // Optimistic update
+            setColumns(currentCols => currentCols.map(col =>
+                col.id === colId ? { ...col, ...stylePatch } : col
+            ));
+            
+            // Sync with backend
+            await apiClient.put(`/sheets/${docName}/columns/${colId}`, stylePatch);
+        } catch (error) {
+            console.error("Error updating column style:", error);
+            fetchSheetData();
+        }
+    };
+
     // --- Column Menu Actions ---
     const handleDeleteClick = (col) => {
         setColumnToDelete(col);
         setShowDeleteConfirmModal(true);
         setActiveColumnMenu(null);
+    };
+
+    const performEnableRow = async () => {
+        const row = filteredRows[rowToEnable];
+        if (row) {
+            console.log(`Confirmed enabling row in column for row ID: ${row.id}`);
+            try {
+                // Instantly create a backend sheet to act as the child
+                const response = await apiClient.post('/sheets', {
+                    name: newNestedSheetName || `Row ${row.order !== undefined ? row.order + 1 : rowToEnable + 1} Details`,
+                    folderId: null,
+                });
+                const newDocId = response.data.data.id;
+                setNestedSheetsMapping(prev => ({ ...prev, [row.id]: newDocId }));
+
+                // Save relationship to backend
+                await apiClient.patch(`/sheets/${docName}/rows/${row.id}/color`, {
+                    nestedSheetId: newDocId
+                });
+            } catch(e) { console.error("Error creating nested sheet", e); }
+            await handleCellAction('enable_row_in_column', rowToEnable, null);
+        }
+        setShowEnableRowModal(false);
+        setRowToEnable(null);
+    };
+
+    const performRenameSubSheet = async () => {
+        if (!renamingSubSheetId || !renamingSubSheetName.trim()) return;
+        try {
+            await apiClient.put(`/sheets/${renamingSubSheetId}`, { name: renamingSubSheetName.trim() });
+            fetchSheetData(); // refresh parent mapping
+            refreshFormulaValues(); // refresh locally
+        } catch (err) {
+            console.error("Error renaming sub-sheet:", err);
+        } finally {
+            setShowRenameSubSheetModal(false);
+            setRenamingSubSheetId(null);
+            setRenamingSubSheetName('');
+        }
     };
 
     const performDeleteColumn = async () => {
@@ -922,6 +1016,10 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
                         const cell = row.cells?.find(c => c.columnId === colId);
                         await updateCellStyle(row.id, colId, { isItalic: !cell?.isItalic });
                     }
+                    break;
+                case 'enable_row_in_column':
+                    console.log(`Enabling row in column for row ID: ${row?.id}`);
+                    // Add API integration here when business logic is finalized
                     break;
                 default:
                     console.log(`Cell action: ${action} on row ${rowIndex}, col ${colId}`);
@@ -1400,9 +1498,46 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
     };
 
     return (
-        <div className="flex flex-col h-screen bg-white overflow-hidden w-full">
+        <div className={`flex flex-col bg-white overflow-hidden w-full ${isNested ? 'h-full border border-gray-200 rounded-lg shadow-sm' : 'h-screen'}`}>
+            {/* Sub-Sheet simplified header */}
+            {isNested && (
+                <div className="bg-white border-b border-gray-100 flex items-center justify-between px-6 py-4 shrink-0 shadow-sm">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-blue-100 rounded-lg">
+                            <FiColumns className="w-5 h-5 text-blue-600" />
+                        </div>
+                        <div className="flex flex-col">
+                            <div className="flex items-center gap-2 group">
+                                <h3 className="text-xl font-bold text-gray-800">
+                                    {sheetData?.name || "Row Detail Sub-Sheet"}
+                                </h3>
+                                {(sheetData?.userPermission === 'admin' || sheetData?.userPermission === 'editor') && (
+                                    <button 
+                                        onClick={() => {
+                                            setRenamingSubSheetId(docName);
+                                            setRenamingSubSheetName(sheetData?.name || "");
+                                            setShowRenameSubSheetModal(true);
+                                        }}
+                                        className="p-1.5 bg-blue-500 text-white rounded-lg shadow-sm hover:bg-blue-600 transition-colors"
+                                        title="Rename Sub-Sheet"
+                                    >
+                                        <FiEdit2 className="w-4 h-4" />
+                                    </button>
+                                )}
+                            </div>
+                            <span className="text-[10px] text-gray-400 uppercase font-medium tracking-wider">Sub-Spreadsheet View</span>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                         <div className="h-8 w-[1px] bg-gray-100 mx-2"></div>
+                         {/* Search is handled in the shared toolbar below */}
+                    </div>
+                </div>
+            )}
+
             {/* Top Navigation */}
-            <div className="bg-[#0f172a] text-white flex items-center justify-between px-4 py-4 shrink-0">
+            {!isNested && (
+                <div className="bg-[#0f172a] text-white flex items-center justify-between px-4 py-4 shrink-0">
                 <div className="flex items-center gap-4">
                     <button
                         onClick={() => setActivePath(returnPath || '/my-files')}
@@ -1455,9 +1590,19 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
                     {/* User profile placeholder removed as it was static */}
                 </div>
             </div>
+            )}
 
-            {/* Search Bar */}
-            <div className="flex items-center justify-end px-3 py-2 border-b border-gray-200 bg-white shrink-0">
+            {/* Toolbar */}
+            <div className="flex items-center justify-end gap-3 px-3 py-2 border-b border-gray-200 bg-white shrink-0">
+                {!isNested && (
+                    <button
+                        onClick={handleExportPDF}
+                        className="flex items-center gap-2 px-4 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-full text-sm font-medium transition-colors border border-blue-200"
+                    >
+                        <FiDownload className="w-4 h-4" />
+                        Download PDF
+                    </button>
+                )}
                 <div className="relative w-72">
                     <input
                         type="text"
@@ -1477,11 +1622,11 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
                 <table className="w-max text-left border-collapse bg-white table-fixed relative">
                     <thead>
                         <tr className="bg-white sticky top-0 z-20 shadow-[0_1px_0_#e5e7eb]">
-                            <th className="w-12 min-w-12 border-b border-r border-gray-200 text-center py-2 text-gray-400 font-normal sticky left-0 bg-white z-30"></th>
+                            <th className="w-12 min-w-12 border-b border-r border-gray-300 text-center py-2 text-gray-400 font-normal sticky left-0 bg-white z-30"></th>
                             {columns.map(col => (
                                 <th
                                     key={col.id}
-                                    className={`border-b border-r border-gray-200 py-2 px-3 text-xs font-medium transition-colors relative group select-none ${resizingCol === col.id ? 'bg-blue-50/20' : (!col.bgColor ? 'bg-white hover:bg-gray-50 text-gray-500' : 'text-gray-800')}`}
+                                    className={`border-b border-r border-gray-300 py-2 px-3 text-xs font-bold transition-colors relative group select-none ${resizingCol === col.id ? 'bg-blue-50/20' : (!col.bgColor ? 'bg-white hover:bg-gray-50 text-gray-800' : 'text-gray-800')}`}
                                     style={{ width: col.width || 220, minWidth: col.width || 220, backgroundColor: col.bgColor || undefined }}
                                 >
                                     {/* Resize handle */}
@@ -1498,73 +1643,27 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
                                     </div>
                                     <div
                                         className="flex items-center justify-between"
-                                        onClick={() => {
+                                        onClick={(e) => {
                                             if (col.permission !== 'view') {
-                                                setActiveColumnMenu(activeColumnMenu === col.id ? null : col.id);
+                                                const rect = e.currentTarget.getBoundingClientRect();
+                                                setActiveColumnMenu(activeColumnMenu?.id === col.id ? null : {
+                                                    id: col.id,
+                                                    x: rect.left,
+                                                    y: rect.bottom
+                                                });
                                             }
                                         }}
                                     >
                                         <div className="flex items-center gap-2 overflow-hidden flex-1 lg:opacity-80 lg:group-hover:opacity-100 opacity-100 transition-opacity">
                                             {renderColumnIcon(col.type)}
-                                            <span className={`truncate block font-medium transition-colors ${col.permission !== 'view' ? 'group-hover:text-blue-600 cursor-pointer' : 'cursor-default'}`}>{col.name}</span>
+                                            <span className={`whitespace-pre-wrap break-all font-bold transition-colors ${col.permission !== 'view' ? 'group-hover:text-blue-600 cursor-pointer' : 'cursor-default'}`}>{col.name}</span>
                                         </div>
                                         {col.permission !== 'view' && (
-                                            <FiChevronDown className={`w-3.5 h-3.5 shrink-0 ml-2 cursor-pointer transition-transform ${activeColumnMenu === col.id ? 'text-blue-600 rotate-180 opacity-100' : 'text-gray-400 hover:text-gray-600 lg:opacity-0 lg:group-hover:opacity-100 opacity-100'}`} />
+                                            <FiChevronDown className={`w-3.5 h-3.5 shrink-0 ml-2 cursor-pointer transition-transform ${activeColumnMenu?.id === col.id ? 'text-blue-600 rotate-180 opacity-100' : 'text-gray-400 hover:text-gray-600 lg:opacity-0 lg:group-hover:opacity-100 opacity-100'}`} />
                                         )}
                                     </div>
 
-                                    {/* Column Menu Dropdown */}
-                                    {activeColumnMenu === col.id && (
-                                        <div
-                                            ref={menuRef}
-                                            className="absolute top-full left-0 mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50 text-gray-700 select-none animate-in fade-in zoom-in-95 duration-100"
-                                        >
-                                            <button
-                                                onClick={() => handleRenameColumnClick(col.id)}
-                                                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors"
-                                            >
-                                                <FiEdit2 className="w-4 h-4 text-gray-400" />
-                                                Rename/Edit Column
-                                            </button>
-                                            {(sheetData?.userPermission === 'admin' || sheetData?.userPermission === 'editor') && (
-                                                <>
-                                                    <div className="my-1 border-t border-gray-100"></div>
-                                                    {col.type === 'formula' && (
-                                                        <button
-                                                            onClick={() => handleSetFormulaClick(col.id)}
-                                                            className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors"
-                                                        >
-                                                            <TbMathFunction className="w-4 h-4 text-blue-500" />
-                                                            Formula Builder
-                                                        </button>
-                                                    )}
-                                                    <div className="my-1 border-t border-gray-100"></div>
-                                                    <button
-                                                        onClick={() => handleAddColumnDirection(col.id, 'left')}
-                                                        className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors"
-                                                    >
-                                                        <BiArrowToLeft className="w-4 h-4 text-gray-400" />
-                                                        Add Column to Left
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleAddColumnDirection(col.id, 'right')}
-                                                        className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors"
-                                                    >
-                                                        <BiArrowToRight className="w-4 h-4 text-gray-400" />
-                                                        Add Column to Right
-                                                    </button>
-                                                    <div className="my-1 border-t border-gray-100"></div>
-                                                    <button
-                                                        onClick={() => handleDeleteClick(col)}
-                                                        className="w-full text-left px-4 py-2 text-sm hover:bg-red-50 text-red-600 flex items-center gap-3 transition-colors"
-                                                    >
-                                                        <FiTrash2 className="w-4 h-4 text-red-400" />
-                                                        Delete Column
-                                                    </button>
-                                                </>
-                                            )}
-                                        </div>
-                                    )}
+                                    {/* Column Menu Dropdown moved to bottom of component for fixed positioning */}
                                 </th>
                             ))}
                             {(sheetData?.userPermission === 'admin' || sheetData?.userPermission === 'editor') && (
@@ -1581,11 +1680,11 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
                         {/* Filter Row — shown when any column has an active filter */}
                         {Object.keys(columnFilters).length > 0 && (
                             <tr className="bg-blue-50/50 sticky top-[41px] z-20">
-                                <th className="w-12 min-w-12 border border-gray-200 bg-blue-50/50 sticky left-0 z-30 text-center">
+                                <th className="w-12 min-w-12 border border-gray-300 bg-blue-50/50 sticky left-0 z-30 text-center">
                                     <FiFilter className="w-3 h-3 text-blue-400 mx-auto" />
                                 </th>
                                 {columns.map(col => (
-                                    <th key={`filter-${col.id}`} className="border border-gray-200 p-1 bg-blue-50/50" style={{ width: col.width || 220, minWidth: col.width || 220 }}>
+                                    <th key={`filter-${col.id}`} className="border border-gray-300 p-1 bg-blue-50/50" style={{ width: col.width || 220, minWidth: col.width || 220 }}>
                                         {col.id in columnFilters ? (
                                             <div className="flex items-center gap-1">
                                                 <input
@@ -1606,7 +1705,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
                                         ) : null}
                                     </th>
                                 ))}
-                                <th className="w-8 min-w-8 border-b border-gray-200 bg-[#334155] sticky right-0 z-30 relative group cursor-pointer hover:bg-[#1e293b] transition-colors" onClick={() => setIsColumnModalOpen(true)}>
+                                <th className="w-8 min-w-8 border-b border-gray-300 bg-[#334155] sticky right-0 z-30 relative group cursor-pointer hover:bg-[#1e293b] transition-colors" onClick={() => setIsColumnModalOpen(true)}>
                                     <div className="absolute inset-0 flex items-center justify-center p-0.5 text-white">
                                         <FiPlus className="w-4 h-4" />
                                     </div>
@@ -1649,10 +1748,19 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
                                         style={{ backgroundColor: computedRowBg }}
                                     >
                                         <td 
-                                            className={`border-b border-r border-gray-200 text-center py-2 text-[13px] text-gray-500 group-hover:bg-gray-100/50 transition-colors w-12 sticky left-0 z-10 min-w-12 font-medium cursor-pointer ${computedRowBg === 'transparent' ? 'bg-gray-50/50' : ''} ${activeRowMenu?.rowIndex === index ? 'bg-blue-100' : ''}`}
+                                            className={`relative border-b border-r border-gray-300 text-center py-2 text-[13px] text-gray-500 group-hover:bg-gray-100/50 transition-colors w-12 sticky left-0 z-10 min-w-12 font-medium ${computedRowBg === 'transparent' ? 'bg-gray-50/50' : ''} ${activeRowMenu?.rowIndex === index ? 'bg-blue-100' : ''}`}
                                             onContextMenu={(e) => handleRowContextMenu(e, index)}
                                         >
-                                            {row.order !== undefined ? row.order + 1 : index + 1}
+                                            <span className="cursor-pointer">{row.order !== undefined ? row.order + 1 : index + 1}</span>
+                                            {nestedSheetsMapping[row.id] && (
+                                                <button 
+                                                    onClick={() => setActiveNestedSheetId(nestedSheetsMapping[row.id])}
+                                                    className="absolute top-0 right-0 text-white bg-blue-500 hover:bg-blue-600 rounded-bl-md p-0.5 shadow-sm transition-colors"
+                                                    title="Open Row Details"
+                                                >
+                                                    <FiColumns className="w-3 h-3" />
+                                                </button>
+                                            )}
                                         </td>
                                         {columns.map((col) => {
                                             const cell = row.cells?.find(c => c.columnId === col.id);
@@ -1677,7 +1785,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
                                             return (
                                                 <td
                                                     key={col.id}
-                                                    className={`border-b border-r border-gray-200 p-0 relative min-h-9 h-auto ${resizingCol === col.id ? 'bg-blue-50/10' : ''} ${activeCellMenu?.rowIndex === index && activeCellMenu?.colId === col.id ? 'ring-2 ring-blue-500 z-10 bg-blue-50/10' : ''}`}
+                                                    className={`border-b border-r border-gray-300 p-0 relative min-h-9 h-auto ${resizingCol === col.id ? 'bg-blue-50/10' : ''} ${activeCellMenu?.rowIndex === index && activeCellMenu?.colId === col.id ? 'ring-2 ring-blue-500 z-10 bg-blue-50/10' : ''}`}
                                                     style={{
                                                         width: col.width || 220,
                                                         minWidth: col.width || 220,
@@ -1805,9 +1913,9 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
                                                             />
                                                         </div>
                                                     ) : (
-                                                        <div className="grid w-full relative">
+                                                        <div className="grid w-full min-w-0 relative">
                                                             {/* Ghost div to expand height */}
-                                                            <div className={`invisible px-3 py-2 text-[13px] whitespace-pre-wrap wrap-break-word min-h-9 ${(cell?.isBold || row.isBold || col.isBold) ? 'font-bold' : ''} ${(cell?.isItalic || row.isItalic || col.isItalic) ? 'italic' : ''}`}>
+                                                            <div className={`invisible px-3 py-2 text-[13px] whitespace-pre-wrap break-all w-full min-w-0 min-h-9 ${(cell?.isBold || row.isBold || col.isBold) ? 'font-bold' : ''} ${(cell?.isItalic || row.isItalic || col.isItalic) ? 'italic' : ''}`}>
                                                                 {displayVal || ' '}
                                                             </div>
                                                             <textarea
@@ -1817,14 +1925,13 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
                                                                 onFocus={() => setFocusedCell({ rowId: row.id, colId: col.id })}
                                                                 onBlur={(e) => !isFormula && handleCellBlur(row.id, col.id, e.target.value)}
                                                                 onKeyDown={(e) => {
-                                                                    if (e.key === 'Enter' && !e.shiftKey) {
-                                                                        e.preventDefault();
+                                                                    if (e.key === 'Escape') {
                                                                         e.currentTarget.blur();
                                                                     }
                                                                 }}
                                                                 readOnly={cell?.permission === 'view' || isFormula}
                                                                 rows={1}
-                                                                className={`absolute inset-0 w-full h-full px-3 py-2 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 resize-none overflow-hidden ${col.type === 'currency' && isFocused ? 'pl-8' : ''} ${cell?.permission === 'view' || isFormula ? 'cursor-default bg-gray-50/30' : 'cursor-text'} ${col.type === 'number' || col.type === 'currency' || isFormula ? 'text-right' : ''} ${(cell?.isBold || row.isBold || col.isBold) ? 'font-bold' : ''} ${(cell?.isItalic || row.isItalic || col.isItalic) ? 'italic' : ''}`}
+                                                                className={`absolute inset-0 w-full h-full min-w-0 px-3 py-2 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 resize-none overflow-hidden whitespace-pre-wrap break-all ${col.type === 'currency' && isFocused ? 'pl-8' : ''} ${cell?.permission === 'view' || isFormula ? 'cursor-default bg-gray-50/30' : 'cursor-text'} ${col.type === 'number' || col.type === 'currency' || isFormula ? 'text-right' : ''} ${(cell?.isBold || row.isBold || col.isBold) ? 'font-bold' : ''} ${(cell?.isItalic || row.isItalic || col.isItalic) ? 'italic' : ''}`}
                                                             />
                                                         </div>
                                                     )}
@@ -1929,7 +2036,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
                 <div
                     ref={cellMenuRef}
                     style={{ top: activeCellMenu.y, left: activeCellMenu.x }}
-                    className="fixed mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50 text-gray-700 select-none animate-in fade-in zoom-in-95 duration-100"
+                    className="fixed mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-[300] text-gray-700 select-none animate-in fade-in zoom-in-95 duration-100"
                 >
                     <button onClick={() => handleCellAction('cut', activeCellMenu.rowIndex, activeCellMenu.colId)} className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors">
                         <FiScissors className="w-4 h-4 text-blue-400" /> Cut
@@ -1991,8 +2098,47 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
                 <div
                     ref={rowMenuRef}
                     style={{ top: activeRowMenu.y, left: activeRowMenu.x }}
-                    className="fixed mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50 text-gray-700 select-none animate-in fade-in zoom-in-95 duration-100"
+                    className="fixed mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-[300] text-gray-700 select-none animate-in fade-in zoom-in-95 duration-100"
                 >
+                    {!isNested && (
+                        <>
+                            {nestedSheetsMapping[filteredRows[activeRowMenu.rowIndex]?.id] ? (
+                                <button onClick={() => {
+                                    setActiveNestedSheetId(nestedSheetsMapping[filteredRows[activeRowMenu.rowIndex].id]);
+                                    setActiveRowMenu(null);
+                                }} className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors text-blue-600 font-medium">
+                                    <FiColumns className="w-4 h-4" /> Open Row Details
+                                </button>
+                            ) : (
+                                <button onClick={() => {
+                                    setRowToEnable(activeRowMenu.rowIndex);
+                                    const row = filteredRows[activeRowMenu.rowIndex];
+                                    const rowNo = (row.order !== undefined ? row.order + 1 : activeRowMenu.rowIndex + 1);
+                                    setNewNestedSheetName(`Row ${rowNo} COR`);
+                                    setShowEnableRowModal(true);
+                                    setActiveRowMenu(null);
+                                }} className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors text-blue-600 font-medium">
+                                    <FiColumns className="w-4 h-4" /> Enable Row in Column
+                                </button>
+                            )}
+
+                            {nestedSheetsMapping[filteredRows[activeRowMenu.rowIndex]?.id] && (
+                                <button 
+                                    onClick={() => {
+                                        const row = filteredRows[activeRowMenu.rowIndex];
+                                        const sheetId = nestedSheetsMapping[row.id];
+                                        setRenamingSubSheetId(sheetId);
+                                        setRenamingSubSheetName("Row Detail Sub-Sheet"); // Fallback
+                                        setShowRenameSubSheetModal(true);
+                                        setActiveRowMenu(null);
+                                    }} 
+                                    className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors text-gray-600"
+                                >
+                                    <FiEdit2 className="w-4 h-4 text-gray-400" /> Rename Row Details
+                                </button>
+                            )}
+                        </>
+                    )}
                     <button onClick={() => { 
                         handleCellAction('add_row_above', activeRowMenu.rowIndex, null); 
                         setActiveRowMenu(null); 
@@ -2056,6 +2202,108 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
                     </div>
 
 
+                </div>
+            )}
+
+            {/* Column Context Menu */}
+            {activeColumnMenu && (
+                <div
+                    ref={menuRef}
+                    style={{ top: activeColumnMenu.y, left: activeColumnMenu.x }}
+                    className="fixed mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-[300] text-gray-700 select-none animate-in fade-in zoom-in-95 duration-100"
+                >
+                    <button
+                        onClick={() => handleRenameColumnClick(activeColumnMenu.id)}
+                        className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors"
+                    >
+                        <FiEdit2 className="w-4 h-4 text-gray-400" />
+                        Rename/Edit Column
+                    </button>
+
+                    <div className="my-1 border-t border-gray-100"></div>
+
+                    {/* Column Color Selection */}
+                    <div className="px-4 py-1.5">
+                        <span className="text-xs font-semibold text-gray-500 mb-2 block">Column Color</span>
+                        <div className="flex flex-wrap gap-1.5">
+                            {COLOR_PALETTE.map((color) => (
+                                <button
+                                    key={color.name}
+                                    onClick={() => {
+                                        updateColumnStyle(activeColumnMenu.id, { bgColor: color.value });
+                                        setActiveColumnMenu(null);
+                                    }}
+                                    className="w-5 h-5 rounded hover:scale-110 transition-transform border border-gray-200"
+                                    style={{ backgroundColor: color.value || '#fff' }}
+                                    title={color.name}
+                                >
+                                    {!color.value && <FiX className="w-3 h-3 text-gray-400 mx-auto" />}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="px-4 py-1.5 flex gap-2">
+                        <button 
+                            onClick={() => {
+                                const col = columns.find(c => c.id === activeColumnMenu.id);
+                                if (col) updateColumnStyle(col.id, { isBold: !col.isBold });
+                                setActiveColumnMenu(null);
+                            }}
+                            className={`p-2 rounded hover:bg-gray-100 border transition-colors ${columns.find(c => c.id === activeColumnMenu.id)?.isBold ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                            title="Bold Column"
+                        >
+                            <FiBold className="w-4 h-4" />
+                        </button>
+                        <button 
+                            onClick={() => {
+                                const col = columns.find(c => c.id === activeColumnMenu.id);
+                                if (col) updateColumnStyle(col.id, { isItalic: !col.isItalic });
+                                setActiveColumnMenu(null);
+                            }}
+                            className={`p-2 rounded hover:bg-gray-100 border transition-colors ${columns.find(c => c.id === activeColumnMenu.id)?.isItalic ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                            title="Italic Column"
+                        >
+                            <FiItalic className="w-4 h-4" />
+                        </button>
+                    </div>
+
+                    {(sheetData?.userPermission === 'admin' || sheetData?.userPermission === 'editor') && (
+                        <>
+                            <div className="my-1 border-t border-gray-100"></div>
+                            {columns.find(c => c.id === activeColumnMenu.id)?.type === 'formula' && (
+                                <button
+                                    onClick={() => handleSetFormulaClick(activeColumnMenu.id)}
+                                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors"
+                                >
+                                    <TbMathFunction className="w-4 h-4 text-blue-500" />
+                                    Formula Builder
+                                </button>
+                            )}
+                            <button
+                                onClick={() => handleAddColumnDirection(activeColumnMenu.id, 'left')}
+                                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors"
+                            >
+                                <BiArrowToLeft className="w-4 h-4 text-gray-400" />
+                                Add Column to Left
+                            </button>
+                            <button
+                                onClick={() => handleAddColumnDirection(activeColumnMenu.id, 'right')}
+                                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors"
+                            >
+                                <BiArrowToRight className="w-4 h-4 text-gray-400" />
+                                Add Column to Right
+                            </button>
+                            <div className="my-1 border-t border-gray-100"></div>
+                            <button
+                                onClick={() => handleDeleteClick(columns.find(c => c.id === activeColumnMenu.id))}
+                                className="w-full text-left px-4 py-2 text-sm hover:bg-red-50 text-red-600 flex items-center gap-3 transition-colors"
+                            >
+                                <FiTrash2 className="w-4 h-4 text-red-400" />
+                                Delete Column
+                            </button>
+                        </>
+                    )}
                 </div>
             )}
 
@@ -2721,9 +2969,186 @@ export default function DocumentEditor({ docName, setActivePath, returnPath }) {
                 onConfirm={performDeleteColumn}
                 columnName={columnToDelete?.name}
             />
+            <EnableRowConfirmModal
+                isOpen={showEnableRowModal}
+                onClose={() => setShowEnableRowModal(false)}
+                onConfirm={performEnableRow}
+                value={newNestedSheetName}
+                onChange={setNewNestedSheetName}
+            />
+
+            {/* Nested Spreadsheet Modal */}
+            {activeNestedSheetId && (
+                <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-[95vw] max-w-7xl h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
+                        {/* Recursive Nested Content */}
+                        <div className="flex-1 overflow-hidden relative bg-white">
+                             {/* Close button overlayed or integrated into child header */}
+                             <button
+                                onClick={() => setActiveNestedSheetId(null)}
+                                className="absolute top-4 right-6 z-[310] text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-colors p-1.5 rounded-lg"
+                                title="Close Details"
+                            >
+                                <FiX className="w-6 h-6" />
+                            </button>
+                            <DocumentEditor docName={activeNestedSheetId} isNested={true} />
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <RenameSubSheetModal 
+                isOpen={showRenameSubSheetModal}
+                onClose={() => setShowRenameSubSheetModal(false)}
+                onConfirm={performRenameSubSheet}
+                value={renamingSubSheetName}
+                onChange={setRenamingSubSheetName}
+            />
         </div>
     );
 }
+
+const EnableRowConfirmModal = ({ isOpen, onClose, onConfirm, value, onChange }) => {
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            {/* Glass Backdrop */}
+            <div 
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-all duration-300"
+                onClick={onClose}
+            ></div>
+
+            {/* Modal Content */}
+            <div className="relative w-full max-w-sm bg-[#1a1c23] border border-white/10 rounded-2xl shadow-2xl p-6 overflow-hidden animate-in fade-in zoom-in duration-300">
+                {/* Decorative background element */}
+                <div className="absolute top-0 right-0 -mr-6 -mt-6 w-24 h-24 bg-blue-500/10 blur-2xl rounded-full"></div>
+                <div className="absolute bottom-0 left-0 -ml-6 -mb-6 w-24 h-24 bg-indigo-500/10 blur-2xl rounded-full"></div>
+
+                <div className="flex flex-col items-center text-center space-y-4">
+                    <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center">
+                        <FiColumns className="w-8 h-8 text-blue-500" />
+                    </div>
+
+                    <div className="space-y-4 w-full text-left">
+                        <div className="text-center">
+                            <h3 className="text-xl font-bold text-white tracking-tight">Enable Row in Column</h3>
+                            <p className="text-gray-400 text-sm leading-relaxed mt-1">
+                                Give a name to the detailed view sub-sheet.
+                            </p>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider ml-1">Sub-Sheet Name</label>
+                            <input 
+                                type="text"
+                                value={value}
+                                onChange={(e) => onChange(e.target.value)}
+                                placeholder="Enter name..."
+                                className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                                autoFocus
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex w-full gap-3 mt-2">
+                        <button
+                            onClick={onClose}
+                            className="flex-1 py-3 px-4 rounded-xl border border-white/10 text-gray-300 font-semibold hover:bg-white/5 hover:text-white transition-all transform hover:scale-[1.02] active:scale-95"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={onConfirm}
+                            disabled={!value.trim()}
+                            className="flex-1 py-3 px-4 rounded-xl bg-linear-to-r from-blue-600 to-blue-500 text-white font-semibold shadow-lg shadow-blue-900/40 hover:from-blue-500 hover:to-blue-400 transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:transform-none"
+                        >
+                            Confirm
+                        </button>
+                    </div>
+                </div>
+
+                <button 
+                    onClick={onClose}
+                    className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
+                >
+                    <FiX className="w-5 h-5" />
+                </button>
+            </div>
+        </div>
+    );
+};
+
+const RenameSubSheetModal = ({ isOpen, onClose, onConfirm, value, onChange }) => {
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
+            {/* Glass Backdrop */}
+            <div 
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-all duration-300"
+                onClick={onClose}
+            ></div>
+
+            {/* Modal Content */}
+            <div className="relative w-full max-w-sm bg-[#1a1c23] border border-white/10 rounded-2xl shadow-2xl p-6 overflow-hidden animate-in fade-in zoom-in duration-300">
+                {/* Decorative background element */}
+                <div className="absolute top-0 right-0 -mr-6 -mt-6 w-24 h-24 bg-blue-500/10 blur-2xl rounded-full"></div>
+                <div className="absolute bottom-0 left-0 -ml-6 -mb-6 w-24 h-24 bg-indigo-500/10 blur-2xl rounded-full"></div>
+
+                <div className="flex flex-col items-center text-center space-y-4">
+                    <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center">
+                        <FiEdit2 className="w-8 h-8 text-blue-500" />
+                    </div>
+
+                    <div className="space-y-4 w-full text-left">
+                        <div className="text-center">
+                            <h3 className="text-xl font-bold text-white tracking-tight">Rename Detail View</h3>
+                            <p className="text-gray-400 text-sm leading-relaxed mt-1">
+                                Update the name for this detailed view.
+                            </p>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider ml-1">New Name</label>
+                            <input 
+                                type="text"
+                                value={value}
+                                onChange={(e) => onChange(e.target.value)}
+                                placeholder="Enter name..."
+                                className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                                autoFocus
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex w-full gap-3 mt-2">
+                        <button
+                            onClick={onClose}
+                            className="flex-1 py-3 px-4 rounded-xl border border-white/10 text-gray-300 font-semibold hover:bg-white/5 hover:text-white transition-all transform hover:scale-[1.02] active:scale-95"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={onConfirm}
+                            disabled={!value.trim()}
+                            className="flex-1 py-3 px-4 rounded-xl bg-linear-to-r from-blue-600 to-blue-500 text-white font-semibold shadow-lg shadow-blue-900/40 hover:from-blue-500 hover:to-blue-400 transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
+                        >
+                            Save
+                        </button>
+                    </div>
+                </div>
+
+                <button 
+                    onClick={onClose}
+                    className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
+                >
+                    <FiX className="w-5 h-5" />
+                </button>
+            </div>
+        </div>
+    );
+};
 
 const ColumnUpdateConfirmModal = ({ isOpen, onClose, onConfirm, columnName, isEdit, isTypeChanged }) => {
     if (!isOpen) return null;
