@@ -167,7 +167,9 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             // Populate mapping for nested sheets
             const mapping = {};
             data.grid.forEach(row => {
-                if (row.nestedSheetId) mapping[row.id] = row.nestedSheetId;
+                (row.cells || []).forEach(cell => {
+                    if (cell.nestedSheetId) mapping[`${row.id}_${cell.columnId}`] = cell.nestedSheetId;
+                });
             });
             setNestedSheetsMapping(mapping);
         } catch (error) {
@@ -194,7 +196,9 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             // Populate mapping for nested sheets
             const mapping = {};
             data.grid.forEach(row => {
-                if (row.nestedSheetId) mapping[row.id] = row.nestedSheetId;
+                (row.cells || []).forEach(cell => {
+                    if (cell.nestedSheetId) mapping[`${row.id}_${cell.columnId}`] = cell.nestedSheetId;
+                });
             });
             setNestedSheetsMapping(mapping);
         } catch (error) {
@@ -783,26 +787,32 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
     const performEnableRow = async () => {
         const row = filteredRows[rowToEnable];
-        if (row) {
-            console.log(`Confirmed enabling row in column for row ID: ${row.id}`);
+        const colId = editingColId; // repurposed
+        if (row && colId) {
             try {
-                // Instantly create a backend sheet to act as the child
+                // Create sub-sheet
                 const response = await apiClient.post('/sheets', {
-                    name: newNestedSheetName || `Row ${row.order !== undefined ? row.order + 1 : rowToEnable + 1} Details`,
+                    name: newNestedSheetName || `Cell Details`,
                     folderId: null,
                 });
                 const newDocId = response.data.data.id;
-                setNestedSheetsMapping(prev => ({ ...prev, [row.id]: newDocId }));
+                
+                // Update mapping locally
+                setNestedSheetsMapping(prev => ({ ...prev, [`${row.id}_${colId}`]: newDocId }));
 
-                // Save relationship to backend
-                await apiClient.patch(`/sheets/${docName}/rows/${row.id}/color`, {
+                // Save relationship to cell in backend
+                await apiClient.post(`/sheets/${docName}/cells`, {
+                    rowId: row.id,
+                    columnId: colId,
                     nestedSheetId: newDocId
                 });
+                
+                fetchSheetData();
             } catch(e) { console.error("Error creating nested sheet", e); }
-            await handleCellAction('enable_row_in_column', rowToEnable, null);
         }
         setShowEnableRowModal(false);
         setRowToEnable(null);
+        setEditingColId(null);
     };
 
     const performRenameSubSheet = async () => {
@@ -1752,15 +1762,6 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                             onContextMenu={(e) => handleRowContextMenu(e, index)}
                                         >
                                             <span className="cursor-pointer">{row.order !== undefined ? row.order + 1 : index + 1}</span>
-                                            {nestedSheetsMapping[row.id] && (
-                                                <button 
-                                                    onClick={() => setActiveNestedSheetId(nestedSheetsMapping[row.id])}
-                                                    className="absolute top-0 right-0 text-white bg-blue-500 hover:bg-blue-600 rounded-bl-md p-0.5 shadow-sm transition-colors"
-                                                    title="Open Row Details"
-                                                >
-                                                    <FiColumns className="w-3 h-3" />
-                                                </button>
-                                            )}
                                         </td>
                                         {columns.map((col) => {
                                             const cell = row.cells?.find(c => c.columnId === col.id);
@@ -1810,6 +1811,20 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                                                     <div className="line-clamp-2 opacity-90">{latestCommentPreview.text}</div>
                                                                 </div>
                                                             )}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Cell Sub-Sheet Indicator */}
+                                                    {nestedSheetsMapping[`${row.id}_${col.id}`] && (
+                                                        <div 
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setActiveNestedSheetId(nestedSheetsMapping[`${row.id}_${col.id}`]);
+                                                            }}
+                                                            className="absolute top-0 right-0 z-20 cursor-pointer p-1 bg-blue-500 rounded-bl-md shadow-sm"
+                                                            title="Open Details"
+                                                        >
+                                                            <FiColumns className="w-2.5 h-2.5 text-white" />
                                                         </div>
                                                     )}
                                                     {col.type === 'currency' && isFocused && (
@@ -2041,6 +2056,48 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                     <button onClick={() => handleCellAction('cut', activeCellMenu.rowIndex, activeCellMenu.colId)} className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors">
                         <FiScissors className="w-4 h-4 text-blue-400" /> Cut
                     </button>
+
+                    {!isNested && (
+                        <>
+                            <div className="my-1 border-t border-gray-100"></div>
+                            {nestedSheetsMapping[`${filteredRows[activeCellMenu.rowIndex]?.id}_${activeCellMenu.colId}`] ? (
+                                <>
+                                    <button onClick={() => {
+                                        setActiveNestedSheetId(nestedSheetsMapping[`${filteredRows[activeCellMenu.rowIndex].id}_${activeCellMenu.colId}`]);
+                                        setActiveCellMenu(null);
+                                    }} className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors text-blue-600 font-medium">
+                                        <FiColumns className="w-4 h-4" /> Open Cell Details
+                                    </button>
+                                    <button 
+                                        onClick={() => {
+                                            const row = filteredRows[activeCellMenu.rowIndex];
+                                            const sheetId = nestedSheetsMapping[`${row.id}_${activeCellMenu.colId}`];
+                                            setRenamingSubSheetId(sheetId);
+                                            setRenamingSubSheetName("Cell Detail Sub-Sheet");
+                                            setShowRenameSubSheetModal(true);
+                                            setActiveCellMenu(null);
+                                        }} 
+                                        className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors text-gray-600"
+                                    >
+                                        <FiEdit2 className="w-4 h-4 text-gray-400" /> Rename Cell Details
+                                    </button>
+                                </>
+                            ) : (
+                                <button onClick={() => {
+                                    setRowToEnable(activeCellMenu.rowIndex); // still using this state but repurposed
+                                    setEditingColId(activeCellMenu.colId); // temporarily reuse this for column link
+                                    const row = filteredRows[activeCellMenu.rowIndex];
+                                    const col = columns.find(c => c.id === activeCellMenu.colId);
+                                    const rowNo = (row.order !== undefined ? row.order + 1 : activeCellMenu.rowIndex + 1);
+                                    setNewNestedSheetName(`Row ${rowNo} - ${col?.name} COR`);
+                                    setShowEnableRowModal(true);
+                                    setActiveCellMenu(null);
+                                }} className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors text-blue-600 font-medium">
+                                    <FiColumns className="w-4 h-4" /> Enable Cell Details
+                                </button>
+                            )}
+                        </>
+                    )}
                     <div className="my-1 border-t border-gray-100"></div>
 
                     <div className="px-4 py-1.5">
@@ -2100,45 +2157,6 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                     style={{ top: activeRowMenu.y, left: activeRowMenu.x }}
                     className="fixed mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-[300] text-gray-700 select-none animate-in fade-in zoom-in-95 duration-100"
                 >
-                    {!isNested && (
-                        <>
-                            {nestedSheetsMapping[filteredRows[activeRowMenu.rowIndex]?.id] ? (
-                                <button onClick={() => {
-                                    setActiveNestedSheetId(nestedSheetsMapping[filteredRows[activeRowMenu.rowIndex].id]);
-                                    setActiveRowMenu(null);
-                                }} className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors text-blue-600 font-medium">
-                                    <FiColumns className="w-4 h-4" /> Open Row Details
-                                </button>
-                            ) : (
-                                <button onClick={() => {
-                                    setRowToEnable(activeRowMenu.rowIndex);
-                                    const row = filteredRows[activeRowMenu.rowIndex];
-                                    const rowNo = (row.order !== undefined ? row.order + 1 : activeRowMenu.rowIndex + 1);
-                                    setNewNestedSheetName(`Row ${rowNo} COR`);
-                                    setShowEnableRowModal(true);
-                                    setActiveRowMenu(null);
-                                }} className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors text-blue-600 font-medium">
-                                    <FiColumns className="w-4 h-4" /> Enable Row in Column
-                                </button>
-                            )}
-
-                            {nestedSheetsMapping[filteredRows[activeRowMenu.rowIndex]?.id] && (
-                                <button 
-                                    onClick={() => {
-                                        const row = filteredRows[activeRowMenu.rowIndex];
-                                        const sheetId = nestedSheetsMapping[row.id];
-                                        setRenamingSubSheetId(sheetId);
-                                        setRenamingSubSheetName("Row Detail Sub-Sheet"); // Fallback
-                                        setShowRenameSubSheetModal(true);
-                                        setActiveRowMenu(null);
-                                    }} 
-                                    className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors text-gray-600"
-                                >
-                                    <FiEdit2 className="w-4 h-4 text-gray-400" /> Rename Row Details
-                                </button>
-                            )}
-                        </>
-                    )}
                     <button onClick={() => { 
                         handleCellAction('add_row_above', activeRowMenu.rowIndex, null); 
                         setActiveRowMenu(null); 
