@@ -4,7 +4,7 @@ import {
     FiCornerUpLeft, FiCornerUpRight, FiBold, FiItalic, FiUnderline,
     FiType, FiAlignLeft, FiAlignCenter, FiAlignRight, FiSearch,
     FiChevronDown, FiPlus, FiShare2, FiDownload, FiUser, FiArrowLeft, FiImage, FiX,
-    FiEdit2, FiFilter, FiTrash2, FiScissors, FiCopy, FiColumns, FiAlignJustify, FiArrowUp, FiArrowDown, FiArrowRight, FiList, FiDelete, FiUploadCloud,
+    FiEdit2, FiFilter, FiTrash2, FiScissors, FiCopy, FiClipboard, FiColumns, FiAlignJustify, FiArrowUp, FiArrowDown, FiArrowRight, FiList, FiDelete, FiUploadCloud,
     FiMessageSquare, FiSend, FiCalendar, FiFileText, FiFile, FiExternalLink, FiAlertCircle
 } from "react-icons/fi";
 
@@ -32,15 +32,35 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
     const [newColumnBgColor, setNewColumnBgColor] = useState(null);
     const [newColumnIsBold, setNewColumnIsBold] = useState(false);
     const [newColumnIsItalic, setNewColumnIsItalic] = useState(false);
+    const [newColumnIsDetailedView, setNewColumnIsDetailedView] = useState(false);
     const [newColumnWidth, setNewColumnWidth] = useState(220);
     const [isRowColorPickerOpen, setIsRowColorPickerOpen] = useState(false);
     const [showUpdateConfirmModal, setShowUpdateConfirmModal] = useState(false);
     const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
     const [columnToDelete, setColumnToDelete] = useState(null);
+    const [showPDFDeleteConfirmModal, setShowPDFDeleteConfirmModal] = useState(false);
+    const [pdfToDeleteIndex, setPdfToDeleteIndex] = useState(null);
+    const [showImageDeleteConfirmModal, setShowImageDeleteConfirmModal] = useState(false);
+    const [imageToDeleteIndex, setImageToDeleteIndex] = useState(null);
+    const [showCommentDeleteConfirmModal, setShowCommentDeleteConfirmModal] = useState(false);
+    const [commentToDeleteId, setCommentToDeleteId] = useState(null);
     const [showEnableRowModal, setShowEnableRowModal] = useState(false);
     const [rowToEnable, setRowToEnable] = useState(null);
     const [nestedSheetsMapping, setNestedSheetsMapping] = useState({});
     const [activeNestedSheetId, setActiveNestedSheetId] = useState(null);
+    const [cellClipboard, setCellClipboard] = useState(null);
+
+    // Helper to safely parse column options
+    const parseOptions = (options) => {
+        if (!options) return {};
+        if (typeof options === 'object') return options;
+        try {
+            const parsed = JSON.parse(options);
+            return typeof parsed === 'object' ? (parsed || {}) : {};
+        } catch (e) {
+            return {};
+        }
+    };
 
     // Column resize state
     const [resizingCol, setResizingCol] = useState(null);
@@ -363,6 +383,11 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
     const [renamingSubSheetId, setRenamingSubSheetId] = useState(null);
     const [renamingSubSheetName, setRenamingSubSheetName] = useState('');
 
+    // CC Config State
+    const [isCCConfigModalOpen, setIsCCConfigModalOpen] = useState(false);
+    const [ccTemplateColumns, setCcTemplateColumns] = useState([{ name: '', type: 'text' }]);
+    const [configuringCCColId, setConfiguringCCColId] = useState(null);
+
     // Formula Builder State
     const [isFormulaModalOpen, setIsFormulaModalOpen] = useState(false);
     const [formulaString, setFormulaString] = useState('');
@@ -504,14 +529,19 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         }
     };
 
-    const handleDeleteComment = async (commentId) => {
-        if (commentSubmitting) return;
+    const handleDeleteComment = (commentId) => {
+        setCommentToDeleteId(commentId);
+        setShowCommentDeleteConfirmModal(true);
+    };
+
+    const confirmDeleteComment = async () => {
+        if (!commentToDeleteId || commentSubmitting) return;
         setCommentSubmitting(true);
         try {
             await apiClient.delete(
-                `/sheets/${commentPanelCell.sheetId}/cells/${commentPanelCell.cellId}/comments/${commentId}`
+                `/sheets/${commentPanelCell.sheetId}/cells/${commentPanelCell.cellId}/comments/${commentToDeleteId}`
             );
-            setCommentsList(prev => prev.filter(c => c.id !== commentId));
+            setCommentsList(prev => prev.filter(c => c.id !== commentToDeleteId));
             setCommentCounts(prev => {
                 const newCount = Math.max(0, (prev[commentPanelCell.cellId] || 1) - 1);
                 if (newCount === 0) {
@@ -521,6 +551,8 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                 }
                 return { ...prev, [commentPanelCell.cellId]: newCount };
             });
+            setShowCommentDeleteConfirmModal(false);
+            setCommentToDeleteId(null);
         } catch (err) {
             console.error('Error deleting comment:', err);
             alert('Failed to delete comment.');
@@ -595,6 +627,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         setNewColumnName('');
         setNewColumnType('text');
         setNewColumnWidth(220);
+        setNewColumnIsDetailedView(false);
         setEditingColId(null);
         setIsColumnModalOpen(true);
     };
@@ -607,6 +640,10 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         setNewColumnIsBold(col.isBold || false);
         setNewColumnIsItalic(col.isItalic || false);
         setNewColumnWidth(col.width || 220);
+        
+        const opts = parseOptions(col.options);
+        setNewColumnIsDetailedView(!!opts.isDetailedViewEnabled);
+
         setEditingColId(col.id);
         setIsColumnModalOpen(true);
         setActiveColumnMenu(null);
@@ -655,7 +692,9 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
     const saveColumnToBackend = async (name, type, colId, formulaExpr = undefined, bgColor = null, isBold = false, isItalic = false, width = 220) => {
         try {
             const currencyPayload = type === 'currency' ? { currencyCode: newColumnCurrencyCode } : {};
-            const options = {};
+            const options = {
+                isDetailedViewEnabled: newColumnIsDetailedView
+            };
 
             if (colId) {
                 // Update existing column
@@ -785,15 +824,75 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         setActiveColumnMenu(null);
     };
 
+    const handleOpenOrCreateDetails = async (row, col) => {
+        const mappingKey = `${row.id}_${col.id}`;
+        const existingId = nestedSheetsMapping[mappingKey];
+
+        if (existingId) {
+            setActiveNestedSheetId(existingId);
+            return;
+        }
+
+        // Auto-create sub-sheet
+        try {
+            const cell = row.cells?.find(c => c.columnId === col.id);
+            const cellValue = cell?.computedValue ?? cell?.rawValue;
+            const rowNo = (row.order !== undefined ? row.order + 1 : filteredRows.indexOf(row) + 1);
+            const defaultName = (cellValue && cellValue.toString().trim() !== "") 
+                ? cellValue.toString().trim() 
+                : `${col.name}-${rowNo}`;
+
+            const opts = parseOptions(col.options);
+            const hasTemplate = opts.ccTemplateColumns && Array.isArray(opts.ccTemplateColumns) && opts.ccTemplateColumns.length > 0;
+
+            const response = await apiClient.post('/sheets', {
+                name: defaultName,
+                folderId: null,
+                isDetailedView: true,
+                columns: hasTemplate ? opts.ccTemplateColumns : undefined
+            });
+            const newDocId = response.data.data.id;
+
+            // Update mapping locally
+            setNestedSheetsMapping(prev => ({ ...prev, [mappingKey]: newDocId }));
+
+            // Save relationship to cell in backend
+            await apiClient.post(`/sheets/${docName}/cells`, {
+                rowId: row.id,
+                columnId: col.id,
+                nestedSheetId: newDocId
+            });
+
+            setActiveNestedSheetId(newDocId);
+            fetchSheetData();
+        } catch (e) {
+            console.error("Error auto-creating nested sheet", e);
+            alert("Failed to initialize C.C.");
+        }
+    };
+
     const performEnableRow = async () => {
         const row = filteredRows[rowToEnable];
         const colId = editingColId; // repurposed
         if (row && colId) {
             try {
                 // Create sub-sheet
+                const cell = row.cells?.find(c => c.columnId === colId);
+                const cellValue = cell?.computedValue ?? cell?.rawValue;
+                const rowNo = (row.order !== undefined ? row.order + 1 : filteredRows.indexOf(row) + 1);
+                const col = columns.find(c => c.id === colId);
+                const defaultName = (cellValue && cellValue.toString().trim() !== "") 
+                    ? cellValue.toString().trim() 
+                    : `${col?.name || 'Column'}-${rowNo}`;
+
+                const opts = parseOptions(col.options);
+                const hasTemplate = opts.ccTemplateColumns && Array.isArray(opts.ccTemplateColumns) && opts.ccTemplateColumns.length > 0;
+
                 const response = await apiClient.post('/sheets', {
-                    name: newNestedSheetName || `Cell Details`,
+                    name: newNestedSheetName || defaultName,
                     folderId: null,
+                    isDetailedView: true,
+                    columns: hasTemplate ? opts.ccTemplateColumns : undefined
                 });
                 const newDocId = response.data.data.id;
                 
@@ -806,13 +905,39 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                     columnId: colId,
                     nestedSheetId: newDocId
                 });
-                
+
                 fetchSheetData();
             } catch(e) { console.error("Error creating nested sheet", e); }
         }
         setShowEnableRowModal(false);
         setRowToEnable(null);
         setEditingColId(null);
+    };
+
+    const handleCCConfigConfirm = async () => {
+        if (!configuringCCColId || ccTemplateColumns.length === 0) return;
+        
+        // Filter out empty names if any (though UI should prevent it)
+        const validColumns = ccTemplateColumns.filter(c => c.name.trim() !== "");
+        if (validColumns.length === 0) return;
+
+        const col = columns.find(c => c.id === configuringCCColId);
+        if (col) {
+            const opts = parseOptions(col.options);
+            const newOpts = { 
+                ...opts, 
+                isDetailedViewEnabled: true,
+                ccTemplateColumns: validColumns.map(c => ({
+                    name: c.name.trim(),
+                    type: c.type
+                }))
+            };
+            await updateColumnStyle(col.id, { options: newOpts });
+        }
+        
+        setIsCCConfigModalOpen(false);
+        setConfiguringCCColId(null);
+        setCcTemplateColumns([{ name: '', type: 'text' }]);
     };
 
     const performRenameSubSheet = async () => {
@@ -1027,6 +1152,19 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         await updateCellStyle(row.id, colId, { isItalic: !cell?.isItalic });
                     }
                     break;
+                case 'copy':
+                    if (row && colId) {
+                        const cell = row.cells?.find(c => c.columnId === colId);
+                        setCellClipboard({ rawValue: cell?.rawValue || "" });
+                        console.log("Copied cell data:", cell?.rawValue);
+                    }
+                    break;
+                case 'paste':
+                    if (row && colId && cellClipboard) {
+                        await handleCellChange(row.id, colId, cellClipboard.rawValue);
+                        console.log("Pasted cell data:", cellClipboard.rawValue);
+                    }
+                    break;
                 case 'enable_row_in_column':
                     console.log(`Enabling row in column for row ID: ${row?.id}`);
                     // Add API integration here when business logic is finalized
@@ -1153,10 +1291,20 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         }
     };
 
-    const handleDeleteImage = async (index) => {
-        const newImagesList = activeImageCell.images.filter((_, i) => i !== index);
+    const handleDeleteImage = (index) => {
+        setImageToDeleteIndex(index);
+        setShowImageDeleteConfirmModal(true);
+    };
+
+    const confirmDeleteImage = async () => {
+        if (imageToDeleteIndex === null) return;
+        
+        const newImagesList = activeImageCell.images.filter((_, i) => i !== imageToDeleteIndex);
         setActiveImageCell(prev => ({ ...prev, images: newImagesList }));
         await handleCellChange(activeImageCell.rowId, activeImageCell.colId, JSON.stringify(newImagesList));
+        
+        setShowImageDeleteConfirmModal(false);
+        setImageToDeleteIndex(null);
     };
 
     // --- PDF Upload Logic ---
@@ -1212,10 +1360,20 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         }
     };
 
-    const handleDeletePDF = async (index) => {
-        const newPDFList = activePDFCell.documents.filter((_, i) => i !== index);
+    const handleDeletePDF = (index) => {
+        setPdfToDeleteIndex(index);
+        setShowPDFDeleteConfirmModal(true);
+    };
+
+    const confirmDeletePDF = async () => {
+        if (pdfToDeleteIndex === null) return;
+        
+        const newPDFList = activePDFCell.documents.filter((_, i) => i !== pdfToDeleteIndex);
         setActivePDFCell(prev => ({ ...prev, documents: newPDFList }));
         await handleCellChange(activePDFCell.rowId, activePDFCell.colId, JSON.stringify(newPDFList));
+        
+        setShowPDFDeleteConfirmModal(false);
+        setPdfToDeleteIndex(null);
     };
 
     const handleCellBlur = async (rowId, columnId, value) => {
@@ -1271,7 +1429,8 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             const doc = new jsPDF('landscape');
             doc.text(`${sheetData?.name || 'Spreadsheet'} - Export`, 14, 15);
 
-            const colsToExport = columns.filter(c => exportSelectedColumns[c.id]);
+            const EXCLUDED_TYPES = ['comment', 'pdf', 'multi_image'];
+            const colsToExport = columns.filter(c => exportSelectedColumns[c.id] && !EXCLUDED_TYPES.includes(c.type));
             const tableCols = colsToExport.map(c => ({ header: c.name, dataKey: c.id }));
 
             const tableData = [];
@@ -1317,7 +1476,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                 // Determine row background color (same logic as grid rendering)
                 let computedRowBg = row.rowColor || null;
                 const sourceCol = columns.find(c => {
-                    const opts = typeof c.options === 'string' ? JSON.parse(c.options) : (c.options || {});
+                    const opts = parseOptions(c.options);
                     return opts.isRowColorSource && c.bgColor;
                 });
                 if (sourceCol) {
@@ -1484,8 +1643,9 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
     };
 
     const handleExportPDF = () => {
+        const EXCLUDED_TYPES = ['comment', 'pdf', 'multi_image'];
         const initialMap = {};
-        columns.forEach(c => initialMap[c.id] = true);
+        columns.forEach(c => { initialMap[c.id] = !EXCLUDED_TYPES.includes(c.type); });
         setExportSelectedColumns(initialMap);
         setIsExportModalOpen(true);
     };
@@ -1579,15 +1739,6 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                             <span className="hidden sm:block">Share</span>
                         </button>
                     )}
-                    <button
-                        onClick={handleExportPDF}
-                        className="flex items-center gap-2 px-3 sm:px-4 py-1.5 bg-white/10 hover:bg-white/20 rounded-full text-sm font-medium transition-colors"
-                        title="Export to PDF"
-                    >
-                        <FiFileText className="w-4 h-4" />
-                        <span className="hidden sm:block">Download PDF</span>
-                    </button>
-
                     {/* <button
                         onClick={handleDownloadBackup}
                         className="flex items-center gap-2 px-3 sm:px-4 py-1.5 bg-white/10 hover:bg-white/20 rounded-full text-sm font-medium transition-colors"
@@ -1740,7 +1891,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                 // Determine row background color
                                 let computedRowBg = row.rowColor || 'transparent';
                                 const sourceCol = columns.find(c => {
-                                    const opts = typeof c.options === 'string' ? JSON.parse(c.options) : (c.options || {});
+                                    const opts = parseOptions(c.options);
                                     return opts.isRowColorSource && c.bgColor;
                                 });
                                 if (sourceCol) {
@@ -1815,13 +1966,13 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                                     )}
 
                                                     {/* Cell Sub-Sheet Indicator */}
-                                                    {nestedSheetsMapping[`${row.id}_${col.id}`] && (
+                                                    {(nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) && (
                                                         <div 
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                setActiveNestedSheetId(nestedSheetsMapping[`${row.id}_${col.id}`]);
+                                                                handleOpenOrCreateDetails(row, col);
                                                             }}
-                                                            className="absolute top-0 right-0 z-20 cursor-pointer p-1 bg-blue-500 rounded-bl-md shadow-sm"
+                                                            className="absolute bottom-0 right-0 z-20 cursor-pointer p-1 bg-blue-500 rounded-tl-md shadow-sm"
                                                             title="Open Details"
                                                         >
                                                             <FiColumns className="w-2.5 h-2.5 text-white" />
@@ -1924,13 +2075,13 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                                                 onFocus={() => setFocusedCell({ rowId: row.id, colId: col.id })}
                                                                 onBlur={(e) => handleCellBlur(row.id, col.id, e.target.value)}
                                                                 readOnly={cell?.permission === 'view'}
-                                                                className={`w-full px-3 py-1.5 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 ${cell?.permission === 'view' ? 'cursor-default' : 'cursor-text'} ${(cell?.isBold || row.isBold || col.isBold) ? 'font-bold' : ''} ${(cell?.isItalic || row.isItalic || col.isItalic) ? 'italic' : ''}`}
+                                                                className={`w-full pl-3 ${ (nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-7' : 'pr-3' } py-1.5 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 ${cell?.permission === 'view' ? 'cursor-default' : 'cursor-text'} ${(cell?.isBold || row.isBold || col.isBold) ? 'font-bold' : ''} ${(cell?.isItalic || row.isItalic || col.isItalic) ? 'italic' : ''}`}
                                                             />
                                                         </div>
                                                     ) : (
                                                         <div className="grid w-full min-w-0 relative">
                                                             {/* Ghost div to expand height */}
-                                                            <div className={`invisible px-3 py-2 text-[13px] whitespace-pre-wrap break-all w-full min-w-0 min-h-9 ${(cell?.isBold || row.isBold || col.isBold) ? 'font-bold' : ''} ${(cell?.isItalic || row.isItalic || col.isItalic) ? 'italic' : ''}`}>
+                                                            <div className={`invisible pl-3 ${ (nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-7' : 'pr-3' } py-2 text-[13px] whitespace-pre-wrap break-all w-full min-w-0 min-h-9 ${(cell?.isBold || row.isBold || col.isBold) ? 'font-bold' : ''} ${(cell?.isItalic || row.isItalic || col.isItalic) ? 'italic' : ''}`}>
                                                                 {displayVal || ' '}
                                                             </div>
                                                             <textarea
@@ -1946,7 +2097,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                                                 }}
                                                                 readOnly={cell?.permission === 'view' || isFormula}
                                                                 rows={1}
-                                                                className={`absolute inset-0 w-full h-full min-w-0 px-3 py-2 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 resize-none overflow-hidden whitespace-pre-wrap break-all ${col.type === 'currency' && isFocused ? 'pl-8' : ''} ${cell?.permission === 'view' || isFormula ? 'cursor-default bg-gray-50/30' : 'cursor-text'} ${col.type === 'number' || col.type === 'currency' || isFormula ? 'text-right' : ''} ${(cell?.isBold || row.isBold || col.isBold) ? 'font-bold' : ''} ${(cell?.isItalic || row.isItalic || col.isItalic) ? 'italic' : ''}`}
+                                                                className={`absolute inset-0 w-full h-full min-w-0 pl-3 ${ (nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-7' : 'pr-3' } py-2 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 resize-none overflow-hidden whitespace-pre-wrap break-all ${col.type === 'currency' && isFocused ? 'pl-8' : ''} ${cell?.permission === 'view' || isFormula ? 'cursor-default bg-gray-50/30' : 'cursor-text'} ${col.type === 'number' || col.type === 'currency' || isFormula ? 'text-right' : ''} ${(cell?.isBold || row.isBold || col.isBold) ? 'font-bold' : ''} ${(cell?.isItalic || row.isItalic || col.isItalic) ? 'italic' : ''}`}
                                                             />
                                                         </div>
                                                     )}
@@ -2053,14 +2204,21 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                     style={{ top: activeCellMenu.y, left: activeCellMenu.x }}
                     className="fixed mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-[300] text-gray-700 select-none animate-in fade-in zoom-in-95 duration-100"
                 >
-                    <button onClick={() => handleCellAction('cut', activeCellMenu.rowIndex, activeCellMenu.colId)} className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors">
-                        <FiScissors className="w-4 h-4 text-blue-400" /> Cut
+                    <button onClick={() => handleCellAction('copy', activeCellMenu.rowIndex, activeCellMenu.colId)} className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors">
+                        <FiCopy className="w-4 h-4 text-blue-400" /> Copy
+                    </button>
+                    <button 
+                        onClick={() => handleCellAction('paste', activeCellMenu.rowIndex, activeCellMenu.colId)} 
+                        disabled={!cellClipboard}
+                        className={`w-full text-left px-4 py-1.5 text-sm flex items-center gap-3 transition-colors ${cellClipboard ? 'hover:bg-gray-50 text-gray-700' : 'text-gray-300 cursor-not-allowed'}`}
+                    >
+                        <FiClipboard className="w-4 h-4 text-blue-400" /> Paste
                     </button>
 
                     {!isNested && (
                         <>
                             <div className="my-1 border-t border-gray-100"></div>
-                            {nestedSheetsMapping[`${filteredRows[activeCellMenu.rowIndex]?.id}_${activeCellMenu.colId}`] ? (
+                            {nestedSheetsMapping[`${filteredRows[activeCellMenu.rowIndex]?.id}_${activeCellMenu.colId}`] && (
                                 <>
                                     <button onClick={() => {
                                         setActiveNestedSheetId(nestedSheetsMapping[`${filteredRows[activeCellMenu.rowIndex].id}_${activeCellMenu.colId}`]);
@@ -2082,19 +2240,6 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                         <FiEdit2 className="w-4 h-4 text-gray-400" /> Rename Cell Details
                                     </button>
                                 </>
-                            ) : (
-                                <button onClick={() => {
-                                    setRowToEnable(activeCellMenu.rowIndex); // still using this state but repurposed
-                                    setEditingColId(activeCellMenu.colId); // temporarily reuse this for column link
-                                    const row = filteredRows[activeCellMenu.rowIndex];
-                                    const col = columns.find(c => c.id === activeCellMenu.colId);
-                                    const rowNo = (row.order !== undefined ? row.order + 1 : activeCellMenu.rowIndex + 1);
-                                    setNewNestedSheetName(`Row ${rowNo} - ${col?.name} COR`);
-                                    setShowEnableRowModal(true);
-                                    setActiveCellMenu(null);
-                                }} className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors text-blue-600 font-medium">
-                                    <FiColumns className="w-4 h-4" /> Enable Cell Details
-                                </button>
                             )}
                         </>
                     )}
@@ -2237,6 +2382,21 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         <FiEdit2 className="w-4 h-4 text-gray-400" />
                         Rename/Edit Column
                     </button>
+
+                    {!parseOptions(columns.find(c => c.id === activeColumnMenu.id)?.options).isDetailedViewEnabled && (
+                        <button
+                            onClick={() => {
+                                setConfiguringCCColId(activeColumnMenu.id);
+                                setCcTemplateColumns([{ name: '', type: 'text' }]);
+                                setIsCCConfigModalOpen(true);
+                                setActiveColumnMenu(null);
+                            }}
+                            className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors text-blue-600 font-medium"
+                        >
+                            <FiColumns className="w-4 h-4" />
+                            Enable C.C
+                        </button>
+                    )}
 
                     <div className="my-1 border-t border-gray-100"></div>
 
@@ -2419,6 +2579,23 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                         <FiItalic className="w-4 h-4" />
                                     </button>
                                 </div>
+                            </div>
+
+                            <div className="space-y-3 mt-4 pt-4 border-t border-gray-100">
+                                <label className="flex items-center gap-3 cursor-pointer group">
+                                    <div className="relative flex items-center">
+                                        <input 
+                                            type="checkbox"
+                                            checked={newColumnIsDetailedView}
+                                            onChange={(e) => setNewColumnIsDetailedView(e.target.checked)}
+                                            className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer transition-all"
+                                        />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-sm font-semibold text-gray-700 group-hover:text-gray-900 transition-colors">Enable C.C</span>
+                                        <p className="text-[11px] text-gray-400">Shows a sub-sheet indicator on all cells in this column</p>
+                                    </div>
+                                </label>
                             </div>
 
 
@@ -3022,9 +3199,158 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                 value={renamingSubSheetName}
                 onChange={setRenamingSubSheetName}
             />
+
+            <PDFDeleteConfirmModal
+                isOpen={showPDFDeleteConfirmModal}
+                onClose={() => {
+                    setShowPDFDeleteConfirmModal(false);
+                    setPdfToDeleteIndex(null);
+                }}
+                onConfirm={confirmDeletePDF}
+                fileName={pdfToDeleteIndex !== null ? activePDFCell?.documents[pdfToDeleteIndex]?.fileName : ""}
+            />
+
+            <ImageDeleteConfirmModal
+                isOpen={showImageDeleteConfirmModal}
+                onClose={() => {
+                    setShowImageDeleteConfirmModal(false);
+                    setImageToDeleteIndex(null);
+                }}
+                onConfirm={confirmDeleteImage}
+                fileName={imageToDeleteIndex !== null ? activeImageCell?.images[imageToDeleteIndex]?.fileName : ""}
+            />
+
+            <CommentDeleteConfirmModal
+                isOpen={showCommentDeleteConfirmModal}
+                onClose={() => {
+                    setShowCommentDeleteConfirmModal(false);
+                    setCommentToDeleteId(null);
+                }}
+                onConfirm={confirmDeleteComment}
+            />
+            <CCConfigModal
+                isOpen={isCCConfigModalOpen}
+                onClose={() => setIsCCConfigModalOpen(false)}
+                onConfirm={handleCCConfigConfirm}
+                templateColumns={ccTemplateColumns}
+                setTemplateColumns={setCcTemplateColumns}
+                columnTypes={columnTypes}
+            />
         </div>
     );
 }
+
+const CCConfigModal = ({ isOpen, onClose, onConfirm, templateColumns, setTemplateColumns, columnTypes }) => {
+    if (!isOpen) return null;
+
+    const addColumn = () => {
+        setTemplateColumns([...templateColumns, { name: '', type: 'text' }]);
+    };
+
+    const removeColumn = (index) => {
+        setTemplateColumns(templateColumns.filter((_, i) => i !== index));
+    };
+
+    const updateColumn = (index, field, value) => {
+        setTemplateColumns(templateColumns.map((col, i) => 
+            i === index ? { ...col, [field]: value } : col
+        ));
+    };
+
+    return (
+        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4">
+            <div 
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-all duration-300"
+                onClick={onClose}
+            ></div>
+
+            <div className="relative w-full max-w-2xl bg-[#1a1c23] border border-white/10 rounded-2xl shadow-2xl p-6 overflow-hidden animate-in fade-in zoom-in duration-300 flex flex-col max-h-[90vh]">
+                {/* Decorative backgrounds */}
+                <div className="absolute top-0 right-0 -mr-6 -mt-6 w-32 h-32 bg-blue-500/10 blur-2xl rounded-full"></div>
+                <div className="absolute bottom-0 left-0 -ml-6 -mb-6 w-32 h-32 bg-indigo-500/10 blur-2xl rounded-full"></div>
+
+                <div className="flex flex-col space-y-6 flex-1 min-h-0 relative z-10">
+                    <div className="flex items-center justify-between shrink-0">
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-blue-500/10 rounded-xl flex items-center justify-center">
+                                <FiColumns className="w-6 h-6 text-blue-500" />
+                            </div>
+                            <div>
+                                <h3 className="text-xl font-bold text-white tracking-tight">Set C.C Template</h3>
+                                <p className="text-gray-400 text-sm">Configure default columns for all cell details in this column.</p>
+                            </div>
+                        </div>
+                        <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors">
+                            <FiX className="w-6 h-6" />
+                        </button>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-4">
+                        {templateColumns.map((col, idx) => (
+                            <div key={idx} className="bg-white/5 border border-white/10 rounded-xl p-4 flex flex-col gap-4 animate-in slide-in-from-top-2 duration-200">
+                                <div className="flex items-center justify-between gap-4">
+                                    <div className="flex-1 space-y-1.5">
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Column Name</label>
+                                        <input 
+                                            type="text"
+                                            value={col.name}
+                                            onChange={(e) => updateColumn(idx, 'name', e.target.value)}
+                                            placeholder="Enter column name..."
+                                            className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all placeholder:text-gray-600"
+                                        />
+                                    </div>
+                                    <div className="w-48 space-y-1.5">
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Type</label>
+                                        <select 
+                                            value={col.type}
+                                            onChange={(e) => updateColumn(idx, 'type', e.target.value)}
+                                            className="w-full px-4 py-2 bg-[#1a1c23] border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                                        >
+                                            {columnTypes.map(t => (
+                                                <option key={t.id} value={t.id}>{t.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <button 
+                                        onClick={() => removeColumn(idx)}
+                                        className="mt-6 p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
+                                        title="Remove Column"
+                                    >
+                                        <FiTrash2 className="w-5 h-5" />
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                        
+                        <button
+                            onClick={addColumn}
+                            className="w-full py-3 border-2 border-dashed border-white/10 rounded-xl text-gray-400 hover:text-white hover:border-blue-500/50 hover:bg-blue-500/5 transition-all flex items-center justify-center gap-2 group"
+                        >
+                            <FiPlus className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                            <span className="font-semibold">Add New Column</span>
+                        </button>
+                    </div>
+
+                    <div className="flex gap-3 pt-4 border-t border-white/10 shrink-0">
+                        <button
+                            onClick={onClose}
+                            className="flex-1 py-3 px-4 rounded-xl border border-white/10 text-gray-300 font-semibold hover:bg-white/5 hover:text-white transition-all"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={onConfirm}
+                            disabled={templateColumns.length === 0 || templateColumns.some(c => !c.name.trim())}
+                            className="flex-[2] py-3 px-4 rounded-xl bg-linear-to-r from-blue-600 to-blue-500 text-white font-bold shadow-lg shadow-blue-900/40 hover:from-blue-500 hover:to-blue-400 transition-all transform hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:transform-none flex items-center justify-center gap-2"
+                        >
+                            Apply to all cells in this column
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const EnableRowConfirmModal = ({ isOpen, onClose, onConfirm, value, onChange }) => {
     if (!isOpen) return null;
@@ -3052,7 +3378,7 @@ const EnableRowConfirmModal = ({ isOpen, onClose, onConfirm, value, onChange }) 
                         <div className="text-center">
                             <h3 className="text-xl font-bold text-white tracking-tight">Enable Row in Column</h3>
                             <p className="text-gray-400 text-sm leading-relaxed mt-1">
-                                Give a name to the detailed view sub-sheet.
+                                Give a name to the C.C sub-sheet.
                             </p>
                         </div>
 
@@ -3123,7 +3449,7 @@ const RenameSubSheetModal = ({ isOpen, onClose, onConfirm, value, onChange }) =>
                         <div className="text-center">
                             <h3 className="text-xl font-bold text-white tracking-tight">Rename Detail View</h3>
                             <p className="text-gray-400 text-sm leading-relaxed mt-1">
-                                Update the name for this detailed view.
+                                Update the name for this C.C.
                             </p>
                         </div>
 
@@ -3372,6 +3698,177 @@ const PDFExportModal = ({ isOpen, onClose, onExport, columns, selectedColumns, s
                         Download PDF
                     </button>
                 </div>
+            </div>
+        </div>
+    );
+};
+
+const PDFDeleteConfirmModal = ({ isOpen, onClose, onConfirm, fileName }) => {
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
+            {/* Glass Backdrop */}
+            <div 
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-all duration-300"
+                onClick={onClose}
+            ></div>
+
+            {/* Modal Content */}
+            <div className="relative w-full max-w-sm bg-[#1a1c23] border border-white/10 rounded-2xl shadow-2xl p-6 overflow-hidden animate-in fade-in zoom-in duration-300">
+                {/* Decorative background element */}
+                <div className="absolute top-0 right-0 -mr-6 -mt-6 w-24 h-24 bg-red-500/10 blur-2xl rounded-full"></div>
+                <div className="absolute bottom-0 left-0 -ml-6 -mb-6 w-24 h-24 bg-indigo-500/10 blur-2xl rounded-full"></div>
+
+                <div className="flex flex-col items-center text-center space-y-4">
+                    <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center">
+                        <FiTrash2 className="w-8 h-8 text-red-500" />
+                    </div>
+
+                    <div className="space-y-2">
+                        <h3 className="text-xl font-bold text-white tracking-tight">Delete PDF Document</h3>
+                        <p className="text-gray-400 text-sm leading-relaxed">
+                            Are you sure you want to permanently delete <span className="text-white font-semibold">"{fileName}"</span>? <br />
+                            <span className="text-red-400/80 font-medium">This action cannot be undone.</span>
+                        </p>
+                    </div>
+
+                    <div className="flex w-full gap-3 mt-4">
+                        <button
+                            onClick={onClose}
+                            className="flex-1 py-3 px-4 rounded-xl border border-white/10 text-gray-300 font-semibold hover:bg-white/5 hover:text-white transition-all transform hover:scale-[1.02] active:scale-95"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={onConfirm}
+                            className="flex-1 py-3 px-4 rounded-xl bg-linear-to-r from-red-600 to-red-500 text-white font-semibold shadow-lg shadow-red-900/40 hover:from-red-500 hover:to-red-400 transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2"
+                        >
+                            Delete Now
+                        </button>
+                    </div>
+                </div>
+
+                <button 
+                    onClick={onClose}
+                    className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
+                >
+                    <FiX className="w-5 h-5" />
+                </button>
+            </div>
+        </div>
+    );
+};
+
+const ImageDeleteConfirmModal = ({ isOpen, onClose, onConfirm, fileName }) => {
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
+            {/* Glass Backdrop */}
+            <div 
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-all duration-300"
+                onClick={onClose}
+            ></div>
+
+            {/* Modal Content */}
+            <div className="relative w-full max-w-sm bg-[#1a1c23] border border-white/10 rounded-2xl shadow-2xl p-6 overflow-hidden animate-in fade-in zoom-in duration-300">
+                {/* Decorative background element */}
+                <div className="absolute top-0 right-0 -mr-6 -mt-6 w-24 h-24 bg-red-500/10 blur-2xl rounded-full"></div>
+                <div className="absolute bottom-0 left-0 -ml-6 -mb-6 w-24 h-24 bg-indigo-500/10 blur-2xl rounded-full"></div>
+
+                <div className="flex flex-col items-center text-center space-y-4">
+                    <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center">
+                        <FiTrash2 className="w-8 h-8 text-red-500" />
+                    </div>
+
+                    <div className="space-y-2">
+                        <h3 className="text-xl font-bold text-white tracking-tight">Delete Image</h3>
+                        <p className="text-gray-400 text-sm leading-relaxed">
+                            Are you sure you want to permanently delete <span className="text-white font-semibold">"{fileName}"</span>? <br />
+                            <span className="text-red-400/80 font-medium">This action cannot be undone.</span>
+                        </p>
+                    </div>
+
+                    <div className="flex w-full gap-3 mt-4">
+                        <button
+                            onClick={onClose}
+                            className="flex-1 py-3 px-4 rounded-xl border border-white/10 text-gray-300 font-semibold hover:bg-white/5 hover:text-white transition-all transform hover:scale-[1.02] active:scale-95"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={onConfirm}
+                            className="flex-1 py-3 px-4 rounded-xl bg-linear-to-r from-red-600 to-red-500 text-white font-semibold shadow-lg shadow-red-900/40 hover:from-red-500 hover:to-red-400 transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2"
+                        >
+                            Delete Now
+                        </button>
+                    </div>
+                </div>
+
+                <button 
+                    onClick={onClose}
+                    className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
+                >
+                    <FiX className="w-5 h-5" />
+                </button>
+            </div>
+        </div>
+    );
+};
+
+const CommentDeleteConfirmModal = ({ isOpen, onClose, onConfirm }) => {
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
+            {/* Glass Backdrop */}
+            <div 
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-all duration-300"
+                onClick={onClose}
+            ></div>
+
+            {/* Modal Content */}
+            <div className="relative w-full max-w-sm bg-[#1a1c23] border border-white/10 rounded-2xl shadow-2xl p-6 overflow-hidden animate-in fade-in zoom-in duration-300">
+                {/* Decorative background element */}
+                <div className="absolute top-0 right-0 -mr-6 -mt-6 w-24 h-24 bg-red-500/10 blur-2xl rounded-full"></div>
+                <div className="absolute bottom-0 left-0 -ml-6 -mb-6 w-24 h-24 bg-indigo-500/10 blur-2xl rounded-full"></div>
+
+                <div className="flex flex-col items-center text-center space-y-4">
+                    <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center">
+                        <FiTrash2 className="w-8 h-8 text-red-500" />
+                    </div>
+
+                    <div className="space-y-2">
+                        <h3 className="text-xl font-bold text-white tracking-tight">Delete Comment</h3>
+                        <p className="text-gray-400 text-sm leading-relaxed">
+                            Are you sure you want to permanently delete this comment? <br />
+                            <span className="text-red-400/80 font-medium">This action cannot be undone.</span>
+                        </p>
+                    </div>
+
+                    <div className="flex w-full gap-3 mt-4">
+                        <button
+                            onClick={onClose}
+                            className="flex-1 py-3 px-4 rounded-xl border border-white/10 text-gray-300 font-semibold hover:bg-white/5 hover:text-white transition-all transform hover:scale-[1.02] active:scale-95"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={onConfirm}
+                            className="flex-1 py-3 px-4 rounded-xl bg-linear-to-r from-red-600 to-red-500 text-white font-semibold shadow-lg shadow-red-900/40 hover:from-red-500 hover:to-red-400 transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2"
+                        >
+                            Delete Now
+                        </button>
+                    </div>
+                </div>
+
+                <button 
+                    onClick={onClose}
+                    className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
+                >
+                    <FiX className="w-5 h-5" />
+                </button>
             </div>
         </div>
     );
