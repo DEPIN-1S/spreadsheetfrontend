@@ -1730,6 +1730,15 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                 </div>
 
                 <div className="flex items-center gap-2 sm:gap-3">
+                    {!isNested && (
+                        <button
+                            onClick={handleExportPDF}
+                            className="sm:hidden flex items-center justify-center p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors"
+                            title="Download PDF"
+                        >
+                            <FiDownload className="w-4 h-4 text-white" />
+                        </button>
+                    )}
                     {(sheetData?.userPermission === 'admin') && (
                         <button
                             onClick={() => setIsShareModalOpen(true)}
@@ -1758,7 +1767,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                 {!isNested && (
                     <button
                         onClick={handleExportPDF}
-                        className="flex items-center gap-2 px-4 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-full text-sm font-medium transition-colors border border-blue-200"
+                        className="hidden sm:flex items-center gap-2 px-4 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-full text-sm font-medium transition-colors border border-blue-200"
                     >
                         <FiDownload className="w-4 h-4" />
                         Download PDF
@@ -2383,7 +2392,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         Rename/Edit Column
                     </button>
 
-                    {!parseOptions(columns.find(c => c.id === activeColumnMenu.id)?.options).isDetailedViewEnabled && (
+                    {!isNested && !parseOptions(columns.find(c => c.id === activeColumnMenu.id)?.options).isDetailedViewEnabled && (
                         <button
                             onClick={() => {
                                 setConfiguringCCColId(activeColumnMenu.id);
@@ -2502,7 +2511,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                             </button>
                         </div>
 
-                        <div className="p-6 space-y-6">
+                        <div className="p-6 space-y-6 overflow-y-auto flex-1 custom-scrollbar">
                             <div className="space-y-4">
                                 <div className="space-y-1.5">
                                     <label className="block text-sm font-semibold text-gray-700">
@@ -2581,22 +2590,24 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                 </div>
                             </div>
 
-                            <div className="space-y-3 mt-4 pt-4 border-t border-gray-100">
-                                <label className="flex items-center gap-3 cursor-pointer group">
-                                    <div className="relative flex items-center">
-                                        <input 
-                                            type="checkbox"
-                                            checked={newColumnIsDetailedView}
-                                            onChange={(e) => setNewColumnIsDetailedView(e.target.checked)}
-                                            className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer transition-all"
-                                        />
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-sm font-semibold text-gray-700 group-hover:text-gray-900 transition-colors">Enable C.C</span>
-                                        <p className="text-[11px] text-gray-400">Shows a sub-sheet indicator on all cells in this column</p>
-                                    </div>
-                                </label>
-                            </div>
+                            {!isNested && (
+                                <div className="space-y-3 mt-4 pt-4 border-t border-gray-100">
+                                    <label className="flex items-center gap-3 cursor-pointer group">
+                                        <div className="relative flex items-center">
+                                            <input 
+                                                type="checkbox"
+                                                checked={newColumnIsDetailedView}
+                                                onChange={(e) => setNewColumnIsDetailedView(e.target.checked)}
+                                                className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer transition-all"
+                                            />
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-sm font-semibold text-gray-700 group-hover:text-gray-900 transition-colors">Enable C.C</span>
+                                            <p className="text-[11px] text-gray-400">Shows a sub-sheet indicator on all cells in this column</p>
+                                        </div>
+                                    </label>
+                                </div>
+                            )}
 
 
                         </div>
