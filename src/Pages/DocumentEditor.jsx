@@ -17,6 +17,7 @@ import { formatCurrency, parseCurrencyInput, SUPPORTED_CURRENCIES, getCurrencySy
 import ShareModal from "../components/ShareModal";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { useClipboard } from "../context/ClipboardContext";
 
 export default function DocumentEditor({ docName, setActivePath, returnPath, isNested = false }) {
     const [sheetData, setSheetData] = useState(null);
@@ -48,7 +49,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
     const [rowToEnable, setRowToEnable] = useState(null);
     const [nestedSheetsMapping, setNestedSheetsMapping] = useState({});
     const [activeNestedSheetId, setActiveNestedSheetId] = useState(null);
-    const [cellClipboard, setCellClipboard] = useState(null);
+    const { cellClipboard, setCellClipboard } = useClipboard();
 
     // Helper to safely parse column options
     const parseOptions = (options) => {
@@ -2213,9 +2214,16 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                     style={{ top: activeCellMenu.y, left: activeCellMenu.x }}
                     className="fixed mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-[300] text-gray-700 select-none animate-in fade-in zoom-in-95 duration-100"
                 >
-                    <button onClick={() => handleCellAction('copy', activeCellMenu.rowIndex, activeCellMenu.colId)} className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors">
-                        <FiCopy className="w-4 h-4 text-blue-400" /> Copy
-                    </button>
+                    {(() => {
+                        const cell = filteredRows[activeCellMenu.rowIndex]?.cells?.find(c => c.columnId === activeCellMenu.colId);
+                        const hasData = cell?.rawValue && cell.rawValue.trim() !== "";
+                        if (!hasData) return null;
+                        return (
+                            <button onClick={() => handleCellAction('copy', activeCellMenu.rowIndex, activeCellMenu.colId)} className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors">
+                                <FiCopy className="w-4 h-4 text-blue-400" /> Copy
+                            </button>
+                        );
+                    })()}
                     <button 
                         onClick={() => handleCellAction('paste', activeCellMenu.rowIndex, activeCellMenu.colId)} 
                         disabled={!cellClipboard}

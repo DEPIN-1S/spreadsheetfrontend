@@ -7,6 +7,7 @@ import Messages from "./Pages/Messages";
 import DocumentEditor from "./Pages/DocumentEditor";
 import AuditLogs from "./Pages/AuditLogs";
 import Login from "./Pages/Login";
+import { ClipboardProvider } from "./context/ClipboardContext";
 
 function App() {
     const [isCollapsed, setIsCollapsed] = useState(false);
@@ -26,60 +27,62 @@ function App() {
     const isLogin = activePath === "/login";
 
     return (
-        <div className="flex min-h-screen bg-gray-50">
-            {!isEditor && !isLogin && (
-                <Sidebar
-                    isCollapsed={isCollapsed}
-                    toggleCollapse={toggleCollapse}
-                    mobileOpen={mobileOpen}
-                    setMobileOpen={setMobileOpen}
-                    activePath={activePath}
-                    setActivePath={setActivePath}
-                />
-            )}
-            {/* Main content offset by sidebar width */}
-            <div
-                className={`flex-1 overflow-hidden transition-all duration-300 ${(!isEditor && !isLogin) ? (isCollapsed ? "lg:ml-20" : "lg:ml-64") : "max-w-[100vw]"}`}
-            >
-                {activePath === "/login" && <Login setActivePath={setActivePath} />}
-                {activePath === "/my-files" && (
-                    <MyFiles
+        <ClipboardProvider>
+            <div className="flex min-h-screen bg-gray-50">
+                {!isEditor && !isLogin && (
+                    <Sidebar
+                        isCollapsed={isCollapsed}
+                        toggleCollapse={toggleCollapse}
+                        mobileOpen={mobileOpen}
                         setMobileOpen={setMobileOpen}
+                        activePath={activePath}
                         setActivePath={setActivePath}
-                        setCurrentDocName={setCurrentDocName}
-                        setReturnPath={setReturnPath}
-                        currentFolderId={myFilesCurrentFolderId}
-                        setCurrentFolderId={setMyFilesCurrentFolderId}
-                        path={myFilesPath}
-                        setPath={setMyFilesPath}
                     />
                 )}
-                {activePath === "/shared" && (
-                    <SharedWithMe
-                        setMobileOpen={setMobileOpen}
-                        setActivePath={setActivePath}
-                        setCurrentDocName={setCurrentDocName}
-                        setReturnPath={setReturnPath}
-                    />
-                )}
-                {activePath === "/users" && (
-                    <Users setMobileOpen={setMobileOpen} />
-                )}
-                {activePath === "/audit" && (
-                    <AuditLogs setMobileOpen={setMobileOpen} />
-                )}
-                {activePath === "/messages" && (
-                    <Messages setMobileOpen={setMobileOpen} />
-                )}
-                {activePath === "/document-editor" && (
-                    <DocumentEditor
-                        docName={currentDocName}
-                        setActivePath={setActivePath}
-                        returnPath={returnPath}
-                    />
-                )}
+                {/* Main content offset by sidebar width */}
+                <div
+                    className={`flex-1 overflow-hidden transition-all duration-300 ${(!isEditor && !isLogin) ? (isCollapsed ? "lg:ml-20" : "lg:ml-64") : "max-w-[100vw]"}`}
+                >
+                    {activePath === "/login" && <Login setActivePath={setActivePath} />}
+                    {activePath === "/my-files" && (
+                        <MyFiles
+                            setMobileOpen={setMobileOpen}
+                            setActivePath={setActivePath}
+                            setCurrentDocName={setCurrentDocName}
+                            setReturnPath={setReturnPath}
+                            currentFolderId={myFilesCurrentFolderId}
+                            setCurrentFolderId={setMyFilesCurrentFolderId}
+                            path={myFilesPath}
+                            setPath={setMyFilesPath}
+                        />
+                    )}
+                    {activePath === "/shared" && (
+                        <SharedWithMe
+                            setMobileOpen={setMobileOpen}
+                            setActivePath={setActivePath}
+                            setCurrentDocName={setCurrentDocName}
+                            setReturnPath={setReturnPath}
+                        />
+                    )}
+                    {activePath === "/users" && (
+                        <Users setMobileOpen={setMobileOpen} />
+                    )}
+                    {activePath === "/audit" && (
+                        <AuditLogs setMobileOpen={setMobileOpen} />
+                    )}
+                    {activePath === "/messages" && (
+                        <Messages setMobileOpen={setMobileOpen} />
+                    )}
+                    {activePath === "/document-editor" && (
+                        <DocumentEditor
+                            docName={currentDocName}
+                            setActivePath={setActivePath}
+                            returnPath={returnPath}
+                        />
+                    )}
+                </div>
             </div>
-        </div>
+        </ClipboardProvider>
     );
 }
 
