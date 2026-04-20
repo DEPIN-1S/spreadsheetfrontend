@@ -144,8 +144,10 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
     };
 
     const handleShare = async () => {
-        const phone = selectedUser ? selectedUser.phone : searchQuery.trim();
-        if (!phone) return;
+        const phone = selectedUser ? selectedUser.phone : (searchQuery.trim().includes('@') ? null : searchQuery.trim());
+        const email = selectedUser ? selectedUser.email : (searchQuery.trim().includes('@') ? searchQuery.trim() : null);
+
+        if (!phone && !email) return;
         setSharing(true);
         setError("");
         try {
@@ -157,6 +159,7 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
 
             await apiClient.post(`/sheets/${sheetId}/share`, {
                 phone,
+                email,
                 role,
                 columnAccess: filteredAccess
             });
