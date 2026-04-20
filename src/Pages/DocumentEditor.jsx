@@ -14,7 +14,7 @@ import { TbMathFunction } from "react-icons/tb";
 import apiClient from "../api/apiClient";
 import { getMediaUrl } from "../utils/media";
 import { formatCurrency, parseCurrencyInput, SUPPORTED_CURRENCIES, getCurrencySymbol } from "../utils/currencyUtils";
-import ShareModal from "../components/ShareModal";
+import ShareModal from "../Components/ShareModal";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { useClipboard } from "../context/ClipboardContext";
