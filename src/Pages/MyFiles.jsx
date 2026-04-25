@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { FiSearch, FiPlus, FiFileText, FiFolder, FiMenu, FiX, FiMoreVertical, FiEdit2, FiTrash2, FiChevronRight, FiMove } from "react-icons/fi";
+import { FiSearch, FiPlus, FiFileText, FiFolder, FiMenu, FiX, FiMoreVertical, FiEdit2, FiTrash2, FiChevronRight, FiMove, FiArrowUp, FiArrowDown } from "react-icons/fi";
 import { BsFileEarmarkSpreadsheet } from "react-icons/bs";
 import apiClient from "../api/apiClient";
 import Swal from "sweetalert2";
@@ -11,6 +11,9 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
     const [newFolderName, setNewFolderName] = useState("");
     const [newDocName, setNewDocName] = useState("");
     const [searchQuery, setSearchQuery] = useState("");
+    const [sortOption, setSortOption] = useState('name_asc'); // 'name_asc' | 'name_desc' | 'date_newest' | 'date_oldest'
+    const [isSortOpen, setIsSortOpen] = useState(false);
+    const sortRef = useRef(null);
 
     // Unified Items State
     const [items, setItems] = useState([]);
@@ -44,6 +47,7 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                         type: "folder",
                         title: node.name,
                         date: new Date(node.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+                        rawDate: node.createdAt, // kept for accurate date sort
                         parentId: node.parentId
                     });
                     if (node.children && node.children.length > 0) {
@@ -66,6 +70,7 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                     type: "file",
                     title: sheet.name,
                     date: new Date(sheet.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+                    rawDate: sheet.createdAt, // kept for accurate date sort
                     parentId: sheet.folderId || null
                 });
             }
@@ -81,6 +86,17 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
     useEffect(() => {
         fetchItems();
     }, [fetchItems]);
+
+    // Close sort dropdown on outside click
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (sortRef.current && !sortRef.current.contains(e.target)) {
+                setIsSortOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     const handleCreateFolder = async () => {
         if (!newFolderName.trim()) return;
@@ -247,16 +263,36 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
         }
     };
 
-    // Filter items for current view
-    const currentFolders = items.filter(item => {
+    // Sort helper — applied after filter
+    const sortItems = (arr) => {
+        return [...arr].sort((a, b) => {
+            switch (sortOption) {
+                case 'name_asc':  return a.title.localeCompare(b.title);
+                case 'name_desc': return b.title.localeCompare(a.title);
+                case 'date_newest': return new Date(b.rawDate) - new Date(a.rawDate);
+                case 'date_oldest': return new Date(a.rawDate) - new Date(b.rawDate);
+                default: return 0;
+            }
+        });
+    };
+
+    // Filter items for current view, then sort
+    const currentFolders = sortItems(items.filter(item => {
         if (searchQuery) return item.type === "folder" && item.title.toLowerCase().includes(searchQuery.toLowerCase());
         return item.parentId === currentFolderId && item.type === "folder";
-    });
-    const currentFiles = items.filter(item => {
+    }));
+    const currentFiles = sortItems(items.filter(item => {
         if (searchQuery) return item.type === "file" && item.title.toLowerCase().includes(searchQuery.toLowerCase());
         return item.parentId === currentFolderId && item.type === "file";
-    });
+    }));
     const isFolderEmpty = currentFolders.length === 0 && currentFiles.length === 0;
+
+    const SORT_OPTIONS = [
+        { key: 'name_asc',     label: 'Name A → Z' },
+        { key: 'name_desc',    label: 'Name Z → A' },
+        { key: 'date_newest',  label: 'Newest First' },
+        { key: 'date_oldest',  label: 'Oldest First' },
+    ];
 
     // Helper for Move Modal to get all folders except active item and its descendents
     const getValidDestinationFolders = () => {
@@ -317,6 +353,52 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                                 placeholder="Search file, folder ..."
                                 className="pl-9 pr-4 py-2 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-64"
                             />
+                        </div>
+
+                        {/* Sort Button */}
+                        <div className="relative" ref={sortRef}>
+                            <button
+                                id="sort-button"
+                                onClick={() => setIsSortOpen(prev => !prev)}
+                                className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium border transition-colors ${
+                                    sortOption !== 'name_asc'
+                                        ? 'bg-blue-50 border-blue-300 text-blue-700'
+                                        : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+                                }`}
+                            >
+                                {sortOption === 'name_asc' || sortOption === 'date_newest'
+                                    ? <FiArrowUp className="w-3.5 h-3.5" />
+                                    : <FiArrowDown className="w-3.5 h-3.5" />}
+                                Sort
+                                {sortOption !== 'name_asc' && (
+                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 ml-0.5" />
+                                )}
+                            </button>
+
+                            {isSortOpen && (
+                                <div className="absolute right-0 mt-2 w-44 bg-white rounded-xl shadow-lg border border-gray-100 py-1.5 z-20">
+                                    <p className="px-3 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Sort by</p>
+                                    {SORT_OPTIONS.map(opt => (
+                                        <button
+                                            key={opt.key}
+                                            id={`sort-option-${opt.key}`}
+                                            onClick={() => { setSortOption(opt.key); setIsSortOpen(false); }}
+                                            className={`w-full flex items-center justify-between px-3 py-2 text-sm text-left transition-colors ${
+                                                sortOption === opt.key
+                                                    ? 'text-blue-600 bg-blue-50 font-medium'
+                                                    : 'text-gray-700 hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            {opt.label}
+                                            {sortOption === opt.key && (
+                                                <svg className="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                                                </svg>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
 

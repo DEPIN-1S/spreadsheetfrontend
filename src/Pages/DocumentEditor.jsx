@@ -334,6 +334,17 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             document.removeEventListener('mousedown', handleClickOutside);
         };
     }, []);
+
+    // Close sort panel on outside click
+    useEffect(() => {
+        const handleSortOutside = (e) => {
+            if (sortPanelRef.current && !sortPanelRef.current.contains(e.target)) {
+                setIsSortPanelOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleSortOutside);
+        return () => document.removeEventListener('mousedown', handleSortOutside);
+    }, []);
     
     // Ensure context menus stay within viewport
     useEffect(() => {
@@ -415,6 +426,26 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
     // Column Filter State: { [colId]: filterText }
     const [columnFilters, setColumnFilters] = useState({});
+
+    // Column Sort State — persisted per-sheet in localStorage so it survives navigation
+    const [sortConfig, setSortConfig] = useState(() => {
+        try {
+            const saved = localStorage.getItem(`sortConfig_${docName}`);
+            return saved ? JSON.parse(saved) : { colId: null, direction: 'asc' };
+        } catch {
+            return { colId: null, direction: 'asc' };
+        }
+    });
+    const [isSortPanelOpen, setIsSortPanelOpen] = useState(false);
+    const [pendingSortConfig, setPendingSortConfig] = useState({ colId: '', direction: 'asc' });
+    const sortPanelRef = useRef(null);
+
+    // Save sortConfig to localStorage whenever it changes
+    useEffect(() => {
+        if (docName) {
+            localStorage.setItem(`sortConfig_${docName}`, JSON.stringify(sortConfig));
+        }
+    }, [sortConfig, docName]);
 
     // ── Comment State ─────────────────────────────────────────────────────────
     const [commentCounts, setCommentCounts] = useState({});          // { cellId: count }
@@ -587,6 +618,61 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             return val.includes(filterText.toLowerCase());
         });
     });
+
+    // Sort rows — stacked on top of filteredRows, safe and independent
+    const sortedRows = useMemo(() => {
+        if (!sortConfig.colId) return filteredRows;
+        const col = columns.find(c => c.id === sortConfig.colId);
+        if (!col) return filteredRows;
+
+        const UNSORTABLE = ['multi_image', 'pdf', 'comment'];
+        if (UNSORTABLE.includes(col.type)) return filteredRows;
+
+        return [...filteredRows].sort((a, b) => {
+            const cellA = a.cells?.find(c => c.columnId === sortConfig.colId);
+            const cellB = b.cells?.find(c => c.columnId === sortConfig.colId);
+            const rawA = cellA?.computedValue ?? cellA?.rawValue ?? '';
+            const rawB = cellB?.computedValue ?? cellB?.rawValue ?? '';
+
+            // Empty values always go to the bottom regardless of direction
+            const emptyA = rawA === '' || rawA === null || rawA === undefined;
+            const emptyB = rawB === '' || rawB === null || rawB === undefined;
+            if (emptyA && emptyB) return 0;
+            if (emptyA) return 1;
+            if (emptyB) return -1;
+
+            const dir = sortConfig.direction === 'asc' ? 1 : -1;
+
+            if (col.type === 'number' || col.type === 'formula') {
+                return (parseFloat(rawA) - parseFloat(rawB)) * dir;
+            }
+            if (col.type === 'currency') {
+                const numA = parseFloat(String(rawA).replace(/[^0-9.-]/g, ''));
+                const numB = parseFloat(String(rawB).replace(/[^0-9.-]/g, ''));
+                return (numA - numB) * dir;
+            }
+            if (col.type === 'date') {
+                return (new Date(rawA) - new Date(rawB)) * dir;
+            }
+            // Default: text sort
+            return String(rawA).localeCompare(String(rawB)) * dir;
+        });
+    }, [filteredRows, sortConfig, columns]);
+
+    // Toggle sort on column header click
+    const handleColumnSort = (colId) => {
+        const UNSORTABLE = ['multi_image', 'pdf', 'comment'];
+        const col = columns.find(c => c.id === colId);
+        if (!col || UNSORTABLE.includes(col.type)) return;
+
+        setSortConfig(prev => {
+            if (prev.colId === colId) {
+                if (prev.direction === 'asc') return { colId, direction: 'desc' };
+                return { colId: null, direction: 'asc' }; // third click clears sort
+            }
+            return { colId, direction: 'asc' };
+        });
+    };
 
     const getColumnCalcValue = (colId, mode) => {
         const numericValues = rows
@@ -1774,6 +1860,120 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         Download PDF
                     </button>
                 )}
+
+                {/* Sort Button + Panel */}
+                <div className="relative" ref={sortPanelRef}>
+                    <button
+                        id="toolbar-sort-button"
+                        onClick={() => {
+                            setPendingSortConfig({ colId: sortConfig.colId || '', direction: sortConfig.direction });
+                            setIsSortPanelOpen(prev => !prev);
+                        }}
+                        className={`hidden sm:flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${
+                            sortConfig.colId
+                                ? 'bg-indigo-50 text-indigo-700 border-indigo-300 hover:bg-indigo-100'
+                                : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                        }`}
+                    >
+                        {sortConfig.colId
+                            ? (sortConfig.direction === 'asc' ? <FiArrowUp className="w-4 h-4" /> : <FiArrowDown className="w-4 h-4" />)
+                            : <BsSortAlphaDown className="w-4 h-4" />}
+                        Sort
+                        {sortConfig.colId && (
+                            <span className="text-[10px] font-semibold bg-indigo-500 text-white rounded-full px-1.5 py-0.5 leading-none">
+                                {columns.find(c => c.id === sortConfig.colId)?.name?.slice(0, 8) || ''}
+                            </span>
+                        )}
+                    </button>
+
+                    {isSortPanelOpen && (
+                        <div className="absolute left-0 top-full mt-2 w-72 bg-white rounded-xl shadow-xl border border-gray-150 z-50 overflow-hidden">
+                            <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+                                <p className="text-xs font-bold text-gray-600 uppercase tracking-wider">Sort Rows</p>
+                            </div>
+
+                            <div className="p-4 space-y-4">
+                                {/* Column Picker */}
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-500 mb-1.5">Sort by column</label>
+                                    <select
+                                        id="sort-column-picker"
+                                        value={pendingSortConfig.colId}
+                                        onChange={(e) => setPendingSortConfig(prev => ({ ...prev, colId: e.target.value }))}
+                                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white text-gray-700"
+                                    >
+                                        <option value="">— Select a column —</option>
+                                        {columns
+                                            .filter(c => !['multi_image', 'pdf', 'comment'].includes(c.type))
+                                            .map(c => (
+                                                <option key={c.id} value={c.id}>{c.name}</option>
+                                            ))}
+                                    </select>
+                                </div>
+
+                                {/* Direction Toggle */}
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-500 mb-1.5">Order</label>
+                                    <div className="flex gap-2">
+                                        <button
+                                            id="sort-dir-asc"
+                                            onClick={() => setPendingSortConfig(prev => ({ ...prev, direction: 'asc' }))}
+                                            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                                                pendingSortConfig.direction === 'asc'
+                                                    ? 'bg-indigo-600 text-white border-indigo-600'
+                                                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            <FiArrowUp className="w-4 h-4" />
+                                            A → Z / 1 → 9
+                                        </button>
+                                        <button
+                                            id="sort-dir-desc"
+                                            onClick={() => setPendingSortConfig(prev => ({ ...prev, direction: 'desc' }))}
+                                            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                                                pendingSortConfig.direction === 'desc'
+                                                    ? 'bg-indigo-600 text-white border-indigo-600'
+                                                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            <FiArrowDown className="w-4 h-4" />
+                                            Z → A / 9 → 1
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="px-4 pb-4 flex gap-2">
+                                <button
+                                    id="sort-apply-btn"
+                                    disabled={!pendingSortConfig.colId}
+                                    onClick={() => {
+                                        if (!pendingSortConfig.colId) return;
+                                        setSortConfig({ colId: pendingSortConfig.colId, direction: pendingSortConfig.direction });
+                                        setIsSortPanelOpen(false);
+                                    }}
+                                    className="flex-1 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    Apply Sort
+                                </button>
+                                {sortConfig.colId && (
+                                    <button
+                                        id="sort-clear-btn"
+                                        onClick={() => {
+                                            setSortConfig({ colId: null, direction: 'asc' });
+                                            setPendingSortConfig({ colId: '', direction: 'asc' });
+                                            setIsSortPanelOpen(false);
+                                        }}
+                                        className="px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 hover:text-red-500 transition-colors"
+                                    >
+                                        Clear
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
                 <div className="relative w-72">
                     <input
                         type="text"
@@ -1829,9 +2029,29 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                             {renderColumnIcon(col.type)}
                                             <span className={`whitespace-pre-wrap break-all font-bold transition-colors ${col.permission !== 'view' ? 'group-hover:text-blue-600 cursor-pointer' : 'cursor-default'}`}>{col.name}</span>
                                         </div>
-                                        {col.permission !== 'view' && (
-                                            <FiChevronDown className={`w-3.5 h-3.5 shrink-0 ml-2 cursor-pointer transition-transform ${activeColumnMenu?.id === col.id ? 'text-blue-600 rotate-180 opacity-100' : 'text-gray-400 hover:text-gray-600 lg:opacity-0 lg:group-hover:opacity-100 opacity-100'}`} />
-                                        )}
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            {/* Sort arrow — shown on hover or when active */}
+                                            {!['multi_image', 'pdf', 'comment'].includes(col.type) && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handleColumnSort(col.id); }}
+                                                    className={`p-0.5 rounded transition-all ${
+                                                        sortConfig.colId === col.id
+                                                            ? 'text-blue-600 opacity-100'
+                                                            : 'text-gray-400 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 hover:text-blue-500'
+                                                    }`}
+                                                    title={sortConfig.colId === col.id ? (sortConfig.direction === 'asc' ? 'Sorted A→Z (click for Z→A)' : 'Sorted Z→A (click to clear)') : 'Sort by this column'}
+                                                >
+                                                    {sortConfig.colId === col.id
+                                                        ? (sortConfig.direction === 'asc'
+                                                            ? <FiArrowUp className="w-3 h-3" />
+                                                            : <FiArrowDown className="w-3 h-3" />)
+                                                        : <BsSortAlphaDown className="w-3 h-3" />}
+                                                </button>
+                                            )}
+                                            {col.permission !== 'view' && (
+                                                <FiChevronDown className={`w-3.5 h-3.5 shrink-0 cursor-pointer transition-transform ${activeColumnMenu?.id === col.id ? 'text-blue-600 rotate-180 opacity-100' : 'text-gray-400 hover:text-gray-600 lg:opacity-0 lg:group-hover:opacity-100 opacity-100'}`} />
+                                            )}
+                                        </div>
                                     </div>
 
                                     {/* Column Menu Dropdown moved to bottom of component for fixed positioning */}
@@ -1897,7 +2117,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                 </td>
                             </tr>
                         ) : (
-                            filteredRows.map((row, index) => {
+                            sortedRows.map((row, index) => {
                                 // Determine row background color
                                 let computedRowBg = row.rowColor || 'transparent';
                                 const sourceCol = columns.find(c => {
