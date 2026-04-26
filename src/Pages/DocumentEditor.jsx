@@ -185,6 +185,19 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
             setRows(data.grid);
 
+            // Always restore sort from backend settings (source of truth)
+            // This ensures sort persists across navigation and is shared with all viewers
+            let settings = data.sheet?.settings || {};
+            if (typeof settings === 'string') {
+                try { settings = JSON.parse(settings); } catch (e) { settings = {}; }
+            }
+            const savedSort = settings.sortConfig;
+            setSortConfig(
+                savedSort && savedSort.colId
+                    ? savedSort
+                    : { colId: null, direction: 'asc' }
+            );
+
             // Populate mapping for nested sheets
             const mapping = {};
             data.grid.forEach(row => {
@@ -293,7 +306,16 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                  setRows(prev => prev.filter(r => r.id !== data.rowId));
              } else if (data.action === "color_changed") {
                  setRows(prev => prev.map(r => r.id === data.rowId ? { ...r, rowColor: data.rowColor } : r));
+             } else if (data.action === "reordered_all") {
+                 fetchSheetData(); // Full refresh for physical reorder
              }
+        });
+
+        // Sync sort from owner to all viewers in real-time
+        socket.on("sort_applied", (data) => {
+            if (data.sheetId === docName) {
+                setSortConfig(data.sortConfig || { colId: null, direction: 'asc' });
+            }
         });
 
         return () => {
@@ -427,25 +449,12 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
     // Column Filter State: { [colId]: filterText }
     const [columnFilters, setColumnFilters] = useState({});
 
-    // Column Sort State — persisted per-sheet in localStorage so it survives navigation
-    const [sortConfig, setSortConfig] = useState(() => {
-        try {
-            const saved = localStorage.getItem(`sortConfig_${docName}`);
-            return saved ? JSON.parse(saved) : { colId: null, direction: 'asc' };
-        } catch {
-            return { colId: null, direction: 'asc' };
-        }
-    });
+    // Column Sort State — persisted in sheet.settings on backend for shared visibility
+    const [sortConfig, setSortConfig] = useState({ colId: null, direction: 'asc' });
     const [isSortPanelOpen, setIsSortPanelOpen] = useState(false);
     const [pendingSortConfig, setPendingSortConfig] = useState({ colId: '', direction: 'asc' });
     const sortPanelRef = useRef(null);
 
-    // Save sortConfig to localStorage whenever it changes
-    useEffect(() => {
-        if (docName) {
-            localStorage.setItem(`sortConfig_${docName}`, JSON.stringify(sortConfig));
-        }
-    }, [sortConfig, docName]);
 
     // ── Comment State ─────────────────────────────────────────────────────────
     const [commentCounts, setCommentCounts] = useState({});          // { cellId: count }
@@ -665,13 +674,23 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         const col = columns.find(c => c.id === colId);
         if (!col || UNSORTABLE.includes(col.type)) return;
 
-        setSortConfig(prev => {
-            if (prev.colId === colId) {
-                if (prev.direction === 'asc') return { colId, direction: 'desc' };
-                return { colId: null, direction: 'asc' }; // third click clears sort
-            }
-            return { colId, direction: 'asc' };
-        });
+        // Compute next sort config from current state (read sortConfig directly, not updater pattern)
+        let next;
+        if (sortConfig.colId === colId) {
+            if (sortConfig.direction === 'asc') next = { colId, direction: 'desc' };
+            else next = { colId: null, direction: 'asc' }; // third click clears sort
+        } else {
+            next = { colId, direction: 'asc' };
+        }
+
+        // Update local state immediately
+        setSortConfig(next);
+
+        // Persist to backend as a clean side effect
+        console.log('[SORT] Persisting sort to backend:', next);
+        apiClient.patch(`/sheets/${docName}/sort`, { sortConfig: next })
+            .then(res => console.log('[SORT] Saved successfully:', res.data))
+            .catch(err => console.error('[SORT] Error persisting sort:', err.response?.data || err.message));
     };
 
     const getColumnCalcValue = (colId, mode) => {
@@ -1516,7 +1535,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             const doc = new jsPDF('landscape');
             doc.text(`${sheetData?.name || 'Spreadsheet'} - Export`, 14, 15);
 
-            const EXCLUDED_TYPES = ['comment', 'pdf', 'multi_image'];
+            const EXCLUDED_TYPES = ['comment', 'pdf'];
             const colsToExport = columns.filter(c => exportSelectedColumns[c.id] && !EXCLUDED_TYPES.includes(c.type));
             const tableCols = colsToExport.map(c => ({ header: c.name, dataKey: c.id }));
 
@@ -1603,7 +1622,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                 const imgData = await fetchImageAndDimensions(firstImageUrl);
                                 if (imgData && imgData.base64) {
                                     imagesToDraw[`${i}_${col.id}`] = imgData;
-                                    val = '\n\n'; // Force reasonable cell height for the image naturally
+                                    val = '\n\n\n\n\n\n\n'; // Force maximum vertical space for a very large image
                                 } else {
                                     val = '';
                                 }
@@ -1658,7 +1677,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                     fontStyle: 'bold'
                 },
                 columnStyles: colsToExport.reduce((acc, col) => {
-                    if (col.type === 'multi_image') acc[col.id] = { minCellWidth: 20 };
+                    if (col.type === 'multi_image') acc[col.id] = { minCellWidth: 50 };
                     if (col.type === 'number' || col.type === 'currency' || col.type === 'formula') {
                         acc[col.id] = { ...acc[col.id], halign: 'right' };
                     }
@@ -1693,8 +1712,8 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                             const cellWidth = data.cell.width;
                             const cellHeight = data.cell.height;
                             
-                            const maxBoxWidth = Math.min(cellWidth - 4, 18);
-                            const maxBoxHeight = Math.min(cellHeight - 4, 12);
+                            const maxBoxWidth = Math.min(cellWidth - 4, 46);
+                            const maxBoxHeight = Math.min(cellHeight - 4, 40);
                             
                             const imgAspect = imgData.width / imgData.height;
                             const boxAspect = maxBoxWidth / maxBoxHeight;
@@ -1730,7 +1749,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
     };
 
     const handleExportPDF = () => {
-        const EXCLUDED_TYPES = ['comment', 'pdf', 'multi_image'];
+        const EXCLUDED_TYPES = ['comment', 'pdf'];
         const initialMap = {};
         columns.forEach(c => { initialMap[c.id] = !EXCLUDED_TYPES.includes(c.type); });
         setExportSelectedColumns(initialMap);
@@ -1950,7 +1969,10 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                     disabled={!pendingSortConfig.colId}
                                     onClick={() => {
                                         if (!pendingSortConfig.colId) return;
-                                        setSortConfig({ colId: pendingSortConfig.colId, direction: pendingSortConfig.direction });
+                                        const next = { colId: pendingSortConfig.colId, direction: pendingSortConfig.direction };
+                                        setSortConfig(next);
+                                        apiClient.patch(`/sheets/${docName}/sort`, { sortConfig: next })
+                                            .catch(err => console.error('Error persisting sort:', err));
                                         setIsSortPanelOpen(false);
                                     }}
                                     className="flex-1 py-2 rounded-lg text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
@@ -1961,8 +1983,11 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                     <button
                                         id="sort-clear-btn"
                                         onClick={() => {
-                                            setSortConfig({ colId: null, direction: 'asc' });
+                                            const cleared = { colId: null, direction: 'asc' };
+                                            setSortConfig(cleared);
                                             setPendingSortConfig({ colId: '', direction: 'asc' });
+                                            apiClient.patch(`/sheets/${docName}/sort`, { sortConfig: cleared })
+                                                .catch(err => console.error('Error clearing sort:', err));
                                             setIsSortPanelOpen(false);
                                         }}
                                         className="px-3 py-2 rounded-lg text-sm font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 hover:text-red-500 transition-colors"
@@ -2142,7 +2167,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                             className={`relative border-b border-r border-gray-300 text-center py-2 text-[13px] text-gray-500 group-hover:bg-gray-100/50 transition-colors w-12 sticky left-0 z-10 min-w-12 font-medium ${computedRowBg === 'transparent' ? 'bg-gray-50/50' : ''} ${activeRowMenu?.rowIndex === index ? 'bg-blue-100' : ''}`}
                                             onContextMenu={(e) => handleRowContextMenu(e, index)}
                                         >
-                                            <span className="cursor-pointer">{row.order !== undefined ? row.order + 1 : index + 1}</span>
+                                            <span className="cursor-pointer">{index + 1}</span>
                                         </td>
                                         {columns.map((col) => {
                                             const cell = row.cells?.find(c => c.columnId === col.id);

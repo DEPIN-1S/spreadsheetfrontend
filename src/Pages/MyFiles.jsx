@@ -107,13 +107,18 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                 parentId: currentFolderId 
             });
             fetchItems();
+            setNewFolderName("");
+            setIsModalOpen(false);
+            setIsDropdownOpen(false);
         } catch (error) {
             console.error("Error creating folder:", error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: error.response?.data?.message || 'Failed to create folder',
+                customClass: { popup: 'rounded-2xl' }
+            });
         }
-
-        setNewFolderName("");
-        setIsModalOpen(false);
-        setIsDropdownOpen(false);
     };
 
     const handleCreateDocumentClick = () => {
@@ -135,11 +140,16 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
             setCurrentDocName(newSheet.id);
             setReturnPath('/my-files');
             setActivePath('/document-editor');
+            setIsDocModalOpen(false);
         } catch (error) {
             console.error("Error creating document:", error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: error.response?.data?.message || 'Failed to create document',
+                customClass: { popup: 'rounded-2xl' }
+            });
         }
-
-        setIsDocModalOpen(false);
     };
 
 
@@ -176,12 +186,17 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                 await apiClient.put(`/sheets/${activeItemId}`, { name: renameItemName });
             }
             fetchItems();
+            setIsRenameModalOpen(false);
+            setActiveItemId(null);
         } catch (error) {
             console.error("Error renaming item:", error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: error.response?.data?.message || 'Failed to rename item',
+                customClass: { popup: 'rounded-2xl' }
+            });
         }
-
-        setIsRenameModalOpen(false);
-        setActiveItemId(null);
     };
 
     const openMoveModal = (id) => {
@@ -206,13 +221,18 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                 await apiClient.put(`/sheets/${activeItemId}`, { folderId: moveDestinationId });
             }
             fetchItems();
+            setIsMoveModalOpen(false);
+            setActiveItemId(null);
+            setMoveDestinationId(null);
         } catch (error) {
             console.error("Error moving item:", error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: error.response?.data?.message || 'Failed to move item',
+                customClass: { popup: 'rounded-2xl' }
+            });
         }
-
-        setIsMoveModalOpen(false);
-        setActiveItemId(null);
-        setMoveDestinationId(null);
     };
 
     const openDeleteModal = async (id) => {
@@ -260,6 +280,12 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
             fetchItems();
         } catch (error) {
             console.error("Error duplicating item:", error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: error.response?.data?.message || 'Failed to duplicate item',
+                customClass: { popup: 'rounded-2xl' }
+            });
         }
     };
 
