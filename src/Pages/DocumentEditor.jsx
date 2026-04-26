@@ -260,12 +260,19 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         const token = localStorage.getItem('accessToken');
         const socket = getSocket(token);
 
-        socket.on("connect", () => {
+        const handleConnect = () => {
             console.log("Connected to spreadsheet socket");
             socket.emit("join_sheet", docName);
-        });
+        };
+        
+        socket.on("connect", handleConnect);
+        
+        // If already connected when mounting, emit join immediately
+        if (socket.connected) {
+            handleConnect();
+        }
 
-        socket.on("cell_updated", (data) => {
+        const handleCellUpdated = (data) => {
             // Only update if it's for this sheet and NOT from current user to avoid race conditions with optimistic UI
             // However, we want the computedValue from backend for formulas
             setRows(prevRows => prevRows.map(row => {
@@ -282,9 +289,9 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                 }
                 return row;
             }));
-        });
+        };
 
-        socket.on("formula_recalculated", (data) => {
+        const handleFormulaRecalculated = (data) => {
             setRows(prevRows => prevRows.map(row => {
                 const rowUpdates = data.cells.filter(c => c.rowId === row.id);
                 if (rowUpdates.length === 0) return row;
@@ -297,9 +304,9 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                     })
                 };
             }));
-        });
+        };
 
-        socket.on("row_updated", (data) => {
+        const handleRowUpdated = (data) => {
              if (data.action === "added") {
                  fetchSheetData();
              } else if (data.action === "deleted") {
@@ -309,17 +316,26 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
              } else if (data.action === "reordered_all") {
                  fetchSheetData(); // Full refresh for physical reorder
              }
-        });
+        };
 
-        // Sync sort from owner to all viewers in real-time
-        socket.on("sort_applied", (data) => {
+        const handleSortApplied = (data) => {
             if (data.sheetId === docName) {
                 setSortConfig(data.sortConfig || { colId: null, direction: 'asc' });
             }
-        });
+        };
+
+        socket.on("cell_updated", handleCellUpdated);
+        socket.on("formula_recalculated", handleFormulaRecalculated);
+        socket.on("row_updated", handleRowUpdated);
+        socket.on("sort_applied", handleSortApplied);
 
         return () => {
-            socket.disconnect();
+            socket.emit("leave_sheet", docName);
+            socket.off("connect", handleConnect);
+            socket.off("cell_updated", handleCellUpdated);
+            socket.off("formula_recalculated", handleFormulaRecalculated);
+            socket.off("row_updated", handleRowUpdated);
+            socket.off("sort_applied", handleSortApplied);
         };
     }, [docName]);
 
@@ -1296,22 +1312,6 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             }
         } else if (colDef && colDef.type === 'currency') {
             finalValue = parseCurrencyInput(value);
-            // For currency, only update local state — save on blur to avoid race conditions
-            setRows(currentRows => currentRows.map(row => {
-                if (row.id === rowId) {
-                    return {
-                        ...row,
-                        cells: row.cells.map(cell => {
-                            if (cell.columnId === columnId) {
-                                return { ...cell, rawValue: finalValue, computedValue: finalValue };
-                            }
-                            return cell;
-                        })
-                    };
-                }
-                return row;
-            }));
-            return; // Don't send to API yet — handleCellBlur will save
         } else if (colDef && colDef.type === 'date') {
             // Allow empty value to clear, validate non-empty
             if (value !== '' && isNaN(new Date(value).getTime())) {
@@ -1327,7 +1327,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         ...row,
                         cells: row.cells.map(cell => {
                             if (cell.columnId === columnId) {
-                                return { ...cell, rawValue: value, computedValue: value };
+                                return { ...cell, rawValue: finalValue, computedValue: finalValue };
                             }
                             return cell;
                         })
@@ -1345,7 +1345,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
             // Re-fetch formula values silently (debounced, no loading spinner)
             const hasFormulaCols = columns.some(c => c.type === 'formula');
-            if (hasFormulaCols) {
+            if (hasFormulaCols || colDef?.type === 'currency') {
                 debouncedRefreshFormulas();
             }
         } catch (error) {
@@ -1482,26 +1482,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         setPdfToDeleteIndex(null);
     };
 
-    const handleCellBlur = async (rowId, columnId, value) => {
-        setFocusedCell(null);
-        const colDef = columns.find(c => c.id === columnId);
-        if (colDef && colDef.type === 'number') {
-            if (value === '') {
-                handleCellChange(rowId, columnId, '0');
-            }
-        } else if (colDef && colDef.type === 'currency') {
-            // Save currency value to backend on blur (not on every keystroke)
-            const finalValue = parseCurrencyInput(value);
-            if (finalValue === '') {
-                // Default to 0 if empty
-                await apiClient.post(`/sheets/${docName}/cells`, { rowId, columnId, rawValue: '0' });
-            } else {
-                await apiClient.post(`/sheets/${docName}/cells`, { rowId, columnId, rawValue: finalValue });
-            }
-            // Refresh to get formatted value from backend
-            debouncedRefreshFormulas();
-        }
-    };
+    // handleCellBlur has been removed; logic is now inside onBlur handlers for inputs
 
     const handleAddRow = async () => {
         try {
@@ -2325,10 +2306,15 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                                         <div className="min-h-9 flex items-center w-full relative">
                                                             <input
                                                                 type="date"
-                                                                value={val || ''}
-                                                                onChange={(e) => handleCellChange(row.id, col.id, e.target.value)}
+                                                                key={`date-${row.id}-${col.id}-${val}`}
+                                                                defaultValue={val || ''}
                                                                 onFocus={() => setFocusedCell({ rowId: row.id, colId: col.id })}
-                                                                onBlur={(e) => handleCellBlur(row.id, col.id, e.target.value)}
+                                                                onBlur={(e) => {
+                                                                    setFocusedCell(null);
+                                                                    if (e.target.value !== val) {
+                                                                        handleCellChange(row.id, col.id, e.target.value);
+                                                                    }
+                                                                }}
                                                                 readOnly={cell?.permission === 'view'}
                                                                 className={`w-full pl-3 ${ (nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-7' : 'pr-3' } py-1.5 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 ${cell?.permission === 'view' ? 'cursor-default' : 'cursor-text'} ${(cell?.isBold || row.isBold || col.isBold) ? 'font-bold' : ''} ${(cell?.isItalic || row.isItalic || col.isItalic) ? 'italic' : ''}`}
                                                             />
@@ -2340,13 +2326,25 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                                                 {displayVal || ' '}
                                                             </div>
                                                             <textarea
-                                                                value={displayVal}
+                                                                key={`text-${row.id}-${col.id}-${displayVal}`}
+                                                                defaultValue={displayVal}
                                                                 placeholder={col.type === 'number' || col.type === 'currency' ? '0' : ''}
-                                                                onChange={(e) => !isFormula && handleCellChange(row.id, col.id, e.target.value)}
                                                                 onFocus={() => setFocusedCell({ rowId: row.id, colId: col.id })}
-                                                                onBlur={(e) => !isFormula && handleCellBlur(row.id, col.id, e.target.value)}
+                                                                onBlur={(e) => {
+                                                                    setFocusedCell(null);
+                                                                    if (!isFormula) {
+                                                                        let newVal = e.target.value;
+                                                                        if ((col.type === 'number' || col.type === 'currency') && newVal.trim() === '') {
+                                                                            newVal = '0';
+                                                                        }
+                                                                        if (newVal !== displayVal) {
+                                                                            handleCellChange(row.id, col.id, newVal);
+                                                                        }
+                                                                    }
+                                                                }}
                                                                 onKeyDown={(e) => {
-                                                                    if (e.key === 'Escape') {
+                                                                    if (e.key === 'Escape' || e.key === 'Enter') {
+                                                                        e.preventDefault();
                                                                         e.currentTarget.blur();
                                                                     }
                                                                 }}

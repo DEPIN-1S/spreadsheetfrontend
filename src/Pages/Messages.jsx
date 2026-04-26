@@ -62,12 +62,18 @@ export default function Messages({ setMobileOpen }) {
         });
 
         // Real-time new DM → refresh inbox
-        socket.on("direct_message", () => {
+        const handleDirectMessage = () => {
             fetchInbox();
-        });
+        };
+        
+        socket.on("direct_message", handleDirectMessage);
 
         return () => {
-            socket.disconnect();
+            socket.off("connect");
+            socket.off("connect_error");
+            socket.off("online_users");
+            socket.off("user_status");
+            socket.off("direct_message", handleDirectMessage);
             socketRef.current = null;
         };
     }, [token]);

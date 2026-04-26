@@ -224,7 +224,8 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
             });
 
             await apiClient.post(`/sheets/${sheetId}/share`, {
-                phone: member.User?.phone,
+                phone: member.User?.phone || null,
+                email: member.User?.email || null,
                 role: member.role,
                 columnAccess: filteredAccess
             });
