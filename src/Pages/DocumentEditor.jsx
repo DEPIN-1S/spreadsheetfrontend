@@ -1703,8 +1703,21 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             const footRow = colsToExport.map(col => {
                 if (columnCalcMode[col.id]) {
                     const mode = columnCalcMode[col.id];
-                    const val = getColumnCalcValue(col.id, mode);
-                    return { content: `${mode === 'total' ? 'Total' : 'Avg'}: ${val}`, styles: { halign: (col.type === 'number' || col.type === 'currency' || col.type === 'formula') ? 'right' : 'left' } };
+                    let val = getColumnCalcValue(col.id, mode);
+                    // Replace ₹ with Rs. — jsPDF built-in fonts cannot render ₹
+                    if (typeof val === 'string') val = val.replace(/₹/g, 'Rs.');
+                    else if (typeof val === 'number') val = String(val);
+                    const label = mode === 'total' ? 'Total' : 'Avg';
+                    const isNumericType = col.type === 'number' || col.type === 'currency' || col.type === 'formula';
+                    return {
+                        content: `${label}:\n${val}`,
+                        styles: {
+                            halign: isNumericType ? 'right' : 'left',
+                            cellPadding: { top: 2, bottom: 2, left: 2, right: 2 },
+                            overflow: 'linebreak',
+                            fontSize: 7,
+                        }
+                    };
                 }
                 return { content: '' };
             });
