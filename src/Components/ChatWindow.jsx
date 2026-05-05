@@ -104,6 +104,32 @@ function VoiceMessage({ src, isMine }) {
     );
 }
 
+// ── Link-aware message renderer ─────────────────────────────────────────────
+const URL_REGEX = /(https?:\/\/[^\s]+)/g;
+function renderMessageText(text, isMine) {
+    if (!text) return null;
+    const parts = text.split(URL_REGEX);
+    return parts.map((part, i) => {
+        if (URL_REGEX.test(part)) {
+            URL_REGEX.lastIndex = 0; // reset stateful regex
+            return (
+                <a
+                    key={i}
+                    href={part}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`underline underline-offset-2 break-all font-medium hover:opacity-80 transition-opacity ${
+                        isMine ? 'text-indigo-700' : 'text-blue-600'
+                    }`}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    {part}
+                </a>
+            );
+        }
+        return part;
+    });
+}
 
 export default function ChatWindow({ selectedUser, setSelectedUser, onMessageSent, socket }) {
     const [messageInput, setMessageInput] = useState("");
@@ -536,7 +562,7 @@ export default function ChatWindow({ selectedUser, setSelectedUser, onMessageSen
                                                 loading="lazy"
                                             />
                                             {msg.text && !msg.text.match(/\.(jpg|jpeg|png|gif|webp)$/i) && (
-                                                <p className="text-sm mt-2 opacity-80">{msg.text}</p>
+                                                <p className="text-sm mt-2 opacity-80 break-words">{renderMessageText(msg.text, msg.isMine)}</p>
                                             )}
                                         </a>
                                     ) : msg.fileUrl ? (
@@ -564,8 +590,10 @@ export default function ChatWindow({ selectedUser, setSelectedUser, onMessageSen
                                         </a>
                                     ) : msg.audioUrl ? (
                                         <VoiceMessage src={msg.audioUrl} isMine={msg.isMine} />
-                                    ) : (
-                                        <p className="text-sm shadow-black shrink-0 whitespace-pre-wrap">{msg.text}</p>
+                                        ) : (
+                                        <p className="text-sm shadow-black shrink-0 whitespace-pre-wrap break-words">
+                                            {renderMessageText(msg.text, msg.isMine)}
+                                        </p>
                                     )}
                                 </div>
                                 {/* Delete button — shows on hover, after bubble for received messages */}

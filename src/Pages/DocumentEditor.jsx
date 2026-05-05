@@ -273,19 +273,32 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         }
 
         const handleCellUpdated = (data) => {
-            // Only update if it's for this sheet and NOT from current user to avoid race conditions with optimistic UI
-            // However, we want the computedValue from backend for formulas
+            const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+            const isOwnUpdate = data.updatedBy === currentUser.id;
+
             setRows(prevRows => prevRows.map(row => {
                 if (row.id === data.rowId) {
-                    return {
-                        ...row,
-                        cells: row.cells.map(cell => {
-                            if (cell.columnId === data.columnId) {
-                                return { ...cell, rawValue: data.rawValue, computedValue: data.computedValue };
+                    let cellFound = false;
+                    const newCells = (row.cells || []).map(cell => {
+                        if (cell.columnId === data.columnId) {
+                            cellFound = true;
+                            if (isOwnUpdate) {
+                                return { ...cell, computedValue: data.computedValue };
                             }
-                            return cell;
-                        })
-                    };
+                            return { ...cell, rawValue: data.rawValue, computedValue: data.computedValue };
+                        }
+                        return cell;
+                    });
+                    
+                    if (!cellFound) {
+                        newCells.push({
+                            columnId: data.columnId,
+                            rawValue: data.rawValue,
+                            computedValue: data.computedValue
+                        });
+                    }
+                    
+                    return { ...row, cells: newCells };
                 }
                 return row;
             }));
@@ -298,7 +311,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                 
                 return {
                     ...row,
-                    cells: row.cells.map(cell => {
+                    cells: (row.cells || []).map(cell => {
                         const update = rowUpdates.find(u => u.columnId === cell.columnId);
                         return update ? { ...cell, computedValue: update.computedValue } : cell;
                     })
@@ -307,9 +320,29 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         };
 
         const handleRowUpdated = (data) => {
-             if (data.action === "added") {
-                 fetchSheetData();
-             } else if (data.action === "deleted") {
+            if (data.action === "added") {
+                setRows(prev => {
+                    if (prev.some(r => r.id === data.row.id)) return prev;
+                    
+                    // Use server cells if provided, otherwise create empty ones
+                    const serverCells = data.row.cells || [];
+                    let finalCells = serverCells;
+                    
+                    if (serverCells.length === 0 && prev.length > 0) {
+                        const templateRow = prev.find(r => r.cells && r.cells.length > 0) || prev[0];
+                        finalCells = (templateRow.cells || []).map(c => ({
+                            columnId: c.columnId,
+                            rowId: data.row.id,
+                            rawValue: '',
+                            computedValue: '',
+                            formattedValue: ''
+                        }));
+                    }
+                    
+                    const updatedRows = [...prev, { ...data.row, cells: finalCells }];
+                    return updatedRows.sort((a,b) => (a.order || 0) - (b.order || 0));
+                });
+            } else if (data.action === "deleted") {
                  setRows(prev => prev.filter(r => r.id !== data.rowId));
              } else if (data.action === "color_changed") {
                  setRows(prev => prev.map(r => r.id === data.rowId ? { ...r, rowColor: data.rowColor } : r));
@@ -1308,7 +1341,12 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         let finalValue = value;
         if (colDef && colDef.type === 'number') {
             if (value !== '' && isNaN(Number(value))) {
-                return; // Ignore invalid keystrokes entirely
+                return; // Ignore invalid values
+            }
+        } else if (colDef && colDef.type === 'text') {
+            // Ensure final value is text-only (letters and spaces)
+            if (value !== '' && /[^a-zA-Z\s]/.test(value)) {
+                return; // Reject if it contains non-text characters
             }
         } else if (colDef && colDef.type === 'currency') {
             finalValue = parseCurrencyInput(value);
@@ -1323,15 +1361,22 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             // Optimistic update
             setRows(currentRows => currentRows.map(row => {
                 if (row.id === rowId) {
-                    return {
-                        ...row,
-                        cells: row.cells.map(cell => {
-                            if (cell.columnId === columnId) {
-                                return { ...cell, rawValue: finalValue, computedValue: finalValue };
-                            }
-                            return cell;
-                        })
-                    };
+                    let cellExists = false;
+                    const newCells = (row.cells || []).map(cell => {
+                        if (cell.columnId === columnId) {
+                            cellExists = true;
+                            return { ...cell, rawValue: finalValue, computedValue: finalValue };
+                        }
+                        return cell;
+                    });
+                    if (!cellExists) {
+                        newCells.push({
+                            columnId: columnId,
+                            rawValue: finalValue,
+                            computedValue: finalValue
+                        });
+                    }
+                    return { ...row, cells: newCells };
                 }
                 return row;
             }));
@@ -1486,8 +1531,34 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
     const handleAddRow = async () => {
         try {
-            await apiClient.post(`/sheets/${docName}/rows`, {});
-            fetchSheetData(); // Refresh to get the new row id
+            const resp = await apiClient.post(`/sheets/${docName}/rows`, {});
+            const newRow = resp.data.data;
+            
+            // Optimistically add the row to local state using the API response
+            // This is more reliable than depending on socket events
+            setRows(prev => {
+                if (prev.some(r => r.id === newRow.id)) return prev;
+                
+                // Build empty cells for the new row using the current column structure
+                const templateRow = prev.find(r => r.cells && r.cells.length > 0);
+                const emptyCells = templateRow
+                    ? templateRow.cells.map(c => ({
+                        columnId: c.columnId,
+                        rowId: newRow.id,
+                        rawValue: '',
+                        computedValue: '',
+                        formattedValue: ''
+                    }))
+                    : columns.map(c => ({
+                        columnId: c.id,
+                        rowId: newRow.id,
+                        rawValue: '',
+                        computedValue: '',
+                        formattedValue: ''
+                    }));
+                
+                return [...prev, { ...newRow, cells: emptyCells }].sort((a,b) => (a.order || 0) - (b.order || 0));
+            });
         } catch (error) {
             console.error("Error adding row:", error);
         }
@@ -1596,14 +1667,21 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         try {
                             const imgs = JSON.parse(val);
                             if (Array.isArray(imgs) && imgs.length > 0) {
-                                let firstImageUrl = imgs[0].url;
-                                if (!firstImageUrl.startsWith('http')) {
-                                    firstImageUrl = getMediaUrl(firstImageUrl);
+                                const imgDataArray = [];
+                                for (const img of imgs) {
+                                    let imgUrl = img.url;
+                                    if (!imgUrl.startsWith('http')) {
+                                        imgUrl = getMediaUrl(imgUrl);
+                                    }
+                                    const imgData = await fetchImageAndDimensions(imgUrl);
+                                    if (imgData && imgData.base64) {
+                                        imgDataArray.push(imgData);
+                                    }
                                 }
-                                const imgData = await fetchImageAndDimensions(firstImageUrl);
-                                if (imgData && imgData.base64) {
-                                    imagesToDraw[`${i}_${col.id}`] = imgData;
-                                    val = '\n\n\n\n\n\n\n'; // Force maximum vertical space for a very large image
+                                if (imgDataArray.length > 0) {
+                                    imagesToDraw[`${i}_${col.id}`] = imgDataArray;
+                                    // Reserve fixed vertical space for images (single row height)
+                                    val = '\n\n\n\n\n\n\n';
                                 } else {
                                     val = '';
                                 }
@@ -1620,21 +1698,16 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                 tableData.push(rowData);
             }
 
-            // Append Calculate Row if any
+            // Build calc footer row for autoTable foot (proper per-column alignment)
             const hasCalc = colsToExport.some(col => columnCalcMode[col.id]);
-            if (hasCalc) {
-                const calcRow = {};
-                for (const col of colsToExport) {
-                    if (columnCalcMode[col.id]) {
-                        const mode = columnCalcMode[col.id]; // 'total' or 'average'
-                        const val = getColumnCalcValue(col.id, mode);
-                        calcRow[col.id] = `${mode === 'total' ? 'Total' : 'Avg'}: ${val}`;
-                    } else {
-                        calcRow[col.id] = '';
-                    }
+            const footRow = colsToExport.map(col => {
+                if (columnCalcMode[col.id]) {
+                    const mode = columnCalcMode[col.id];
+                    const val = getColumnCalcValue(col.id, mode);
+                    return { content: `${mode === 'total' ? 'Total' : 'Avg'}: ${val}`, styles: { halign: (col.type === 'number' || col.type === 'currency' || col.type === 'formula') ? 'right' : 'left' } };
                 }
-                tableData.push(calcRow);
-            }
+                return { content: '' };
+            });
 
             autoTable(doc, {
                 startY: 20,
@@ -1642,13 +1715,16 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                 tableWidth: 'wrap',
                 columns: tableCols,
                 body: tableData,
+                foot: hasCalc ? [footRow] : [],
+                showFoot: hasCalc ? 'lastPage' : 'never',
                 styles: { 
                     fontSize: 8, 
                     cellPadding: 1.5, 
                     valign: 'middle', 
                     lineColor: [180, 180, 180], 
                     lineWidth: 0.1,
-                    textColor: [51, 65, 85]
+                    textColor: [51, 65, 85],
+                    overflow: 'linebreak',
                 },
                 headStyles: { 
                     fillColor: [51, 65, 85], 
@@ -1656,6 +1732,14 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                     lineColor: [51, 65, 85], 
                     lineWidth: 0.1,
                     fontStyle: 'bold'
+                },
+                footStyles: {
+                    fillColor: [230, 235, 245],
+                    textColor: [30, 41, 59],
+                    fontStyle: 'bold',
+                    fontSize: 8,
+                    lineColor: [150, 150, 180],
+                    lineWidth: 0.2,
                 },
                 columnStyles: colsToExport.reduce((acc, col) => {
                     if (col.type === 'multi_image') acc[col.id] = { minCellWidth: 50 };
@@ -1669,13 +1753,6 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         const colId = data.column.dataKey;
                         const colDef = colsToExport.find(c => c.id === colId);
                         const rowIndex = data.row.index;
-                        
-                        // Handle calc row formatting
-                        if (hasCalc && rowIndex === tableData.length - 1) {
-                            data.cell.styles.fontStyle = 'bold';
-                            data.cell.styles.fillColor = [240, 240, 240];
-                            return;
-                        }
 
                         // Background color priority: Column Color > Row Color
                         const bgColorHex = colDef?.bgColor || rowBackgrounds[rowIndex];
@@ -1688,33 +1765,40 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                 },
                 didDrawCell: (data) => {
                     if (data.section === 'body') {
-                        const imgData = imagesToDraw[`${data.row.index}_${data.column.dataKey}`];
-                        if (imgData) {
+                        const imgDataArray = imagesToDraw[`${data.row.index}_${data.column.dataKey}`];
+                        if (imgDataArray && Array.isArray(imgDataArray) && imgDataArray.length > 0) {
                             const cellWidth = data.cell.width;
                             const cellHeight = data.cell.height;
-                            
-                            const maxBoxWidth = Math.min(cellWidth - 4, 46);
-                            const maxBoxHeight = Math.min(cellHeight - 4, 40);
-                            
-                            const imgAspect = imgData.width / imgData.height;
-                            const boxAspect = maxBoxWidth / maxBoxHeight;
-                            
-                            let finalImgWidth, finalImgHeight;
-                            if (imgAspect > boxAspect) {
-                                finalImgWidth = maxBoxWidth;
-                                finalImgHeight = maxBoxWidth / imgAspect;
-                            } else {
-                                finalImgHeight = maxBoxHeight;
-                                finalImgWidth = maxBoxHeight * imgAspect;
-                            }
+                            const count = imgDataArray.length;
+                            const padding = 2;
 
-                            const x = data.cell.x + (cellWidth - finalImgWidth) / 2;
-                            const y = data.cell.y + (cellHeight - finalImgHeight) / 2;
-                            try {
-                                doc.addImage(imgData.base64, 'JPEG', x, y, finalImgWidth, finalImgHeight);
-                            } catch (e) {
-                                try { doc.addImage(imgData.base64, 'PNG', x, y, finalImgWidth, finalImgHeight); } catch (e2) { }
-                            }
+                            // Divide cell width equally among all images, side by side
+                            const slotWidth = (cellWidth - padding * (count + 1)) / count;
+                            const maxImgHeight = cellHeight - padding * 2;
+
+                            imgDataArray.forEach((imgData, index) => {
+                                const imgAspect = imgData.width / imgData.height;
+
+                                // Fit image within its slot, preserving aspect ratio
+                                let finalImgWidth = slotWidth;
+                                let finalImgHeight = slotWidth / imgAspect;
+                                if (finalImgHeight > maxImgHeight) {
+                                    finalImgHeight = maxImgHeight;
+                                    finalImgWidth = maxImgHeight * imgAspect;
+                                }
+
+                                // Center image horizontally within its slot
+                                const slotX = data.cell.x + padding + index * (slotWidth + padding);
+                                const x = slotX + (slotWidth - finalImgWidth) / 2;
+                                // Center image vertically within cell
+                                const y = data.cell.y + (cellHeight - finalImgHeight) / 2;
+
+                                try {
+                                    doc.addImage(imgData.base64, 'JPEG', x, y, finalImgWidth, finalImgHeight);
+                                } catch (e) {
+                                    try { doc.addImage(imgData.base64, 'PNG', x, y, finalImgWidth, finalImgHeight); } catch (e2) { }
+                                }
+                            });
                         }
                     }
                 }
@@ -2330,6 +2414,19 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                                                 defaultValue={displayVal}
                                                                 placeholder={col.type === 'number' || col.type === 'currency' ? '0' : ''}
                                                                 onFocus={() => setFocusedCell({ rowId: row.id, colId: col.id })}
+                                                                onChange={(e) => {
+                                                                    if (col.type === 'number') {
+                                                                        // Only allow digits, one dot, and one leading minus
+                                                                        let val = e.target.value.replace(/[^0-9.-]/g, '');
+                                                                        const parts = val.split('.');
+                                                                        if (parts.length > 2) val = parts[0] + '.' + parts.slice(1).join('');
+                                                                        if (val.lastIndexOf('-') > 0) val = val[0] + val.slice(1).replace(/-/g, '');
+                                                                        e.target.value = val;
+                                                                    } else if (col.type === 'text') {
+                                                                        // Text only (letters and spaces)
+                                                                        e.target.value = e.target.value.replace(/[^a-zA-Z\s]/g, '');
+                                                                    }
+                                                                }}
                                                                 onBlur={(e) => {
                                                                     setFocusedCell(null);
                                                                     if (!isFormula) {

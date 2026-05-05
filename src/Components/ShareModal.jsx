@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { FiX, FiTrash2, FiSearch, FiChevronDown, FiCheck, FiColumns, FiEye, FiEdit2, FiLock, FiUnlock } from "react-icons/fi";
+import { BsFileEarmarkSpreadsheet } from "react-icons/bs";
 import apiClient from "../api/apiClient";
 const Toggle = ({ checked, onChange, disabled }) => (
     <div
@@ -11,7 +12,9 @@ const Toggle = ({ checked, onChange, disabled }) => (
     </div>
 );
 
-export default function ShareModal({ isOpen, onClose, sheetId }) {
+export default function ShareModal({ isOpen, onClose, sheetId, folderId }) {
+    const isFolder = !!folderId;
+    const itemId = folderId || sheetId;
     const [searchQuery, setSearchQuery] = useState("");
     const [role, setRole] = useState("viewer");
     const [members, setMembers] = useState([]);
@@ -36,10 +39,19 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
     // Edit column permissions for existing members
     const [editingMemberColPerms, setEditingMemberColPerms] = useState(null); // { userId, columnAccess }
 
+    // Nested sheets state for folders
+    const [nestedSheets, setNestedSheets] = useState([]);
+    const [expandedSheetId, setExpandedSheetId] = useState(null);
+    const [nestedColumnAccess, setNestedColumnAccess] = useState({}); // { [sheetId]: { [colId]: 'edit' | 'view' } }
+
     useEffect(() => {
-        if (isOpen && sheetId) {
+        if (isOpen && itemId) {
             fetchMembers();
-            fetchColumns();
+            if (!isFolder) {
+                fetchColumns();
+            } else {
+                fetchNestedSheets();
+            }
         }
         if (!isOpen) {
             setSearchQuery("");
@@ -49,8 +61,10 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
             setColumnAccess({});
             setShowColumnSection(false);
             setEditingMemberColPerms(null);
+            setNestedColumnAccess({});
+            setExpandedSheetId(null);
         }
-    }, [isOpen, sheetId]);
+    }, [isOpen, sheetId, folderId]);
 
     // Click outside to close dropdown
     useEffect(() => {
@@ -76,8 +90,10 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
             setIsSearching(true);
             try {
                 const response = await apiClient.get(`/user/search?q=${encodeURIComponent(searchQuery.trim())}`);
+                const responseData = response.data?.data;
+                const usersArray = Array.isArray(responseData) ? responseData : [];
                 const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-                const results = (response.data.data || []).filter(u => u.id !== currentUser.id);
+                const results = usersArray.filter(u => u.id !== currentUser.id);
                 setSearchResults(results);
                 setShowDropdown(results.length > 0);
             } catch (err) {
@@ -94,9 +110,11 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
     }, [searchQuery, selectedUser]);
 
     const fetchColumns = async () => {
+        if (isFolder) return;
         try {
             const response = await apiClient.get(`/sheets/${sheetId}`);
-            const cols = response.data.data.columns || [];
+            let cols = response.data?.data?.columns;
+            cols = Array.isArray(cols) ? cols : [];
             setColumns(cols);
             // Default: all columns set to 'edit'
             const initialAccess = {};
@@ -107,13 +125,37 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
         }
     };
 
+    const fetchNestedSheets = async () => {
+        if (!isFolder) return;
+        try {
+            const response = await apiClient.get(`/folders/${folderId}/nested-sheets`);
+            let sheets = response.data?.data;
+            sheets = Array.isArray(sheets) ? sheets : [];
+            setNestedSheets(sheets);
+            
+            // Initialize nested column access: default 'edit'
+            const initialAccess = {};
+            sheets.forEach(sheet => {
+                initialAccess[sheet.id] = {};
+                (sheet.Columns || []).forEach(c => {
+                    initialAccess[sheet.id][c.id] = 'edit';
+                });
+            });
+            setNestedColumnAccess(initialAccess);
+        } catch (err) {
+            console.error("Error fetching nested sheets:", err);
+        }
+    };
+
     const fetchMembers = async () => {
         setLoading(true);
         setError("");
         try {
-            const response = await apiClient.get(`/sheets/${sheetId}/permissions`);
-            setMembers(response.data.data.sheetPermissions || []);
-            setColumnPermissions(response.data.data.columnPermissions || []);
+            const url = isFolder ? `/folders/${folderId}/permissions` : `/sheets/${sheetId}/permissions`;
+            const response = await apiClient.get(url);
+            const data = response.data?.data || {};
+            setMembers(Array.isArray(data.sheetPermissions) ? data.sheetPermissions : []);
+            setColumnPermissions(Array.isArray(data.columnPermissions) ? data.columnPermissions : []);
         } catch (err) {
             console.error("Error fetching permissions:", err);
             setError("Failed to load members.");
@@ -127,10 +169,14 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
         setSearchQuery("");
         setShowDropdown(false);
         setSearchResults([]);
-        setShowColumnSection(true);
-        const initialAccess = {};
-        columns.forEach(c => initialAccess[c.id] = 'edit');
-        setColumnAccess(initialAccess);
+        if (!isFolder) {
+            setShowColumnSection(true);
+            const initialAccess = {};
+            columns.forEach(c => initialAccess[c.id] = 'edit');
+            setColumnAccess(initialAccess);
+        } else {
+            setShowColumnSection(true);
+        }
     };
 
     const setColPermission = (colId, p) => {
@@ -143,6 +189,19 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
         setColumnAccess(next);
     };
 
+    const setNestedColPermission = (sheetId, colId, p) => {
+        setNestedColumnAccess(prev => ({
+            ...prev,
+            [sheetId]: { ...prev[sheetId], [colId]: p }
+        }));
+    };
+
+    const setAllNestedColPermissions = (sheetId, p, cols) => {
+        const next = {};
+        cols.forEach(c => next[c.id] = p);
+        setNestedColumnAccess(prev => ({ ...prev, [sheetId]: next }));
+    };
+
     const handleShare = async () => {
         const phone = selectedUser ? selectedUser.phone : (searchQuery.trim().includes('@') ? null : searchQuery.trim());
         const email = selectedUser ? selectedUser.email : (searchQuery.trim().includes('@') ? searchQuery.trim() : null);
@@ -153,16 +212,28 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
         try {
             // Filter out null/undefined permissions before sending
             const filteredAccess = {};
-            Object.entries(columnAccess).forEach(([id, val]) => {
-                if (val) filteredAccess[id] = val;
-            });
+            if (!isFolder) {
+                Object.entries(columnAccess).forEach(([id, val]) => {
+                    if (val) filteredAccess[id] = val;
+                });
+            }
 
-            await apiClient.post(`/sheets/${sheetId}/share`, {
-                phone,
-                email,
-                role,
-                columnAccess: filteredAccess
-            });
+            const sheetColumnPermissions = {};
+            if (isFolder) {
+                Object.entries(nestedColumnAccess).forEach(([sId, cols]) => {
+                    sheetColumnPermissions[sId] = {};
+                    Object.entries(cols).forEach(([cId, val]) => {
+                        if (val) sheetColumnPermissions[sId][cId] = val;
+                    });
+                });
+            }
+
+            const endpoint = isFolder ? `/folders/${folderId}/share` : `/sheets/${sheetId}/share`;
+            const payload = isFolder 
+                ? { phone, email, role, sheetColumnPermissions }
+                : { phone, email, role, columnAccess: filteredAccess };
+                
+            await apiClient.post(endpoint, payload);
             setSearchQuery("");
             setSelectedUser(null);
             setShowColumnSection(false);
@@ -179,7 +250,8 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
 
     const handleRemove = async (userId) => {
         try {
-            await apiClient.delete(`/sheets/${sheetId}/permissions/${userId}`);
+            const url = isFolder ? `/folders/${folderId}/permissions/${userId}` : `/sheets/${sheetId}/permissions/${userId}`;
+            await apiClient.delete(url);
             fetchMembers();
         } catch (err) {
             console.error("Error removing access:", err);
@@ -223,11 +295,12 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
                 if (val) filteredAccess[id] = val;
             });
 
-            await apiClient.post(`/sheets/${sheetId}/share`, {
+            const endpoint = isFolder ? `/folders/${folderId}/share` : `/sheets/${sheetId}/share`;
+            await apiClient.post(endpoint, {
                 phone: member.User?.phone || null,
                 email: member.User?.email || null,
                 role: member.role,
-                columnAccess: filteredAccess
+                columnAccess: isFolder ? undefined : filteredAccess
             });
             setEditingMemberColPerms(null);
             fetchMembers();
@@ -256,7 +329,7 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
-                    <h2 className="text-xl font-semibold text-gray-800">Share this document</h2>
+                    <h2 className="text-xl font-semibold text-gray-800">Share this {isFolder ? 'folder' : 'document'}</h2>
                     <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors">
                         <FiX className="w-5 h-5" />
                     </button>
@@ -362,7 +435,7 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
                     </div>
 
                     {/* Column Permission Section (shown when a user is selected) */}
-                    {showColumnSection && selectedUser && columns.length > 0 && (
+                    {showColumnSection && selectedUser && !isFolder && columns.length > 0 && (
                         <div className="mb-5 border border-blue-100 rounded-xl bg-blue-50/30 p-4">
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-2">
@@ -415,6 +488,72 @@ export default function ShareModal({ isOpen, onClose, sheetId }) {
                                         </div>
                                     );
                                 })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Folder Nested Sheets Section (shown when a user is selected) */}
+                    {showColumnSection && selectedUser && isFolder && nestedSheets.length > 0 && (
+                        <div className="mb-5 border border-blue-100 rounded-xl bg-blue-50/30 p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                                <FiColumns className="w-4 h-4 text-blue-600" />
+                                <h4 className="text-sm font-semibold text-gray-800">Nested Files Granular Access</h4>
+                            </div>
+                            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                                {nestedSheets.map((sheet) => (
+                                    <div key={sheet.id} className="border border-gray-200 rounded-lg bg-white overflow-hidden">
+                                        <div 
+                                            className="px-3 py-2 bg-gray-50 flex items-center justify-between cursor-pointer hover:bg-gray-100"
+                                            onClick={() => setExpandedSheetId(expandedSheetId === sheet.id ? null : sheet.id)}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <BsFileEarmarkSpreadsheet className="w-4 h-4 text-emerald-600" />
+                                                <span className="text-sm font-medium text-gray-800">{sheet.name}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-gray-500">{(sheet.Columns || []).length} columns</span>
+                                                <svg className={`w-4 h-4 text-gray-400 transition-transform ${expandedSheetId === sheet.id ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                                </svg>
+                                            </div>
+                                        </div>
+                                        
+                                        {expandedSheetId === sheet.id && (
+                                            <div className="p-3 border-t border-gray-100 space-y-2">
+                                                <div className="flex justify-end gap-1 mb-2">
+                                                    <button onClick={() => setAllNestedColPermissions(sheet.id, 'view', sheet.Columns || [])} className="text-[10px] bg-white border border-gray-200 px-2 py-0.5 rounded hover:bg-gray-100">All View</button>
+                                                    <button onClick={() => setAllNestedColPermissions(sheet.id, 'edit', sheet.Columns || [])} className="text-[10px] bg-white border border-gray-200 px-2 py-0.5 rounded hover:bg-gray-100">All Edit</button>
+                                                </div>
+                                                
+                                                {(sheet.Columns || []).map((col) => {
+                                                    const p = nestedColumnAccess[sheet.id]?.[col.id] || null;
+                                                    const isViewChecked = p !== null;
+                                                    const isEditToggled = p === 'edit';
+                                                    
+                                                    return (
+                                                        <div key={col.id} className="flex items-center justify-between gap-3 px-3 py-1.5 bg-gray-50 rounded-lg border border-gray-100">
+                                                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={isViewChecked}
+                                                                    onChange={(e) => setNestedColPermission(sheet.id, col.id, e.target.checked ? 'view' : null)}
+                                                                    className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer"
+                                                                />
+                                                                <span className={`text-sm ${isViewChecked ? 'text-gray-800' : 'text-gray-400'} truncate`}>{col.name}</span>
+                                                            </div>
+                                                            {isViewChecked && (
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-[10px] text-gray-400 font-medium">Can Edit</span>
+                                                                    <Toggle checked={isEditToggled} onChange={(val) => setNestedColPermission(sheet.id, col.id, val ? 'edit' : 'view')} />
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     )}

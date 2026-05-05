@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { FiSearch, FiPlus, FiFileText, FiFolder, FiMenu, FiX, FiMoreVertical, FiEdit2, FiTrash2, FiChevronRight, FiMove, FiArrowUp, FiArrowDown } from "react-icons/fi";
+import { FiSearch, FiPlus, FiFileText, FiFolder, FiMenu, FiX, FiMoreVertical, FiEdit2, FiTrash2, FiChevronRight, FiMove, FiArrowUp, FiArrowDown, FiShare2 } from "react-icons/fi";
 import { BsFileEarmarkSpreadsheet } from "react-icons/bs";
 import apiClient from "../api/apiClient";
 import Swal from "sweetalert2";
+import ShareModal from "../Components/ShareModal";
 
 export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocName, setReturnPath, currentFolderId, setCurrentFolderId, path, setPath }) {
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -25,6 +26,11 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
     const [activeItemId, setActiveItemId] = useState(null);
     const [renameItemName, setRenameItemName] = useState("");
     const [moveDestinationId, setMoveDestinationId] = useState(null);
+    
+    // Sharing State
+    const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+    const [shareItemId, setShareItemId] = useState(null);
+    const [shareItemType, setShareItemType] = useState(null); // 'file' | 'folder'
 
     // Fetch data from API
     const fetchItems = useCallback(async () => {
@@ -171,6 +177,12 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
         setActiveItemId(id);
         setRenameItemName(currentTitle);
         setIsRenameModalOpen(true);
+    };
+
+    const handleShareItem = (id, type) => {
+        setShareItemId(id);
+        setShareItemType(type);
+        setIsShareModalOpen(true);
     };
 
     const handleRenameItem = async () => {
@@ -507,6 +519,7 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                                             onClick={() => navigateToFolder(folder.id, folder.title)}
                                             onRename={() => openRenameModal(folder.id, folder.title)}
                                             onMove={() => openMoveModal(folder.id)}
+                                            onShare={() => handleShareItem(folder.id, 'folder')}
                                             onDuplicate={() => handleDuplicateItem(folder.id, folder.title, "folder")}
                                             onDelete={() => openDeleteModal(folder.id)}
                                         />
@@ -535,6 +548,7 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                                             }}
                                             onRename={() => openRenameModal(file.id, file.title)}
                                             onMove={() => openMoveModal(file.id)}
+                                            onShare={() => handleShareItem(file.id, 'file')}
                                             onDuplicate={() => handleDuplicateItem(file.id, file.title, "file")}
                                             onDelete={() => openDeleteModal(file.id)}
                                         />
@@ -725,11 +739,23 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                     </div>
                 </div>
             )}
+
+            {/* Share Modal */}
+            <ShareModal
+                isOpen={isShareModalOpen}
+                onClose={() => {
+                    setIsShareModalOpen(false);
+                    setShareItemId(null);
+                    setShareItemType(null);
+                }}
+                sheetId={shareItemType === 'file' ? shareItemId : null}
+                folderId={shareItemType === 'folder' ? shareItemId : null}
+            />
         </main>
     );
 }
 
-function FolderCard({ title, date, onClick, onRename, onMove, onDuplicate, onDelete }) {
+function FolderCard({ title, date, onClick, onRename, onMove, onShare, onDuplicate, onDelete }) {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const menuRef = useRef(null);
 
@@ -791,6 +817,17 @@ function FolderCard({ title, date, onClick, onRename, onMove, onDuplicate, onDel
                             onClick={(e) => {
                                 e.stopPropagation();
                                 setIsMenuOpen(false);
+                                onShare();
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 text-left"
+                        >
+                            <FiShare2 className="w-4 h-4 text-gray-400" />
+                            Share
+                        </button>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setIsMenuOpen(false);
                                 onMove();
                             }}
                             className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 text-left border-b border-gray-100"
@@ -827,7 +864,7 @@ function FolderCard({ title, date, onClick, onRename, onMove, onDuplicate, onDel
     );
 }
 
-function FileCard({ title, date, onClick, onRename, onMove, onDuplicate, onDelete }) {
+function FileCard({ title, date, onClick, onRename, onMove, onShare, onDuplicate, onDelete }) {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const menuRef = useRef(null);
 
@@ -879,6 +916,17 @@ function FileCard({ title, date, onClick, onRename, onMove, onDuplicate, onDelet
                         >
                             <FiEdit2 className="w-4 h-4 text-gray-400" />
                             Rename
+                        </button>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setIsMenuOpen(false);
+                                onShare();
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 text-left"
+                        >
+                            <FiShare2 className="w-4 h-4 text-gray-400" />
+                            Share
                         </button>
                         <button
                             onClick={(e) => {
