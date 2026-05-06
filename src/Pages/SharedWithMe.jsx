@@ -1,58 +1,164 @@
-import { useState, useRef, useEffect } from "react";
-import { FiSearch, FiMenu, FiMoreVertical, FiEye } from "react-icons/fi";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { FiSearch, FiMenu, FiMoreVertical, FiEye, FiFolder, FiPlus, FiChevronRight, FiMove, FiTrash2 } from "react-icons/fi";
 import { BsFileEarmarkSpreadsheet } from "react-icons/bs";
 import apiClient from "../api/apiClient";
+import Swal from "sweetalert2";
 
 export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentDocName, setReturnPath }) {
     const [searchQuery, setSearchQuery] = useState("");
-    const [items, setItems] = useState([]);
+    const [files, setFiles] = useState([]);
+    const [folders, setFolders] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [currentFolderId, setCurrentFolderId] = useState(null); // virtual folder id
+    const [breadcrumb, setBreadcrumb] = useState([]);
 
-    useEffect(() => {
-        fetchSharedItems();
-    }, []);
+    // UI state
+    const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
+    const [newFolderName, setNewFolderName] = useState("");
+    const [isCreateDocModalOpen, setIsCreateDocModalOpen] = useState(false);
+    const [newDocName, setNewDocName] = useState("");
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
+    const [movingItem, setMovingItem] = useState(null);
+    const [allSharedFolders, setAllSharedFolders] = useState([]);
+    const dropdownRef = useRef(null);
 
-    const fetchSharedItems = async () => {
+    const fetchSharedItems = useCallback(async () => {
         setLoading(true);
         try {
-            // Import apiClient here if not already imported at the top
-            // Since this component doesn't have it, we'll need to add the import as well
-            const { default: apiClient } = await import("../api/apiClient.js");
-            const response = await apiClient.get('/sheets/shared');
+            const params = { folderId: currentFolderId || "root" };
+            const response = await apiClient.get('/sheets/shared', { params });
             
-            // Map the API response to the format expected by the UI
-            const formattedItems = response.data.data.map(sheet => ({
+            const fetchedFiles = (response.data.data?.files || []).map(sheet => ({
                 id: sheet.id,
-                type: "file", // Assuming all are files for now, or you could check folderId
+                type: "file",
                 title: sheet.name,
-                date: new Date(sheet.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-                sharedBy: sheet.creator ? sheet.creator.name : "Unknown",
+                date: new Date(sheet.sharedAt || sheet.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+                sharedBy: sheet.sharedBy,
                 fileType: "doc",
-                role: sheet.permissionRole
+                role: sheet.permissionRole,
+                virtualFolderId: sheet.virtualFolderId
             }));
             
-            setItems(formattedItems);
+            const fetchedFolders = (response.data.data?.folders || []).map(folder => ({
+                id: folder.id,
+                type: "folder",
+                title: folder.name,
+                date: new Date(folder.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+                createdBy: folder.createdBy
+            }));
+            
+            setFiles(fetchedFiles);
+            setFolders(fetchedFolders);
         } catch (error) {
             console.error("Error fetching shared items:", error);
         } finally {
             setLoading(false);
         }
+    }, [currentFolderId]);
+
+    const fetchAllSharedFolders = async () => {
+        try {
+            // This is for the "Move to" dropdown - we need all available folders for the current user
+            // We can reuse the folder listing logic or just fetch root folders and then recurse
+            const response = await apiClient.get('/sheets/shared', { params: { page: 1, limit: 100 } });
+            // For simplicity, just show root level organization folders in the move dropdown for now
+            setAllSharedFolders(response.data.data.folders);
+        } catch (error) {
+            console.error("Error fetching move folders:", error);
+        }
     };
 
-    const filteredItems = items.filter(item =>
-        item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.sharedBy.toLowerCase().includes(searchQuery.toLowerCase())
+    useEffect(() => {
+        fetchSharedItems();
+    }, [fetchSharedItems]);
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setIsDropdownOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const handleCreateFolder = async () => {
+        if (!newFolderName.trim()) return;
+        try {
+            await apiClient.post('/folders', {
+                name: newFolderName,
+                parentId: currentFolderId,
+                category: 'shared_org'
+            });
+            fetchSharedItems();
+            setNewFolderName("");
+            setIsCreateFolderModalOpen(false);
+        } catch (error) {
+            Swal.fire("Error", error.response?.data?.message || "Failed to create folder", "error");
+        }
+    };
+
+    const handleCreateDocument = async () => {
+        if (!newDocName.trim()) return;
+        try {
+            await apiClient.post('/sheets', {
+                name: newDocName,
+                folderId: currentFolderId
+            });
+            fetchSharedItems();
+            setNewDocName("");
+            setIsCreateDocModalOpen(false);
+            Swal.fire("Success", "Document created", "success");
+        } catch (error) {
+            Swal.fire("Error", error.response?.data?.message || "Failed to create document", "error");
+        }
+    };
+
+    const handleMoveItem = async (targetFolderId) => {
+        if (!movingItem) return;
+        try {
+            await apiClient.patch(`/sheets/${movingItem.id}/move-shared`, {
+                folderId: targetFolderId
+            });
+            fetchSharedItems();
+            setIsMoveModalOpen(false);
+            setMovingItem(null);
+            Swal.fire("Success", "File moved successfully", "success");
+        } catch (error) {
+            Swal.fire("Error", error.response?.data?.message || "Failed to move file", "error");
+        }
+    };
+
+    const navigateToFolder = (folder) => {
+        setCurrentFolderId(folder.id);
+        setBreadcrumb([...breadcrumb, folder]);
+    };
+
+    const navigateToBreadcrumb = (index) => {
+        if (index === -1) {
+            setCurrentFolderId(null);
+            setBreadcrumb([]);
+        } else {
+            const newBreadcrumb = breadcrumb.slice(0, index + 1);
+            setBreadcrumb(newBreadcrumb);
+            setCurrentFolderId(newBreadcrumb[newBreadcrumb.length - 1].id);
+        }
+    };
+
+    const filteredFolders = folders.filter(f => f.title.toLowerCase().includes(searchQuery.toLowerCase()));
+    const filteredFiles = files.filter(f => 
+        f.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        f.sharedBy?.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    const folders = filteredItems.filter(item => item.type === "folder");
-    const files = filteredItems.filter(item => item.type === "file");
-    const isEmpty = !loading && folders.length === 0 && files.length === 0;
+    const isEmpty = !loading && filteredFolders.length === 0 && filteredFiles.length === 0;
 
     return (
         <main className="flex-1 min-h-screen bg-white">
             <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
                 {/* Header */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 border-b border-gray-100 pb-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b border-gray-100 pb-4">
                     <div className="flex items-center gap-2">
                         <button
                             className="lg:hidden p-2 -ml-2 mr-2 text-gray-600 hover:bg-gray-100 rounded-lg shrink-0"
@@ -64,68 +170,180 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3">
-                        {/* Search Input */}
                         <div className="relative">
                             <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
                             <input
                                 type="text"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="Search shared files..."
-                                className="pl-9 pr-4 py-2 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-64"
+                                placeholder="Search shared items..."
+                                className="pl-9 pr-4 py-2 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-64 shadow-xs"
                             />
                         </div>
+                        <div className="relative" ref={dropdownRef}>
+                            <button 
+                                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-full text-sm font-medium transition-all shadow-md shadow-indigo-100 active:scale-95"
+                            >
+                                <FiPlus className="w-4 h-4" /> New
+                            </button>
 
-
+                            {isDropdownOpen && (
+                                <div className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-[60] animate-in fade-in zoom-in-95 duration-100">
+                                    <button 
+                                        onClick={() => {
+                                            setNewDocName("");
+                                            setIsCreateDocModalOpen(true);
+                                            setIsDropdownOpen(false);
+                                        }}
+                                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors text-left"
+                                    >
+                                        <div className="w-8 h-8 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-600">
+                                            <BsFileEarmarkSpreadsheet className="w-4 h-4" />
+                                        </div>
+                                        New Document
+                                    </button>
+                                    <button 
+                                        onClick={() => {
+                                            setNewFolderName("");
+                                            setIsCreateFolderModalOpen(true);
+                                            setIsDropdownOpen(false);
+                                        }}
+                                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors text-left"
+                                    >
+                                        <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-600">
+                                            <FiFolder className="w-4 h-4" />
+                                        </div>
+                                        New Folder
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
 
-                {isEmpty ? (
+                {/* Breadcrumbs */}
+                <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide text-sm">
+                    <button 
+                        onClick={() => navigateToBreadcrumb(-1)}
+                        className={`hover:text-indigo-600 transition-colors ${currentFolderId === null ? 'text-indigo-600 font-bold' : 'text-gray-500'}`}
+                    >
+                        Shared Root
+                    </button>
+                    {breadcrumb.map((b, i) => (
+                        <div key={b.id} className="flex items-center gap-2 shrink-0">
+                            <FiChevronRight className="w-4 h-4 text-gray-400" />
+                            <button 
+                                onClick={() => navigateToBreadcrumb(i)}
+                                className={`hover:text-indigo-600 transition-colors ${i === breadcrumb.length - 1 ? 'text-indigo-600 font-bold' : 'text-gray-500'}`}
+                            >
+                                {b.title}
+                            </button>
+                        </div>
+                    ))}
+                </div>
+
+                {loading ? (
+                    <div className="flex items-center justify-center py-24">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+                    </div>
+                ) : isEmpty ? (
                     <div className="flex flex-col items-center justify-center py-24 text-center">
                         <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center mb-4">
                             <FiSearch className="w-8 h-8 text-gray-300" />
                         </div>
-                        <h3 className="text-lg font-medium text-gray-900 mb-1">No shared files found</h3>
-                        <p className="text-gray-500 text-sm">Documents shared with you will appear here.</p>
+                        <h3 className="text-lg font-medium text-gray-900 mb-1">No shared items found</h3>
+                        <p className="text-gray-500 text-sm">Organize documents shared with you here.</p>
                     </div>
                 ) : (
                     <>
                         {/* Folders Section */}
-                        {folders.length > 0 && (
-                            <div className="mb-8">
-                                <div className="flex items-center gap-2 mb-4">
-                                    <h2 className="text-base font-bold text-gray-800">Folders</h2>
-                                    <span className="text-xs text-gray-500">{folders.length} Folders</span>
-                                </div>
+                        {filteredFolders.length > 0 && (
+                            <div className="mb-10">
+                                <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 px-1">Folders</h2>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                                    {folders.map((folder) => (
-                                        <SharedFolderCard key={folder.id} item={folder} />
+                                    {filteredFolders.map((folder) => (
+                                        <div 
+                                            key={folder.id} 
+                                            onClick={() => navigateToFolder(folder)}
+                                            className="group flex flex-col p-4 border border-gray-100 rounded-2xl hover:border-indigo-200 hover:shadow-lg hover:shadow-indigo-50/50 transition-all bg-white cursor-pointer relative"
+                                        >
+                                            <div className="flex items-start justify-between mb-4">
+                                                <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-500 group-hover:scale-110 transition-transform">
+                                                    <FiFolder className="w-6 h-6 fill-indigo-500/20" />
+                                                </div>
+                                            </div>
+                                            <h3 className="text-sm font-semibold text-gray-800 truncate mb-1" title={folder.title}>{folder.title}</h3>
+                                            <p className="text-[11px] text-gray-400">Personal Organization</p>
+                                        </div>
                                     ))}
                                 </div>
                             </div>
                         )}
 
                         {/* Files Section */}
-                        {files.length > 0 && (
+                        {filteredFiles.length > 0 && (
                             <div>
-                                <div className="flex items-center gap-2 mb-4">
-                                    <h2 className="text-base font-bold text-gray-800">Files</h2>
-                                    <span className="text-xs text-gray-500">{files.length} Files</span>
-                                </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                                    {files.map((file) => (
-                                        <SharedFileCard
-                                            key={file.id}
-                                            item={file}
-                                            onClick={() => {
-                                                if (file.fileType === 'doc') {
-                                                    // Pass the ID instead of the title to the DocumentEditor
+                                <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 px-1">Files</h2>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                    {filteredFiles.map((file) => (
+                                        <div 
+                                            key={file.id} 
+                                            className="group flex flex-col p-4 border border-gray-100 rounded-2xl hover:border-indigo-200 hover:shadow-lg hover:shadow-indigo-50/50 transition-all bg-white relative"
+                                        >
+                                            <div className="flex items-start justify-between mb-4">
+                                                <div 
+                                                    onClick={() => {
+                                                        setCurrentDocName(file.id);
+                                                        setReturnPath('/shared');
+                                                        setActivePath('/document-editor');
+                                                    }}
+                                                    className="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 group-hover:scale-110 transition-transform cursor-pointer"
+                                                >
+                                                    <BsFileEarmarkSpreadsheet className="w-6 h-6" />
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <button 
+                                                        onClick={() => {
+                                                            setMovingItem(file);
+                                                            fetchAllSharedFolders();
+                                                            setIsMoveModalOpen(true);
+                                                        }}
+                                                        className="p-1.5 text-gray-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                                        title="Move to folder"
+                                                    >
+                                                        <FiMove className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <h3 
+                                                onClick={() => {
                                                     setCurrentDocName(file.id);
                                                     setReturnPath('/shared');
                                                     setActivePath('/document-editor');
-                                                }
-                                            }}
-                                        />
+                                                }}
+                                                className="text-sm font-semibold text-gray-800 truncate mb-2 cursor-pointer hover:text-indigo-600" 
+                                                title={file.title}
+                                            >
+                                                {file.title}
+                                            </h3>
+
+                                            <div className="mt-auto pt-4 border-t border-gray-50 flex items-center justify-between">
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center text-[11px] font-bold text-indigo-700 uppercase shrink-0">
+                                                        {file.sharedBy?.name.charAt(0)}
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <p className="text-[11px] font-medium text-gray-700 truncate">{file.sharedBy?.name}</p>
+                                                        <p className="text-[10px] text-gray-400 uppercase tracking-tighter font-semibold">{file.sharedBy?.role}</p>
+                                                    </div>
+                                                </div>
+                                                <span className="text-[10px] text-gray-400 bg-gray-50 px-2 py-1 rounded-md shrink-0">
+                                                    {file.date}
+                                                </span>
+                                            </div>
+                                        </div>
                                     ))}
                                 </div>
                             </div>
@@ -133,47 +351,116 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                     </>
                 )}
             </div>
-        </main>
-    );
-}
 
-function SharedFolderCard({ item }) {
-    return (
-        <div className="group relative flex flex-col p-4 border border-gray-200 rounded-xl hover:shadow-sm transition-shadow bg-white cursor-pointer">
-            <div className="flex items-start justify-between mb-3">
-                <div className="shrink-0 text-indigo-500">
-                    <svg className="w-10 h-10" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M2 6a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-                    </svg>
-                </div>
-            </div>
-            <div>
-                <h3 className="text-sm font-semibold text-gray-800 truncate" title={item.title}>{item.title}</h3>
-                <div className="flex items-center justify-between mt-2">
-                    <p className="text-xs text-gray-400">{item.date}</p>
-                    <div className="flex items-center gap-1">
-                        <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center text-[10px] font-bold text-blue-700" title={`Shared by ${item.sharedBy}`}>
-                            {item.sharedBy.charAt(0)}
+            {/* Create Folder Modal */}
+            {isCreateFolderModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
+                                <FiFolder className="w-5 h-5" />
+                            </div>
+                            <h2 className="text-lg font-bold text-gray-900">New Virtual Folder</h2>
+                        </div>
+                        <input
+                            type="text"
+                            value={newFolderName}
+                            onChange={(e) => setNewFolderName(e.target.value)}
+                            placeholder="Folder name"
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-6 bg-gray-50"
+                            autoFocus
+                        />
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={() => setIsCreateFolderModalOpen(false)}
+                                className="flex-1 px-4 py-2.5 text-sm font-semibold text-gray-500 hover:bg-gray-50 rounded-xl transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={handleCreateFolder}
+                                className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-lg shadow-indigo-100"
+                            >
+                                Create
+                            </button>
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
-    );
-}
+            )}
 
-function SharedFileCard({ item, onClick }) {
-    return (
-        <div onClick={onClick} className="group relative flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:shadow-sm transition-shadow bg-white cursor-pointer">
-            <div className="flex items-center gap-3 overflow-hidden">
-                <div className="shrink-0 text-emerald-600 bg-emerald-50 p-2 rounded-lg">
-                    <BsFileEarmarkSpreadsheet className="w-8 h-8" />
+            {/* Create Document Modal */}
+            {isCreateDocModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600">
+                                <BsFileEarmarkSpreadsheet className="w-5 h-5" />
+                            </div>
+                            <h2 className="text-lg font-bold text-gray-900">New Document</h2>
+                        </div>
+                        <input
+                            type="text"
+                            value={newDocName}
+                            onChange={(e) => setNewDocName(e.target.value)}
+                            placeholder="Document name"
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-6 bg-gray-50"
+                            autoFocus
+                        />
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={() => setIsCreateDocModalOpen(false)}
+                                className="flex-1 px-4 py-2.5 text-sm font-semibold text-gray-500 hover:bg-gray-50 rounded-xl transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={handleCreateDocument}
+                                className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-all shadow-lg shadow-emerald-100"
+                            >
+                                Create
+                            </button>
+                        </div>
+                    </div>
                 </div>
-                <div>
-                    <h3 className="text-sm font-semibold text-gray-800 truncate" title={item.title}>{item.title}</h3>
-                    <p className="text-xs text-gray-400 mt-1">{item.date}</p>
+            )}
+
+            {/* Move Modal */}
+            {isMoveModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
+                        <h2 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+                            <FiMove className="text-indigo-600" /> Move to Folder
+                        </h2>
+                        <div className="max-h-60 overflow-y-auto mb-6 space-y-2 pr-2">
+                            <button 
+                                onClick={() => handleMoveItem(null)}
+                                className="w-full text-left p-3 hover:bg-indigo-50 rounded-xl transition-colors text-sm flex items-center gap-3 font-medium text-gray-600"
+                            >
+                                <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400">/</div>
+                                Shared Root
+                            </button>
+                            {allSharedFolders.map(f => (
+                                <button 
+                                    key={f.id}
+                                    onClick={() => handleMoveItem(f.id)}
+                                    className="w-full text-left p-3 hover:bg-indigo-50 rounded-xl transition-colors text-sm flex items-center gap-3 font-medium text-gray-600"
+                                >
+                                    <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-500">
+                                        <FiFolder className="w-4 h-4" />
+                                    </div>
+                                    {f.name}
+                                </button>
+                            ))}
+                        </div>
+                        <button 
+                            onClick={() => setIsMoveModalOpen(false)}
+                            className="w-full px-4 py-3 text-sm font-semibold text-gray-500 hover:bg-gray-50 rounded-xl transition-colors"
+                        >
+                            Close
+                        </button>
+                    </div>
                 </div>
-            </div>
-        </div>
+            )}
+        </main>
     );
 }

@@ -17,7 +17,9 @@ import { formatCurrency, parseCurrencyInput, SUPPORTED_CURRENCIES, getCurrencySy
 import ShareModal from "../Components/ShareModal";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import html2canvas from "html2canvas";
 import { useClipboard } from "../context/ClipboardContext";
+import EmojiPicker from "emoji-picker-react";
 
 export default function DocumentEditor({ docName, setActivePath, returnPath, isNested = false }) {
     const [sheetData, setSheetData] = useState(null);
@@ -50,6 +52,8 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
     const [nestedSheetsMapping, setNestedSheetsMapping] = useState({});
     const [activeNestedSheetId, setActiveNestedSheetId] = useState(null);
     const { cellClipboard, setCellClipboard } = useClipboard();
+    const [emojiPickerCell, setEmojiPickerCell] = useState(null); // { rowId, colId }
+    const emojiTextareaRefs = useRef({});
 
     // Helper to safely parse column options
     const parseOptions = (options) => {
@@ -1343,11 +1347,6 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             if (value !== '' && isNaN(Number(value))) {
                 return; // Ignore invalid values
             }
-        } else if (colDef && colDef.type === 'text') {
-            // Ensure final value is text-only (letters and spaces)
-            if (value !== '' && /[^a-zA-Z\s]/.test(value)) {
-                return; // Reject if it contains non-text characters
-            }
         } else if (colDef && colDef.type === 'currency') {
             finalValue = parseCurrencyInput(value);
         } else if (colDef && colDef.type === 'date') {
@@ -1649,6 +1648,11 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                 for (const col of colsToExport) {
                     const cell = row.cells?.find(c => c.columnId === col.id);
                     let val = cell?.computedValue ?? cell?.rawValue ?? '';
+
+                    // Strip emojis because jsPDF standard fonts cannot render them and produce garbled text
+                    if (typeof val === 'string') {
+                        val = val.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
+                    }
 
                     if (col.type === 'currency' && val !== '') {
                         val = cell?.formattedValue || formatCurrency(val, col.currencyCode);
@@ -2417,27 +2421,24 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                                             />
                                                         </div>
                                                     ) : (
-                                                        <div className="grid w-full min-w-0 relative">
+                                                        <div className="grid w-full min-w-0 relative group/textcell">
                                                             {/* Ghost div to expand height */}
                                                             <div className={`invisible pl-3 ${ (nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-7' : 'pr-3' } py-2 text-[13px] whitespace-pre-wrap break-all w-full min-w-0 min-h-9 ${(cell?.isBold || row.isBold || col.isBold) ? 'font-bold' : ''} ${(cell?.isItalic || row.isItalic || col.isItalic) ? 'italic' : ''}`}>
                                                                 {displayVal || ' '}
                                                             </div>
                                                             <textarea
                                                                 key={`text-${row.id}-${col.id}-${displayVal}`}
+                                                                ref={el => { emojiTextareaRefs.current[`${row.id}_${col.id}`] = el; }}
                                                                 defaultValue={displayVal}
                                                                 placeholder={col.type === 'number' || col.type === 'currency' ? '0' : ''}
                                                                 onFocus={() => setFocusedCell({ rowId: row.id, colId: col.id })}
                                                                 onChange={(e) => {
                                                                     if (col.type === 'number') {
-                                                                        // Only allow digits, one dot, and one leading minus
                                                                         let val = e.target.value.replace(/[^0-9.-]/g, '');
                                                                         const parts = val.split('.');
                                                                         if (parts.length > 2) val = parts[0] + '.' + parts.slice(1).join('');
                                                                         if (val.lastIndexOf('-') > 0) val = val[0] + val.slice(1).replace(/-/g, '');
                                                                         e.target.value = val;
-                                                                    } else if (col.type === 'text') {
-                                                                        // Text only (letters and spaces)
-                                                                        e.target.value = e.target.value.replace(/[^a-zA-Z\s]/g, '');
                                                                     }
                                                                 }}
                                                                 onBlur={(e) => {
@@ -2460,8 +2461,32 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                                                 }}
                                                                 readOnly={cell?.permission === 'view' || isFormula}
                                                                 rows={1}
-                                                                className={`absolute inset-0 w-full h-full min-w-0 pl-3 ${ (nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-7' : 'pr-3' } py-2 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 resize-none overflow-hidden whitespace-pre-wrap break-all ${col.type === 'currency' && isFocused ? 'pl-8' : ''} ${cell?.permission === 'view' || isFormula ? 'cursor-default bg-gray-50/30' : 'cursor-text'} ${col.type === 'number' || col.type === 'currency' || isFormula ? 'text-right' : ''} ${(cell?.isBold || row.isBold || col.isBold) ? 'font-bold' : ''} ${(cell?.isItalic || row.isItalic || col.isItalic) ? 'italic' : ''}`}
+                                                                className={`absolute inset-0 w-full h-full min-w-0 pl-3 ${ (nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-14' : 'pr-8' } py-2 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 resize-none overflow-hidden whitespace-pre-wrap break-all ${col.type === 'currency' && isFocused ? 'pl-8' : ''} ${cell?.permission === 'view' || isFormula ? 'cursor-default bg-gray-50/30' : 'cursor-text'} ${col.type === 'number' || col.type === 'currency' || isFormula ? 'text-right' : ''} ${(cell?.isBold || row.isBold || col.isBold) ? 'font-bold' : ''} ${(cell?.isItalic || row.isItalic || col.isItalic) ? 'italic' : ''}`}
                                                             />
+                                                            {/* Emoji button — only on text columns, not view-only */}
+                                                            {col.type === 'text' && cell?.permission !== 'view' && (
+                                                                <div className={`absolute ${(nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'right-6' : 'right-1'} top-1/2 -translate-y-1/2 z-20`}>
+                                                                    <button
+                                                                        type="button"
+                                                                        onMouseDown={e => { 
+                                                                            e.preventDefault(); 
+                                                                            if (emojiPickerCell?.rowId === row.id && emojiPickerCell?.colId === col.id) {
+                                                                                setEmojiPickerCell(null);
+                                                                            } else {
+                                                                                const rect = e.currentTarget.getBoundingClientRect();
+                                                                                setEmojiPickerCell({ 
+                                                                                    rowId: row.id, 
+                                                                                    colId: col.id, 
+                                                                                    x: rect.right, 
+                                                                                    y: rect.bottom 
+                                                                                });
+                                                                            }
+                                                                        }}
+                                                                        className="opacity-0 group-hover/textcell:opacity-100 focus-within:opacity-100 w-6 h-6 flex items-center justify-center rounded hover:bg-indigo-50 text-gray-400 hover:text-indigo-600 transition-all text-sm"
+                                                                        title="Insert emoji"
+                                                                    >😊</button>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     )}
                                                 </td>
@@ -2559,6 +2584,39 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                     </tfoot>
                 </table>
             </div>
+
+            {/* Global Emoji Picker */}
+            {emojiPickerCell && (
+                <div 
+                    className="fixed z-[9999] shadow-2xl rounded-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100"
+                    style={{ 
+                        top: Math.min(emojiPickerCell.y + 10, window.innerHeight - 450), 
+                        left: Math.max(10, Math.min(emojiPickerCell.x - 300, window.innerWidth - 320)) 
+                    }}
+                    onMouseDown={e => e.stopPropagation()}
+                    onMouseLeave={() => setEmojiPickerCell(null)}
+                >
+                    <EmojiPicker
+                        onEmojiClick={(emojiData) => {
+                            const emoji = emojiData.emoji;
+                            const ta = emojiTextareaRefs.current[`${emojiPickerCell.rowId}_${emojiPickerCell.colId}`];
+                            if (ta) {
+                                const start = ta.selectionStart;
+                                const end = ta.selectionEnd;
+                                const current = ta.value;
+                                ta.value = current.slice(0, start) + emoji + current.slice(end);
+                                ta.selectionStart = ta.selectionEnd = start + emoji.length;
+                                ta.focus();
+                                // Trigger save
+                                handleCellChange(emojiPickerCell.rowId, emojiPickerCell.colId, ta.value);
+                            }
+                            setEmojiPickerCell(null);
+                        }}
+                        width={300}
+                        height={400}
+                    />
+                </div>
+            )}
 
             {/* Cell Context Menu */}
             {activeCellMenu && (

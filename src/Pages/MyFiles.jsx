@@ -321,6 +321,8 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
     }));
     const currentFiles = sortItems(items.filter(item => {
         if (searchQuery) return item.type === "file" && item.title.toLowerCase().includes(searchQuery.toLowerCase());
+        // Only show files if we are inside a folder, not at the root (Home screen)
+        if (!currentFolderId) return false;
         return item.parentId === currentFolderId && item.type === "file";
     }));
     const isFolderEmpty = currentFolders.length === 0 && currentFiles.length === 0;
@@ -448,7 +450,7 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                                 className="flex items-center gap-2 bg-[#1A56DB] hover:bg-blue-700 text-white px-5 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer"
                             >
                                 <FiPlus className="w-4 h-4" />
-                                New Document
+                                New 
                             </button>
 
                             {/* Dropdown Menu */}
