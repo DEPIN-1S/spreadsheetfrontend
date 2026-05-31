@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { FiSearch, FiMenu, FiMoreVertical, FiEye, FiFolder, FiPlus, FiChevronRight, FiMove, FiTrash2 } from "react-icons/fi";
+import { useState, useEffect, useCallback } from "react";
+import { FiSearch, FiMenu, FiFolder, FiPlus, FiChevronRight, FiMove, FiTrash2 } from "react-icons/fi";
 import { BsFileEarmarkSpreadsheet } from "react-icons/bs";
 import apiClient from "../api/apiClient";
 import Swal from "sweetalert2";
@@ -15,13 +15,9 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
     // UI state
     const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
     const [newFolderName, setNewFolderName] = useState("");
-    const [isCreateDocModalOpen, setIsCreateDocModalOpen] = useState(false);
-    const [newDocName, setNewDocName] = useState("");
-    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
     const [movingItem, setMovingItem] = useState(null);
     const [allSharedFolders, setAllSharedFolders] = useState([]);
-    const dropdownRef = useRef(null);
 
     const fetchSharedItems = useCallback(async () => {
         setLoading(true);
@@ -59,11 +55,48 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
 
     const fetchAllSharedFolders = async () => {
         try {
-            // This is for the "Move to" dropdown - we need all available folders for the current user
-            // We can reuse the folder listing logic or just fetch root folders and then recurse
-            const response = await apiClient.get('/sheets/shared', { params: { page: 1, limit: 100 } });
-            // For simplicity, just show root level organization folders in the move dropdown for now
-            setAllSharedFolders(response.data.data.folders);
+            const response = await apiClient.get('/folders');
+            const fetchedFolders = [];
+
+            const flattenSharedFolders = (folderNodes) => {
+                for (const node of folderNodes) {
+                    if (node.category === 'shared_org') {
+                        fetchedFolders.push({
+                            id: node.id,
+                            name: node.name,
+                            parentId: node.parentId
+                        });
+                    }
+                    if (node.children && node.children.length > 0) {
+                        flattenSharedFolders(node.children);
+                    }
+                }
+            };
+
+            if (response.data && response.data.data) {
+                flattenSharedFolders(response.data.data);
+            }
+
+            const hierarchicalFolders = [];
+            const buildHierarchicalList = (parentId, depth) => {
+                const children = fetchedFolders.filter(f => f.parentId === parentId);
+                children.sort((a, b) => a.name.localeCompare(b.name));
+                for (const child of children) {
+                    hierarchicalFolders.push({ ...child, depth });
+                    buildHierarchicalList(child.id, depth + 1);
+                }
+            };
+
+            const folderIds = fetchedFolders.map(f => f.id);
+            const rootFolders = fetchedFolders.filter(f => !f.parentId || !folderIds.includes(f.parentId));
+            rootFolders.sort((a, b) => a.name.localeCompare(b.name));
+
+            for (const root of rootFolders) {
+                hierarchicalFolders.push({ ...root, depth: 1 });
+                buildHierarchicalList(root.id, 2);
+            }
+
+            setAllSharedFolders(hierarchicalFolders);
         } catch (error) {
             console.error("Error fetching move folders:", error);
         }
@@ -72,16 +105,6 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
     useEffect(() => {
         fetchSharedItems();
     }, [fetchSharedItems]);
-
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-                setIsDropdownOpen(false);
-            }
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
 
     const handleCreateFolder = async () => {
         if (!newFolderName.trim()) return;
@@ -99,21 +122,41 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
         }
     };
 
-    const handleCreateDocument = async () => {
-        if (!newDocName.trim()) return;
+    const openDeleteModal = async (id, type) => {
+        const isFolder = type === "folder";
+        const result = await Swal.fire({
+            title: 'Delete Item?',
+            text: `Are you sure you want to delete this${isFolder ? ' folder and all items inside' : ''}? This action cannot be undone.`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: 'Delete',
+            cancelButtonText: 'Cancel',
+            customClass: {
+                popup: 'rounded-2xl',
+                confirmButton: 'rounded-xl px-5',
+                cancelButton: 'rounded-xl px-5'
+            }
+        });
+
+        if (!result.isConfirmed) return;
+
         try {
-            await apiClient.post('/sheets', {
-                name: newDocName,
-                folderId: currentFolderId
-            });
+            if (isFolder) {
+                await apiClient.delete(`/folders/${id}`);
+            } else {
+                await apiClient.delete(`/sheets/${id}`);
+            }
+            Swal.fire({ icon: 'success', title: 'Deleted', text: 'Item removed.', timer: 1500, showConfirmButton: false, customClass: { popup: 'rounded-2xl' } });
             fetchSharedItems();
-            setNewDocName("");
-            setIsCreateDocModalOpen(false);
-            Swal.fire("Success", "Document created", "success");
         } catch (error) {
-            Swal.fire("Error", error.response?.data?.message || "Failed to create document", "error");
+            console.error("Error deleting item:", error);
+            Swal.fire({ icon: 'error', title: 'Error', text: error.response?.data?.message || 'Failed to delete item.', customClass: { popup: 'rounded-2xl' } });
         }
     };
+
+
 
     const handleMoveItem = async (targetFolderId) => {
         if (!movingItem) return;
@@ -180,45 +223,15 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                                 className="pl-9 pr-4 py-2 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-64 shadow-xs"
                             />
                         </div>
-                        <div className="relative" ref={dropdownRef}>
-                            <button 
-                                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-full text-sm font-medium transition-all shadow-md shadow-indigo-100 active:scale-95"
-                            >
-                                <FiPlus className="w-4 h-4" /> New
-                            </button>
-
-                            {isDropdownOpen && (
-                                <div className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-[60] animate-in fade-in zoom-in-95 duration-100">
-                                    <button 
-                                        onClick={() => {
-                                            setNewDocName("");
-                                            setIsCreateDocModalOpen(true);
-                                            setIsDropdownOpen(false);
-                                        }}
-                                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors text-left"
-                                    >
-                                        <div className="w-8 h-8 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-600">
-                                            <BsFileEarmarkSpreadsheet className="w-4 h-4" />
-                                        </div>
-                                        New Document
-                                    </button>
-                                    <button 
-                                        onClick={() => {
-                                            setNewFolderName("");
-                                            setIsCreateFolderModalOpen(true);
-                                            setIsDropdownOpen(false);
-                                        }}
-                                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors text-left"
-                                    >
-                                        <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-600">
-                                            <FiFolder className="w-4 h-4" />
-                                        </div>
-                                        New Folder
-                                    </button>
-                                </div>
-                            )}
-                        </div>
+                        <button
+                            onClick={() => {
+                                setNewFolderName("");
+                                setIsCreateFolderModalOpen(true);
+                            }}
+                            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-full text-sm font-medium transition-all shadow-md shadow-indigo-100 active:scale-95"
+                        >
+                            <FiPlus className="w-4 h-4" /> New Folder
+                        </button>
                     </div>
                 </div>
 
@@ -272,9 +285,19 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                                                 <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-500 group-hover:scale-110 transition-transform">
                                                     <FiFolder className="w-6 h-6 fill-indigo-500/20" />
                                                 </div>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        openDeleteModal(folder.id, 'folder');
+                                                    }}
+                                                    className="p-1.5 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all lg:opacity-0 lg:group-hover:opacity-100 opacity-100 focus:opacity-100 shrink-0"
+                                                    title="Delete Folder"
+                                                >
+                                                    <FiTrash2 className="w-4 h-4" />
+                                                </button>
                                             </div>
                                             <h3 className="text-sm font-semibold text-gray-800 truncate mb-1" title={folder.title}>{folder.title}</h3>
-                                            <p className="text-[11px] text-gray-400">Personal Organization</p>
+                                            <p className="text-[11px] text-gray-400">Organization Folder</p>
                                         </div>
                                     ))}
                                 </div>
@@ -313,6 +336,13 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                                                         title="Move to folder"
                                                     >
                                                         <FiMove className="w-4 h-4" />
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => openDeleteModal(file.id, 'file')}
+                                                        className="p-1.5 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                        title="Delete File"
+                                                    >
+                                                        <FiTrash2 className="w-4 h-4" />
                                                     </button>
                                                 </div>
                                             </div>
@@ -388,41 +418,7 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                 </div>
             )}
 
-            {/* Create Document Modal */}
-            {isCreateDocModalOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
-                        <div className="flex items-center gap-3 mb-6">
-                            <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600">
-                                <BsFileEarmarkSpreadsheet className="w-5 h-5" />
-                            </div>
-                            <h2 className="text-lg font-bold text-gray-900">New Document</h2>
-                        </div>
-                        <input
-                            type="text"
-                            value={newDocName}
-                            onChange={(e) => setNewDocName(e.target.value)}
-                            placeholder="Document name"
-                            className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-6 bg-gray-50"
-                            autoFocus
-                        />
-                        <div className="flex gap-3">
-                            <button 
-                                onClick={() => setIsCreateDocModalOpen(false)}
-                                className="flex-1 px-4 py-2.5 text-sm font-semibold text-gray-500 hover:bg-gray-50 rounded-xl transition-colors"
-                            >
-                                Cancel
-                            </button>
-                            <button 
-                                onClick={handleCreateDocument}
-                                className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-all shadow-lg shadow-emerald-100"
-                            >
-                                Create
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+
 
             {/* Move Modal */}
             {isMoveModalOpen && (
@@ -443,12 +439,13 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                                 <button 
                                     key={f.id}
                                     onClick={() => handleMoveItem(f.id)}
+                                    style={{ paddingLeft: `${f.depth * 1.25 + 0.75}rem` }}
                                     className="w-full text-left p-3 hover:bg-indigo-50 rounded-xl transition-colors text-sm flex items-center gap-3 font-medium text-gray-600"
                                 >
-                                    <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-500">
+                                    <div className="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-500 shrink-0">
                                         <FiFolder className="w-4 h-4" />
                                     </div>
-                                    {f.name}
+                                    <span className="truncate">{f.name}</span>
                                 </button>
                             ))}
                         </div>

@@ -4,8 +4,10 @@ import { BsFileEarmarkSpreadsheet } from "react-icons/bs";
 import apiClient from "../api/apiClient";
 import Swal from "sweetalert2";
 import ShareModal from "../Components/ShareModal";
-
 export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocName, setReturnPath, currentFolderId, setCurrentFolderId, path, setPath }) {
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+    const isStaff = currentUser.role === 'staff';
+
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isDocModalOpen, setIsDocModalOpen] = useState(false);
@@ -26,6 +28,10 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
     const [activeItemId, setActiveItemId] = useState(null);
     const [renameItemName, setRenameItemName] = useState("");
     const [moveDestinationId, setMoveDestinationId] = useState(null);
+    const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
+    const [duplicateItemName, setDuplicateItemName] = useState("");
+    const [duplicateItemId, setDuplicateItemId] = useState(null);
+    const [duplicateItemType, setDuplicateItemType] = useState(null);
     
     // Sharing State
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -45,17 +51,19 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
             const fetchedItems = [];
             const addedSheetIds = new Set(); // Track added sheet IDs to prevent duplicates
 
-            // Flatten the folder tree — only extract FOLDERS, not sheets
+            // Flatten the folder tree — only extract personal FOLDERS, not sheets or shared organization folders
             const flattenFolders = (folderNodes) => {
                 for (const node of folderNodes) {
-                    fetchedItems.push({
-                        id: node.id,
-                        type: "folder",
-                        title: node.name,
-                        date: new Date(node.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-                        rawDate: node.createdAt, // kept for accurate date sort
-                        parentId: node.parentId
-                    });
+                    if (!node.category || node.category === 'personal') {
+                        fetchedItems.push({
+                            id: node.id,
+                            type: "folder",
+                            title: node.name,
+                            date: new Date(node.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+                            rawDate: node.createdAt, // kept for accurate date sort
+                            parentId: node.parentId
+                        });
+                    }
                     if (node.children && node.children.length > 0) {
                         flattenFolders(node.children);
                     }
@@ -170,7 +178,10 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
     const navigateToBreadcrumb = (index) => {
         const newPath = path.slice(0, index + 1);
         setPath(newPath);
-        setCurrentFolderId(newPath[newPath.length - 1].id);
+        const lastFolder = newPath.at(-1);
+        if (lastFolder) {
+            setCurrentFolderId(lastFolder.id);
+        }
     };
 
     const openRenameModal = (id, currentTitle) => {
@@ -285,11 +296,24 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
         }
     };
 
-    const handleDuplicateItem = async (id, title, type) => {
+    const handleDuplicateItem = (id, title, type) => {
+        setDuplicateItemId(id);
+        setDuplicateItemName(title);
+        setDuplicateItemType(type);
+        setIsDuplicateModalOpen(true);
+    };
+
+    const submitDuplicateItem = async () => {
+        if (!duplicateItemName.trim() || duplicateItemId === null) return;
+
         try {
-            const endpoint = type === "folder" ? `/folders/${id}/duplicate` : `/sheets/${id}/duplicate`;
-            await apiClient.post(endpoint, { name: `${title} (Copy)` });
+            const endpoint = duplicateItemType === "folder" ? `/folders/${duplicateItemId}/duplicate` : `/sheets/${duplicateItemId}/duplicate`;
+            await apiClient.post(endpoint, { name: duplicateItemName });
             fetchItems();
+            setIsDuplicateModalOpen(false);
+            setDuplicateItemId(null);
+            setDuplicateItemType(null);
+            setDuplicateItemName("");
         } catch (error) {
             console.error("Error duplicating item:", error);
             Swal.fire({
@@ -321,8 +345,6 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
     }));
     const currentFiles = sortItems(items.filter(item => {
         if (searchQuery) return item.type === "file" && item.title.toLowerCase().includes(searchQuery.toLowerCase());
-        // Only show files if we are inside a folder, not at the root (Home screen)
-        if (!currentFolderId) return false;
         return item.parentId === currentFolderId && item.type === "file";
     }));
     const isFolderEmpty = currentFolders.length === 0 && currentFiles.length === 0;
@@ -349,7 +371,29 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
         };
 
         const invalidIds = [activeItemId, ...getDescendentIds(activeItemId)];
-        return items.filter(item => item.type === "folder" && !invalidIds.includes(item.id));
+        const validFolders = items.filter(item => item.type === "folder" && !invalidIds.includes(item.id));
+
+        const hierarchicalFolders = [];
+        const buildHierarchicalList = (parentId, depth) => {
+            const children = validFolders.filter(f => f.parentId === parentId);
+            children.sort((a, b) => a.title.localeCompare(b.title));
+            for (const child of children) {
+                hierarchicalFolders.push({ ...child, depth });
+                buildHierarchicalList(child.id, depth + 1);
+            }
+        };
+
+        // Root folders have parentId not in the validFolders list (or null)
+        const validFolderIds = validFolders.map(f => f.id);
+        const rootFolders = validFolders.filter(f => !f.parentId || !validFolderIds.includes(f.parentId));
+        rootFolders.sort((a, b) => a.title.localeCompare(b.title));
+
+        for (const root of rootFolders) {
+            hierarchicalFolders.push({ ...root, depth: 1 });
+            buildHierarchicalList(root.id, 2);
+        }
+
+        return hierarchicalFolders;
     };
 
     return (
@@ -523,7 +567,7 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                                             onMove={() => openMoveModal(folder.id)}
                                             onShare={() => handleShareItem(folder.id, 'folder')}
                                             onDuplicate={() => handleDuplicateItem(folder.id, folder.title, "folder")}
-                                            onDelete={() => openDeleteModal(folder.id)}
+                                            onDelete={!isStaff ? () => openDeleteModal(folder.id) : undefined}
                                         />
                                     ))}
                                 </div>
@@ -552,7 +596,7 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                                             onMove={() => openMoveModal(file.id)}
                                             onShare={() => handleShareItem(file.id, 'file')}
                                             onDuplicate={() => handleDuplicateItem(file.id, file.title, "file")}
-                                            onDelete={() => openDeleteModal(file.id)}
+                                            onDelete={!isStaff ? () => openDeleteModal(file.id) : undefined}
                                         />
                                     ))}
                                 </div>
@@ -688,6 +732,55 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                 </div>
             )}
 
+            {/* Duplicate Modal */}
+            {isDuplicateModalOpen && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+                        <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                            <h2 className="font-semibold text-gray-800">
+                                Duplicate {duplicateItemType === "folder" ? "Folder" : "Spreadsheet"}
+                            </h2>
+                            <button
+                                onClick={() => setIsDuplicateModalOpen(false)}
+                                className="text-gray-400 hover:text-gray-600 transition-colors"
+                            >
+                                <FiX className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-4">
+                            <p className="text-sm text-gray-500 mb-3">Please enter a name for the duplicate copy.</p>
+                            <input
+                                type="text"
+                                autoFocus
+                                value={duplicateItemName}
+                                onChange={(e) => setDuplicateItemName(e.target.value)}
+                                placeholder="Name"
+                                className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        submitDuplicateItem();
+                                    }
+                                }}
+                            />
+                        </div>
+                        <div className="flex items-center justify-end gap-3 p-4 border-t border-gray-100">
+                            <button
+                                onClick={() => setIsDuplicateModalOpen(false)}
+                                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={submitDuplicateItem}
+                                className="px-5 py-2 text-sm font-medium bg-[#1A56DB] hover:bg-blue-700 text-white rounded-lg transition-colors"
+                            >
+                                Duplicate
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
 
             {/* Move Folder Modal */}
             {isMoveModalOpen && (
@@ -716,10 +809,11 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                                 <button
                                     key={folder.id}
                                     onClick={() => setMoveDestinationId(folder.id)}
-                                    className={`w-full flex items-center gap-2 p-2 pl-6 rounded-lg text-sm text-left transition-colors ${moveDestinationId === folder.id ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-700'}`}
+                                    style={{ paddingLeft: `${folder.depth * 1.25 + 0.5}rem` }}
+                                    className={`w-full flex items-center gap-2 p-2 rounded-lg text-sm text-left transition-colors ${moveDestinationId === folder.id ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-700'}`}
                                 >
-                                    <FiFolder className="w-4 h-4 text-blue-500" />
-                                    {folder.title}
+                                    <FiFolder className="w-4 h-4 text-blue-500 shrink-0" />
+                                    <span className="truncate">{folder.title}</span>
                                 </button>
                             ))}
                         </div>
@@ -848,17 +942,19 @@ function FolderCard({ title, date, onClick, onRename, onMove, onShare, onDuplica
                             <FiPlus className="w-4 h-4 text-gray-400" />
                             Duplicate
                         </button>
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setIsMenuOpen(false);
-                                onDelete();
-                            }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 text-left"
-                        >
-                            <FiTrash2 className="w-4 h-4" />
-                            Delete
-                        </button>
+                        {onDelete && (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setIsMenuOpen(false);
+                                    onDelete();
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 text-left"
+                            >
+                                <FiTrash2 className="w-4 h-4" />
+                                Delete
+                            </button>
+                        )}
                     </div>
                 )}
             </div>
@@ -952,17 +1048,19 @@ function FileCard({ title, date, onClick, onRename, onMove, onShare, onDuplicate
                             <FiPlus className="w-4 h-4 text-gray-400" />
                             Duplicate
                         </button>
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setIsMenuOpen(false);
-                                onDelete();
-                            }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 text-left"
-                        >
-                            <FiTrash2 className="w-4 h-4" />
-                            Delete
-                        </button>
+                        {onDelete && (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setIsMenuOpen(false);
+                                    onDelete();
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 text-left"
+                            >
+                                <FiTrash2 className="w-4 h-4" />
+                                Delete
+                            </button>
+                        )}
                     </div>
                 )}
             </div>

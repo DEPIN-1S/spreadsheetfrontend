@@ -4,8 +4,9 @@ import {
     FiCornerUpLeft, FiCornerUpRight, FiBold, FiItalic, FiUnderline,
     FiType, FiAlignLeft, FiAlignCenter, FiAlignRight, FiSearch,
     FiChevronDown, FiPlus, FiShare2, FiDownload, FiUser, FiArrowLeft, FiImage, FiX,
+    FiChevronLeft, FiChevronRight,
     FiEdit2, FiFilter, FiTrash2, FiScissors, FiCopy, FiClipboard, FiColumns, FiAlignJustify, FiArrowUp, FiArrowDown, FiArrowRight, FiList, FiDelete, FiUploadCloud,
-    FiMessageSquare, FiSend, FiCalendar, FiFileText, FiFile, FiExternalLink, FiAlertCircle
+    FiMessageSquare, FiSend, FiCalendar, FiFileText, FiFile, FiExternalLink, FiAlertCircle, FiClock
 } from "react-icons/fi";
 
 import { BsPaintBucket, BsSortAlphaDown, BsSortAlphaDownAlt, BsFilter, BsWhatsapp } from "react-icons/bs";
@@ -17,12 +18,12 @@ import { formatCurrency, parseCurrencyInput, SUPPORTED_CURRENCIES, getCurrencySy
 import ShareModal from "../Components/ShareModal";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import html2canvas from "html2canvas";
 import { useClipboard } from "../context/ClipboardContext";
 import EmojiPicker from "emoji-picker-react";
 
 export default function DocumentEditor({ docName, setActivePath, returnPath, isNested = false }) {
     const [sheetData, setSheetData] = useState(null);
+    const [accessError, setAccessError] = useState(false);
     const [rows, setRows] = useState([]);
     const [columns, setColumns] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -37,7 +38,10 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
     const [newColumnIsItalic, setNewColumnIsItalic] = useState(false);
     const [newColumnIsDetailedView, setNewColumnIsDetailedView] = useState(false);
     const [newColumnWidth, setNewColumnWidth] = useState(220);
-    const [isRowColorPickerOpen, setIsRowColorPickerOpen] = useState(false);
+    const [newColumnIsUnderline, setNewColumnIsUnderline] = useState(false);
+    const [newColumnIsStrikethrough, setNewColumnIsStrikethrough] = useState(false);
+    const [newColumnFontFamily, setNewColumnFontFamily] = useState('sans');
+    const [newColumnAlignment, setNewColumnAlignment] = useState('left');
     const [showUpdateConfirmModal, setShowUpdateConfirmModal] = useState(false);
     const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
     const [columnToDelete, setColumnToDelete] = useState(null);
@@ -62,7 +66,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         try {
             const parsed = JSON.parse(options);
             return typeof parsed === 'object' ? (parsed || {}) : {};
-        } catch (e) {
+        } catch {
             return {};
         }
     };
@@ -78,12 +82,12 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
         // Prevent scrolling on touch
         if (isTouch) {
-             // e.preventDefault(); // Might interfere with some browsers if not passive: false elsewhere
+            // e.preventDefault(); // Might interfere with some browsers if not passive: false elsewhere
         } else {
-             e.preventDefault();
+            e.preventDefault();
         }
         e.stopPropagation();
-        
+
         setResizingCol(col.id);
         resizeStartX.current = clientX;
         resizeStartWidth.current = col.width || 220;
@@ -103,12 +107,12 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             document.removeEventListener('mouseup', onEnd);
             document.removeEventListener('touchmove', onMove);
             document.removeEventListener('touchend', onEnd);
-            
+
             setResizingCol(null);
-            
+
             const currentX = endEvent.type === 'touchend' ? endEvent.changedTouches[0].clientX : endEvent.clientX;
             const finalWidth = Math.max(80, resizeStartWidth.current + (currentX - resizeStartX.current));
-            
+
             // Persist width to backend
             try {
                 await apiClient.put(`/sheets/${docName}/columns/${col.id}`, { width: finalWidth });
@@ -173,6 +177,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         if (!docName) return; // docName here is actually the sheetId from MyFiles
 
         setIsLoading(true);
+        setAccessError(false);
         try {
             const url = appliedSearchQuery ? `/sheets/${docName}/data?search=${encodeURIComponent(appliedSearchQuery)}` : `/sheets/${docName}/data`;
             const response = await apiClient.get(url);
@@ -193,7 +198,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             // This ensures sort persists across navigation and is shared with all viewers
             let settings = data.sheet?.settings || {};
             if (typeof settings === 'string') {
-                try { settings = JSON.parse(settings); } catch (e) { settings = {}; }
+                try { settings = JSON.parse(settings); } catch { settings = {}; }
             }
             const savedSort = settings.sortConfig;
             setSortConfig(
@@ -212,6 +217,9 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             setNestedSheetsMapping(mapping);
         } catch (error) {
             console.error("Error fetching sheet data:", error);
+            if (error.response && error.response.status === 403) {
+                setAccessError(true);
+            }
         } finally {
             setIsLoading(false);
         }
@@ -268,9 +276,9 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             console.log("Connected to spreadsheet socket");
             socket.emit("join_sheet", docName);
         };
-        
+
         socket.on("connect", handleConnect);
-        
+
         // If already connected when mounting, emit join immediately
         if (socket.connected) {
             handleConnect();
@@ -287,21 +295,51 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         if (cell.columnId === data.columnId) {
                             cellFound = true;
                             if (isOwnUpdate) {
-                                return { ...cell, computedValue: data.computedValue };
+                                return { 
+                                    ...cell, 
+                                    computedValue: data.computedValue,
+                                    formattedValue: data.formattedValue !== undefined ? data.formattedValue : cell.formattedValue
+                                };
                             }
-                            return { ...cell, rawValue: data.rawValue, computedValue: data.computedValue };
+                            return { 
+                                ...cell, 
+                                rawValue: data.rawValue, 
+                                computedValue: data.computedValue,
+                                formattedValue: data.formattedValue,
+                                bgColor: data.bgColor,
+                                isBold: data.isBold,
+                                isItalic: data.isItalic,
+                                isUnderline: data.isUnderline,
+                                isStrikethrough: data.isStrikethrough,
+                                fontFamily: data.fontFamily,
+                                alignment: data.alignment,
+                                fileUrl: data.fileUrl,
+                                currencyCode: data.currencyCode,
+                                nestedSheetId: data.nestedSheetId
+                            };
                         }
                         return cell;
                     });
-                    
+
                     if (!cellFound) {
                         newCells.push({
                             columnId: data.columnId,
                             rawValue: data.rawValue,
-                            computedValue: data.computedValue
+                            computedValue: data.computedValue,
+                            formattedValue: data.formattedValue,
+                            bgColor: data.bgColor,
+                            isBold: data.isBold,
+                            isItalic: data.isItalic,
+                            isUnderline: data.isUnderline,
+                            isStrikethrough: data.isStrikethrough,
+                            fontFamily: data.fontFamily,
+                            alignment: data.alignment,
+                            fileUrl: data.fileUrl,
+                            currencyCode: data.currencyCode,
+                            nestedSheetId: data.nestedSheetId
                         });
                     }
-                    
+
                     return { ...row, cells: newCells };
                 }
                 return row;
@@ -312,7 +350,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             setRows(prevRows => prevRows.map(row => {
                 const rowUpdates = data.cells.filter(c => c.rowId === row.id);
                 if (rowUpdates.length === 0) return row;
-                
+
                 return {
                     ...row,
                     cells: (row.cells || []).map(cell => {
@@ -327,11 +365,11 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             if (data.action === "added") {
                 setRows(prev => {
                     if (prev.some(r => r.id === data.row.id)) return prev;
-                    
+
                     // Use server cells if provided, otherwise create empty ones
                     const serverCells = data.row.cells || [];
                     let finalCells = serverCells;
-                    
+
                     if (serverCells.length === 0 && prev.length > 0) {
                         const templateRow = prev.find(r => r.cells && r.cells.length > 0) || prev[0];
                         finalCells = (templateRow.cells || []).map(c => ({
@@ -342,17 +380,41 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                             formattedValue: ''
                         }));
                     }
-                    
+
                     const updatedRows = [...prev, { ...data.row, cells: finalCells }];
-                    return updatedRows.sort((a,b) => (a.order || 0) - (b.order || 0));
+                    return updatedRows.sort((a, b) => (a.order || 0) - (b.order || 0));
                 });
             } else if (data.action === "deleted") {
-                 setRows(prev => prev.filter(r => r.id !== data.rowId));
-             } else if (data.action === "color_changed") {
-                 setRows(prev => prev.map(r => r.id === data.rowId ? { ...r, rowColor: data.rowColor } : r));
-             } else if (data.action === "reordered_all") {
-                 fetchSheetData(); // Full refresh for physical reorder
-             }
+                setRows(prev => prev.filter(r => r.id !== data.rowId));
+            } else if (data.action === "color_changed") {
+                setRows(prev => prev.map(r => r.id === data.rowId ? { ...r, ...data.row, rowColor: data.rowColor } : r));
+            } else if (data.action === "reordered_all") {
+                fetchSheetData(); // Full refresh for physical reorder
+            }
+        };
+
+        const handleColumnUpdated = (data) => {
+            if (data.action === "added") {
+                setColumns(prev => {
+                    if (prev.some(c => c.id === data.column.id)) return prev;
+                    return [...prev, data.column].sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
+                });
+                fetchSheetData();
+            } else if (data.action === "updated") {
+                setColumns(prev => prev.map(col => col.id === data.column.id ? { ...col, ...data.column } : col));
+                if (data.column.type === 'formula') {
+                    fetchSheetData();
+                }
+            } else if (data.action === "deleted") {
+                setColumns(prev => prev.filter(c => c.id !== data.columnId));
+                fetchSheetData();
+            } else if (data.action === "reordered") {
+                fetchSheetData();
+            } else if (data.action === "visibility_changed") {
+                setColumns(prev => prev.map(col => col.id === data.columnId ? { ...col, isHidden: data.isHidden } : col));
+            } else if (data.action === "sheet_updated") {
+                fetchSheetData();
+            }
         };
 
         const handleSortApplied = (data) => {
@@ -364,6 +426,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         socket.on("cell_updated", handleCellUpdated);
         socket.on("formula_recalculated", handleFormulaRecalculated);
         socket.on("row_updated", handleRowUpdated);
+        socket.on("column_updated", handleColumnUpdated);
         socket.on("sort_applied", handleSortApplied);
 
         return () => {
@@ -372,6 +435,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             socket.off("cell_updated", handleCellUpdated);
             socket.off("formula_recalculated", handleFormulaRecalculated);
             socket.off("row_updated", handleRowUpdated);
+            socket.off("column_updated", handleColumnUpdated);
             socket.off("sort_applied", handleSortApplied);
         };
     }, [docName]);
@@ -379,7 +443,6 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
     // Context Menu State
     const [activeColumnMenu, setActiveColumnMenu] = useState(null); // { id, x, y }
     const menuRef = useRef(null);
-    const rowColorPickerRef = useRef(null);
 
     // Cell Context Menu State
     const [activeCellMenu, setActiveCellMenu] = useState(null);
@@ -392,9 +455,6 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         const handleClickOutside = (event) => {
             if (menuRef.current && !menuRef.current.contains(event.target)) {
                 setActiveColumnMenu(null);
-            }
-            if (rowColorPickerRef.current && !rowColorPickerRef.current.contains(event.target)) {
-                setIsRowColorPickerOpen(false);
             }
             if (cellMenuRef.current && !cellMenuRef.current.contains(event.target)) {
                 setActiveCellMenu(null);
@@ -420,7 +480,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         document.addEventListener('mousedown', handleSortOutside);
         return () => document.removeEventListener('mousedown', handleSortOutside);
     }, []);
-    
+
     // Ensure context menus stay within viewport
     useEffect(() => {
         const adjustMenuPosition = (menuRef, menuState, setMenuState) => {
@@ -443,7 +503,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                     newY = viewportHeight - rect.height - 10;
                     adjusted = true;
                 }
-                
+
                 // Safety check for top/left
                 if (newX < 10) newX = 10;
                 if (newY < 10) newY = 10;
@@ -461,7 +521,6 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
     // Modal State
     const [isColumnModalOpen, setIsColumnModalOpen] = useState(false);
-    const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
     const [newColumnName, setNewColumnName] = useState('');
     const [newColumnType, setNewColumnType] = useState('text');
     const [newColumnCurrencyCode, setNewColumnCurrencyCode] = useState('INR');
@@ -485,6 +544,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
     const [isImageGalleryOpen, setIsImageGalleryOpen] = useState(false);
     const [activeImageCell, setActiveImageCell] = useState(null); // { rowId, colId, images: [] }
     const [selectedPreviewImage, setSelectedPreviewImage] = useState(null); // URL for zoomed preview
+    const [activePreviewIndex, setActivePreviewIndex] = useState(null);
     const [isUploadingImages, setIsUploadingImages] = useState(false);
     // PDF Gallery Modal State
     const [isPDFGalleryOpen, setIsPDFGalleryOpen] = useState(false);
@@ -716,6 +776,10 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             if (col.type === 'date') {
                 return (new Date(rawA) - new Date(rawB)) * dir;
             }
+            if (col.type === 'time') {
+                // HH:MM 24h format sorts lexicographically
+                return String(rawA).localeCompare(String(rawB)) * dir;
+            }
             // Default: text sort
             return String(rawA).localeCompare(String(rawB)) * dir;
         });
@@ -774,6 +838,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         { id: 'text', icon: <span className="text-blue-500 font-serif text-base">T</span>, name: 'Text', desc: 'Insert alpha numeric values in a cell' },
         { id: 'number', icon: <span className="text-blue-500 font-medium text-xs">123</span>, name: 'Number', desc: 'Insert numbers in a cell' },
         { id: 'date', icon: <FiCalendar className="text-blue-500 text-base" />, name: 'Date', desc: 'Pick or type a date value' },
+        { id: 'time', icon: <FiClock className="text-blue-500 text-base" />, name: 'Time', desc: 'Auto-fills with system time; editable' },
 
         { id: 'currency', icon: <span className="text-blue-500 text-base">₹</span>, name: 'Currency', desc: 'Format number to currency' },
         { id: 'formula', icon: <span className="text-blue-500 italic font-serif text-base">fx</span>, name: 'Formula', desc: 'Create formula for automatic calculation' },
@@ -788,6 +853,10 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         setNewColumnWidth(220);
         setNewColumnIsDetailedView(false);
         setEditingColId(null);
+        setNewColumnIsUnderline(false);
+        setNewColumnIsStrikethrough(false);
+        setNewColumnFontFamily('sans');
+        setNewColumnAlignment('left');
         setIsColumnModalOpen(true);
     };
 
@@ -799,7 +868,11 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         setNewColumnIsBold(col.isBold || false);
         setNewColumnIsItalic(col.isItalic || false);
         setNewColumnWidth(col.width || 220);
-        
+        setNewColumnIsUnderline(col.isUnderline || false);
+        setNewColumnIsStrikethrough(col.isStrikethrough || false);
+        setNewColumnFontFamily(col.fontFamily || 'sans');
+        setNewColumnAlignment(col.alignment || 'left');
+
         const opts = parseOptions(col.options);
         setNewColumnIsDetailedView(!!opts.isDetailedViewEnabled);
 
@@ -810,25 +883,25 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
     const handleUpdateColumn = () => {
         if (!newColumnName.trim()) return;
-        
+
         if (editingColId) {
             const originalCol = columns.find(c => c.id === editingColId);
             const nameChanged = originalCol?.name !== newColumnName.trim();
             const typeChanged = originalCol?.type !== newColumnType;
-            
+
             if (!nameChanged && !typeChanged) {
                 // Only styling (color, bold, etc) or nothing changed, save directly
                 performUpdateColumn();
                 return;
             }
         }
-        
+
         setShowUpdateConfirmModal(true);
     };
 
     const performUpdateColumn = async () => {
         setShowUpdateConfirmModal(false);
-        
+
         const originalCol = editingColId ? columns.find(c => c.id === editingColId) : null;
         const isTypeChanged = originalCol ? originalCol.type !== newColumnType : true;
 
@@ -845,10 +918,36 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             return;
         }
 
-        await saveColumnToBackend(newColumnName, newColumnType, editingColId, undefined, newColumnBgColor, newColumnIsBold, newColumnIsItalic, newColumnWidth);
+        await saveColumnToBackend(
+            newColumnName,
+            newColumnType,
+            editingColId,
+            undefined,
+            newColumnBgColor,
+            newColumnIsBold,
+            newColumnIsItalic,
+            newColumnWidth,
+            newColumnIsUnderline,
+            newColumnIsStrikethrough,
+            newColumnFontFamily,
+            newColumnAlignment
+        );
     };
 
-    const saveColumnToBackend = async (name, type, colId, formulaExpr = undefined, bgColor = null, isBold = false, isItalic = false, width = 220) => {
+    const saveColumnToBackend = async (
+        name,
+        type,
+        colId,
+        formulaExpr = undefined,
+        bgColor = null,
+        isBold = false,
+        isItalic = false,
+        width = 220,
+        isUnderline = false,
+        isStrikethrough = false,
+        fontFamily = 'sans',
+        alignment = 'left'
+    ) => {
         try {
             const currencyPayload = type === 'currency' ? { currencyCode: newColumnCurrencyCode } : {};
             const options = {
@@ -863,6 +962,10 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                     bgColor,
                     isBold,
                     isItalic,
+                    isUnderline,
+                    isStrikethrough,
+                    fontFamily,
+                    alignment,
                     width,
                     options,
                     ...currencyPayload,
@@ -871,7 +974,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
                 setColumns(cols => cols.map(c =>
                     c.id === colId
-                        ? { ...c, name, type, formulaExpr, bgColor, isBold, isItalic, width, options, ...currencyPayload }
+                        ? { ...c, name, type, formulaExpr, bgColor, isBold, isItalic, isUnderline, isStrikethrough, fontFamily, alignment, width, options, ...currencyPayload }
                         : c
                 ));
 
@@ -886,6 +989,10 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                     bgColor,
                     isBold,
                     isItalic,
+                    isUnderline,
+                    isStrikethrough,
+                    fontFamily,
+                    alignment,
                     options,
                     ...currencyPayload,
                     ...(formulaExpr ? { formulaExpr } : {})
@@ -907,15 +1014,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         setFormulaString('');
     };
 
-    const handleRowStyleChange = async (stylePatch) => {
-        if (!focusedCell) {
-            alert("Please select a cell in the row you want to style.");
-            return;
-        }
-        const rowId = focusedCell.rowId;
-        updateRowStyle(rowId, stylePatch);
-        setIsRowColorPickerOpen(false);
-    };
+
 
     const updateRowStyle = async (rowId, stylePatch) => {
         try {
@@ -924,7 +1023,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             setRows(currentRows => currentRows.map(row =>
                 row.id === rowId ? { ...row, ...stylePatch } : row
             ));
-            
+
             // Sync with backend
             await apiClient.patch(`/sheets/${docName}/rows/${rowId}/color`, stylePatch);
         } catch (error) {
@@ -967,13 +1066,33 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             setColumns(currentCols => currentCols.map(col =>
                 col.id === colId ? { ...col, ...stylePatch } : col
             ));
-            
+
             // Sync with backend
             await apiClient.put(`/sheets/${docName}/columns/${colId}`, stylePatch);
         } catch (error) {
             console.error("Error updating column style:", error);
             fetchSheetData();
         }
+    };
+
+    const getCellFormattingClasses = (cell, row, col, isFormula = false) => {
+        const classes = [];
+        if (cell?.isBold || row?.isBold || col?.isBold) classes.push('font-bold');
+        if (cell?.isItalic || row?.isItalic || col?.isItalic) classes.push('italic');
+        if (cell?.isUnderline || row?.isUnderline || col?.isUnderline) classes.push('underline');
+        if (cell?.isStrikethrough || row?.isStrikethrough || col?.isStrikethrough) classes.push('line-through');
+
+        const family = cell?.fontFamily || row?.fontFamily || col?.fontFamily || 'sans';
+        if (family === 'mono') classes.push('font-mono');
+        else if (family === 'serif') classes.push('font-serif');
+        else classes.push('font-sans');
+
+        const align = cell?.alignment || row?.alignment || col?.alignment || (col?.type === 'number' || col?.type === 'currency' || isFormula ? 'right' : 'left');
+        if (align === 'right') classes.push('text-right');
+        else if (align === 'center') classes.push('text-center');
+        else classes.push('text-left');
+
+        return classes.join(' ');
     };
 
     // --- Column Menu Actions ---
@@ -997,8 +1116,8 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             const cell = row.cells?.find(c => c.columnId === col.id);
             const cellValue = cell?.computedValue ?? cell?.rawValue;
             const rowNo = (row.order !== undefined ? row.order + 1 : filteredRows.indexOf(row) + 1);
-            const defaultName = (cellValue && cellValue.toString().trim() !== "") 
-                ? cellValue.toString().trim() 
+            const defaultName = (cellValue && cellValue.toString().trim() !== "")
+                ? cellValue.toString().trim()
                 : `${col.name}-${rowNo}`;
 
             const opts = parseOptions(col.options);
@@ -1026,7 +1145,11 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             fetchSheetData();
         } catch (e) {
             console.error("Error auto-creating nested sheet", e);
-            alert("Failed to initialize C.C.");
+            if (e.response && e.response.status === 403) {
+                alert("You do not have permission to create or access this C.C. detail.");
+            } else {
+                alert("Failed to initialize C.C.");
+            }
         }
     };
 
@@ -1040,8 +1163,8 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                 const cellValue = cell?.computedValue ?? cell?.rawValue;
                 const rowNo = (row.order !== undefined ? row.order + 1 : filteredRows.indexOf(row) + 1);
                 const col = columns.find(c => c.id === colId);
-                const defaultName = (cellValue && cellValue.toString().trim() !== "") 
-                    ? cellValue.toString().trim() 
+                const defaultName = (cellValue && cellValue.toString().trim() !== "")
+                    ? cellValue.toString().trim()
                     : `${col?.name || 'Column'}-${rowNo}`;
 
                 const opts = parseOptions(col.options);
@@ -1054,7 +1177,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                     columns: hasTemplate ? opts.ccTemplateColumns : undefined
                 });
                 const newDocId = response.data.data.id;
-                
+
                 // Update mapping locally
                 setNestedSheetsMapping(prev => ({ ...prev, [`${row.id}_${colId}`]: newDocId }));
 
@@ -1066,7 +1189,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                 });
 
                 fetchSheetData();
-            } catch(e) { console.error("Error creating nested sheet", e); }
+            } catch (e) { console.error("Error creating nested sheet", e); }
         }
         setShowEnableRowModal(false);
         setRowToEnable(null);
@@ -1075,7 +1198,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
     const handleCCConfigConfirm = async () => {
         if (!configuringCCColId || ccTemplateColumns.length === 0) return;
-        
+
         // Filter out empty names if any (though UI should prevent it)
         const validColumns = ccTemplateColumns.filter(c => c.name.trim() !== "");
         if (validColumns.length === 0) return;
@@ -1083,8 +1206,8 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         const col = columns.find(c => c.id === configuringCCColId);
         if (col) {
             const opts = parseOptions(col.options);
-            const newOpts = { 
-                ...opts, 
+            const newOpts = {
+                ...opts,
                 isDetailedViewEnabled: true,
                 ccTemplateColumns: validColumns.map(c => ({
                     name: c.name.trim(),
@@ -1093,7 +1216,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             };
             await updateColumnStyle(col.id, { options: newOpts });
         }
-        
+
         setIsCCConfigModalOpen(false);
         setConfiguringCCColId(null);
         setCcTemplateColumns([{ name: '', type: 'text' }]);
@@ -1294,6 +1417,30 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         fetchSheetData();
                     }
                     break;
+                case 'remove_cc':
+                    if (row && row.id && colId) {
+                        const mappingKey = `${row.id}_${colId}`;
+                        const nestedId = nestedSheetsMapping[mappingKey];
+                        if (nestedId) {
+                            try {
+                                await apiClient.delete(`/sheets/${nestedId}`);
+                            } catch (e) {
+                                console.error("Failed to delete C.C. sheet", e);
+                            }
+                            await apiClient.post(`/sheets/${docName}/cells`, {
+                                rowId: row.id,
+                                columnId: colId,
+                                nestedSheetId: null
+                            });
+                            setNestedSheetsMapping(prev => {
+                                const next = { ...prev };
+                                delete next[mappingKey];
+                                return next;
+                            });
+                            fetchSheetData();
+                        }
+                    }
+                    break;
                 case 'erase_data':
                     if (row && row.id && colId) {
                         await handleCellChange(row.id, colId, "");
@@ -1310,6 +1457,36 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         const cell = row.cells?.find(c => c.columnId === colId);
                         await updateCellStyle(row.id, colId, { isItalic: !cell?.isItalic });
                     }
+                    break;
+                case 'toggle_underline':
+                    if (row && colId) {
+                        const cell = row.cells?.find(c => c.columnId === colId);
+                        await updateCellStyle(row.id, colId, { isUnderline: !cell?.isUnderline });
+                    }
+                    break;
+                case 'toggle_strikethrough':
+                    if (row && colId) {
+                        const cell = row.cells?.find(c => c.columnId === colId);
+                        await updateCellStyle(row.id, colId, { isStrikethrough: !cell?.isStrikethrough });
+                    }
+                    break;
+                case 'font_sans':
+                    if (row && colId) await updateCellStyle(row.id, colId, { fontFamily: 'sans' });
+                    break;
+                case 'font_serif':
+                    if (row && colId) await updateCellStyle(row.id, colId, { fontFamily: 'serif' });
+                    break;
+                case 'font_mono':
+                    if (row && colId) await updateCellStyle(row.id, colId, { fontFamily: 'mono' });
+                    break;
+                case 'align_left':
+                    if (row && colId) await updateCellStyle(row.id, colId, { alignment: 'left' });
+                    break;
+                case 'align_center':
+                    if (row && colId) await updateCellStyle(row.id, colId, { alignment: 'center' });
+                    break;
+                case 'align_right':
+                    if (row && colId) await updateCellStyle(row.id, colId, { alignment: 'right' });
                     break;
                 case 'copy':
                     if (row && colId) {
@@ -1353,6 +1530,11 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             // Allow empty value to clear, validate non-empty
             if (value !== '' && isNaN(new Date(value).getTime())) {
                 return; // Reject invalid date
+            }
+        } else if (colDef && colDef.type === 'time') {
+            // Allow empty value to clear, validate HH:MM format for non-empty
+            if (value !== '' && !/^\d{1,2}:\d{2}(:\d{2})?$/.test(value)) {
+                return; // Reject invalid time
             }
         }
 
@@ -1400,7 +1582,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
     // --- Multi-Image Upload Logic ---
     const handleImageGalleryOpen = (rowId, colId, value, permission) => {
         let parsedImages = [];
-        try { if (value) parsedImages = JSON.parse(value); } catch (e) { }
+        try { if (value) parsedImages = JSON.parse(value); } catch { }
         if (!Array.isArray(parsedImages)) parsedImages = [];
         setActiveImageCell({ rowId, colId, images: parsedImages, permission });
         setIsImageGalleryOpen(true);
@@ -1448,19 +1630,63 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
     const confirmDeleteImage = async () => {
         if (imageToDeleteIndex === null) return;
-        
+
         const newImagesList = activeImageCell.images.filter((_, i) => i !== imageToDeleteIndex);
         setActiveImageCell(prev => ({ ...prev, images: newImagesList }));
         await handleCellChange(activeImageCell.rowId, activeImageCell.colId, JSON.stringify(newImagesList));
-        
+
         setShowImageDeleteConfirmModal(false);
         setImageToDeleteIndex(null);
     };
 
+    const handlePrevImage = useCallback((e) => {
+        if (e) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+        if (!activeImageCell?.images || activeImageCell.images.length <= 1) return;
+        setActivePreviewIndex(prev => {
+            const nextIndex = (prev === null || prev === 0) ? activeImageCell.images.length - 1 : prev - 1;
+            setSelectedPreviewImage(getMediaUrl(activeImageCell.images[nextIndex].url));
+            return nextIndex;
+        });
+    }, [activeImageCell]);
+
+    const handleNextImage = useCallback((e) => {
+        if (e) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+        if (!activeImageCell?.images || activeImageCell.images.length <= 1) return;
+        setActivePreviewIndex(prev => {
+            const nextIndex = (prev === null || prev === activeImageCell.images.length - 1) ? 0 : prev + 1;
+            setSelectedPreviewImage(getMediaUrl(activeImageCell.images[nextIndex].url));
+            return nextIndex;
+        });
+    }, [activeImageCell]);
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (!selectedPreviewImage) return;
+            if (e.key === 'ArrowLeft') {
+                handlePrevImage();
+            } else if (e.key === 'ArrowRight') {
+                handleNextImage();
+            } else if (e.key === 'Escape') {
+                setSelectedPreviewImage(null);
+                setActivePreviewIndex(null);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [selectedPreviewImage, handlePrevImage, handleNextImage]);
+
     // --- PDF Upload Logic ---
     const handlePDFGalleryOpen = (rowId, colId, value, permission) => {
         let parsedPDFs = [];
-        try { if (value) parsedPDFs = JSON.parse(value); } catch (e) { }
+        try { if (value) parsedPDFs = JSON.parse(value); } catch { }
         if (!Array.isArray(parsedPDFs)) parsedPDFs = [];
         setActivePDFCell({ rowId, colId, documents: parsedPDFs, permission });
         setIsPDFGalleryOpen(true);
@@ -1468,7 +1694,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
     const handlePDFsSelected = async (e) => {
         if (!e.target.files?.length) return;
-        
+
         const files = Array.from(e.target.files);
         const nonPDFs = files.filter(f => f.type !== 'application/pdf');
         if (nonPDFs.length > 0) {
@@ -1517,11 +1743,11 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
     const confirmDeletePDF = async () => {
         if (pdfToDeleteIndex === null) return;
-        
+
         const newPDFList = activePDFCell.documents.filter((_, i) => i !== pdfToDeleteIndex);
         setActivePDFCell(prev => ({ ...prev, documents: newPDFList }));
         await handleCellChange(activePDFCell.rowId, activePDFCell.colId, JSON.stringify(newPDFList));
-        
+
         setShowPDFDeleteConfirmModal(false);
         setPdfToDeleteIndex(null);
     };
@@ -1532,12 +1758,12 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         try {
             const resp = await apiClient.post(`/sheets/${docName}/rows`, {});
             const newRow = resp.data.data;
-            
+
             // Optimistically add the row to local state using the API response
             // This is more reliable than depending on socket events
             setRows(prev => {
                 if (prev.some(r => r.id === newRow.id)) return prev;
-                
+
                 // Build empty cells for the new row using the current column structure
                 const templateRow = prev.find(r => r.cells && r.cells.length > 0);
                 const emptyCells = templateRow
@@ -1555,29 +1781,29 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         computedValue: '',
                         formattedValue: ''
                     }));
-                
-                return [...prev, { ...newRow, cells: emptyCells }].sort((a,b) => (a.order || 0) - (b.order || 0));
+
+                return [...prev, { ...newRow, cells: emptyCells }].sort((a, b) => (a.order || 0) - (b.order || 0));
             });
         } catch (error) {
             console.error("Error adding row:", error);
         }
     };
 
-    const handleDownloadBackup = async () => {
-        try {
-            const res = await apiClient.get(`/sheets/${docName}/export`, { responseType: 'blob' });
-            const url = window.URL.createObjectURL(new Blob([res.data]));
-            const link = document.createElement('a');
-            link.href = url;
-            const dateStr = new Date().toISOString().split('T')[0];
-            link.setAttribute('download', `spreadsheet_backup_${docName}_${dateStr}.json`);
-            document.body.appendChild(link);
-            link.click();
-            link.parentNode.removeChild(link);
-        } catch (err) {
-            console.error("Backup failed", err);
-        }
-    };
+    // const handleDownloadBackup = async () => {
+    //     try {
+    //         const res = await apiClient.get(`/sheets/${docName}/export`, { responseType: 'blob' });
+    //         const url = window.URL.createObjectURL(new Blob([res.data]));
+    //         const link = document.createElement('a');
+    //         link.href = url;
+    //         const dateStr = new Date().toISOString().split('T')[0];
+    //         link.setAttribute('download', `spreadsheet_backup_${docName}_${dateStr}.json`);
+    //         document.body.appendChild(link);
+    //         link.click();
+    //         link.parentNode.removeChild(link);
+    //     } catch (err) {
+    //         console.error("Backup failed", err);
+    //     }
+    // };
 
     const executePDFExport = async () => {
         try {
@@ -1664,6 +1890,18 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         } else {
                             val = 'dd-mm-yyyy';
                         }
+                    } else if (col.type === 'time') {
+                        if (val) {
+                            const parts = val.split(':');
+                            const h = parseInt(parts[0], 10);
+                            if (!isNaN(h) && parts.length >= 2) {
+                                const ampm = h >= 12 ? 'PM' : 'AM';
+                                const h12 = h % 12 || 12;
+                                val = `${h12}:${parts[1]} ${ampm}`;
+                            }
+                        } else {
+                            val = '--:-- --';
+                        }
                     } else if (col.type === 'comment') {
                         const count = cell?.id ? (commentCounts[cell.id] || 0) : 0;
                         val = count > 0 ? `${count} comment${count > 1 ? 's' : ''}` : (col.permission === 'view' ? '' : 'Tap to add comments.');
@@ -1692,7 +1930,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                             } else {
                                 val = '';
                             }
-                        } catch (e) {
+                        } catch {
                             val = '';
                         }
                     }
@@ -1734,19 +1972,19 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                 body: tableData,
                 foot: hasCalc ? [footRow] : [],
                 showFoot: hasCalc ? 'lastPage' : 'never',
-                styles: { 
-                    fontSize: 8, 
-                    cellPadding: 1.5, 
-                    valign: 'middle', 
-                    lineColor: [180, 180, 180], 
+                styles: {
+                    fontSize: 8,
+                    cellPadding: 1.5,
+                    valign: 'middle',
+                    lineColor: [180, 180, 180],
                     lineWidth: 0.1,
                     textColor: [51, 65, 85],
                     overflow: 'linebreak',
                 },
-                headStyles: { 
-                    fillColor: [51, 65, 85], 
-                    textColor: 255, 
-                    lineColor: [51, 65, 85], 
+                headStyles: {
+                    fillColor: [51, 65, 85],
+                    textColor: 255,
+                    lineColor: [51, 65, 85],
                     lineWidth: 0.1,
                     fontStyle: 'bold'
                 },
@@ -1812,8 +2050,8 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
                                 try {
                                     doc.addImage(imgData.base64, 'JPEG', x, y, finalImgWidth, finalImgHeight);
-                                } catch (e) {
-                                    try { doc.addImage(imgData.base64, 'PNG', x, y, finalImgWidth, finalImgHeight); } catch (e2) { }
+                                } catch {
+                                    try { doc.addImage(imgData.base64, 'PNG', x, y, finalImgWidth, finalImgHeight); } catch { }
                                 }
                             });
                         }
@@ -1857,6 +2095,14 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
     return (
         <div className={`flex flex-col bg-white overflow-hidden w-full ${isNested ? 'h-full border border-gray-200 rounded-lg shadow-sm' : 'h-screen'}`}>
+            {accessError ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-gray-50">
+                    <FiAlertCircle className="w-16 h-16 text-red-500 mb-4" />
+                    <h2 className="text-2xl font-bold text-gray-800 mb-2">Access Denied</h2>
+                    <p className="text-gray-600">You don't have permission to view this {isNested ? 'cell detail' : 'spreadsheet'}.</p>
+                </div>
+            ) : (
+            <>
             {/* Sub-Sheet simplified header */}
             {isNested && (
                 <div className="bg-white border-b border-gray-100 flex items-center justify-between px-6 py-4 shrink-0 shadow-sm">
@@ -1870,7 +2116,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                     {sheetData?.name || "Row Detail Sub-Sheet"}
                                 </h3>
                                 {(sheetData?.userPermission === 'admin' || sheetData?.userPermission === 'editor') && (
-                                    <button 
+                                    <button
                                         onClick={() => {
                                             setRenamingSubSheetId(docName);
                                             setRenamingSubSheetName(sheetData?.name || "");
@@ -1887,8 +2133,8 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                         <div className="h-8 w-[1px] bg-gray-100 mx-2"></div>
-                         {/* Search is handled in the shared toolbar below */}
+                        <div className="h-8 w-[1px] bg-gray-100 mx-2"></div>
+                        {/* Search is handled in the shared toolbar below */}
                     </div>
                 </div>
             )}
@@ -1896,47 +2142,47 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             {/* Top Navigation */}
             {!isNested && (
                 <div className="bg-[#0f172a] text-white flex items-center justify-between px-4 py-4 shrink-0">
-                <div className="flex items-center gap-4">
-                    <button
-                        onClick={() => setActivePath(returnPath || '/my-files')}
-                        className="p-2 hover:bg-white/10 rounded-full transition-colors flex items-center justify-center"
-                        title="Back"
-                    >
-                        <FiArrowLeft className="w-5 h-5 text-gray-300" />
-                    </button>
-                    <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center font-bold text-white shadow-sm">
-                            <span className="text-xl leading-none -mt-0.5">D</span>
-                        </div>
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <h1 className="font-semibold text-lg">{sheetData?.name || "Loading..."}</h1>
+                    <div className="flex items-center gap-4">
+                        <button
+                            onClick={() => setActivePath(returnPath || '/my-files')}
+                            className="p-2 hover:bg-white/10 rounded-full transition-colors flex items-center justify-center"
+                            title="Back"
+                        >
+                            <FiArrowLeft className="w-5 h-5 text-gray-300" />
+                        </button>
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center font-bold text-white shadow-sm">
+                                <span className="text-xl leading-none -mt-0.5">D</span>
                             </div>
-                            
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <h1 className="font-semibold text-lg">{sheetData?.name || "Loading..."}</h1>
+                                </div>
+
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <div className="flex items-center gap-2 sm:gap-3">
-                    {!isNested && (
-                        <button
-                            onClick={handleExportPDF}
-                            className="sm:hidden flex items-center justify-center p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors"
-                            title="Download PDF"
-                        >
-                            <FiDownload className="w-4 h-4 text-white" />
-                        </button>
-                    )}
-                    {(sheetData?.userPermission === 'admin') && (
-                        <button
-                            onClick={() => setIsShareModalOpen(true)}
-                            className="flex items-center gap-2 px-3 sm:px-4 py-1.5 bg-white/10 hover:bg-white/20 rounded-full text-sm font-medium transition-colors"
-                        >
-                            <FiShare2 className="w-4 h-4" />
-                            <span className="hidden sm:block">Share</span>
-                        </button>
-                    )}
-                    {/* <button
+                    <div className="flex items-center gap-2 sm:gap-3">
+                        {!isNested && (
+                            <button
+                                onClick={handleExportPDF}
+                                className="sm:hidden flex items-center justify-center p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors"
+                                title="Download PDF"
+                            >
+                                <FiDownload className="w-4 h-4 text-white" />
+                            </button>
+                        )}
+                        {(sheetData?.userPermission === 'admin') && (
+                            <button
+                                onClick={() => setIsShareModalOpen(true)}
+                                className="flex items-center gap-2 px-3 sm:px-4 py-1.5 bg-white/10 hover:bg-white/20 rounded-full text-sm font-medium transition-colors"
+                            >
+                                <FiShare2 className="w-4 h-4" />
+                                <span className="hidden sm:block">Share</span>
+                            </button>
+                        )}
+                        {/* <button
                         onClick={handleDownloadBackup}
                         className="flex items-center gap-2 px-3 sm:px-4 py-1.5 bg-white/10 hover:bg-white/20 rounded-full text-sm font-medium transition-colors"
                         title="Download JSON Backup"
@@ -1945,9 +2191,9 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         <span className="hidden sm:block">Backup</span>
                     </button> */}
 
-                    {/* User profile placeholder removed as it was static */}
+                        {/* User profile placeholder removed as it was static */}
+                    </div>
                 </div>
-            </div>
             )}
 
             {/* Toolbar */}
@@ -1970,11 +2216,10 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                             setPendingSortConfig({ colId: sortConfig.colId || '', direction: sortConfig.direction });
                             setIsSortPanelOpen(prev => !prev);
                         }}
-                        className={`hidden sm:flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${
-                            sortConfig.colId
+                        className={`hidden sm:flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${sortConfig.colId
                                 ? 'bg-indigo-50 text-indigo-700 border-indigo-300 hover:bg-indigo-100'
                                 : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
-                        }`}
+                            }`}
                     >
                         {sortConfig.colId
                             ? (sortConfig.direction === 'asc' ? <FiArrowUp className="w-4 h-4" /> : <FiArrowDown className="w-4 h-4" />)
@@ -2019,11 +2264,10 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                         <button
                                             id="sort-dir-asc"
                                             onClick={() => setPendingSortConfig(prev => ({ ...prev, direction: 'asc' }))}
-                                            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                                                pendingSortConfig.direction === 'asc'
+                                            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium border transition-colors ${pendingSortConfig.direction === 'asc'
                                                     ? 'bg-indigo-600 text-white border-indigo-600'
                                                     : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                                            }`}
+                                                }`}
                                         >
                                             <FiArrowUp className="w-4 h-4" />
                                             A → Z / 1 → 9
@@ -2031,11 +2275,10 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                         <button
                                             id="sort-dir-desc"
                                             onClick={() => setPendingSortConfig(prev => ({ ...prev, direction: 'desc' }))}
-                                            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                                                pendingSortConfig.direction === 'desc'
+                                            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium border transition-colors ${pendingSortConfig.direction === 'desc'
                                                     ? 'bg-indigo-600 text-white border-indigo-600'
                                                     : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                                            }`}
+                                                }`}
                                         >
                                             <FiArrowDown className="w-4 h-4" />
                                             Z → A / 9 → 1
@@ -2099,12 +2342,12 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             <div className="flex-1 overflow-auto bg-gray-50 relative w-full">
                 <table className="w-max text-left border-collapse bg-white table-fixed relative">
                     <thead>
-                        <tr className="bg-white sticky top-0 z-20 shadow-[0_1px_0_#e5e7eb]">
-                            <th className="w-12 min-w-12 border-b border-r border-gray-300 text-center py-2 text-gray-400 font-normal sticky left-0 bg-white z-30"></th>
+                        <tr className="bg-white sticky top-0 z-20 shadow-[0_1px_0_#9ca3af]">
+                            <th className="w-12 min-w-12 border-b border-r border-gray-400 text-center py-2 text-gray-400 font-normal sticky left-0 bg-white z-30"></th>
                             {columns.map(col => (
                                 <th
                                     key={col.id}
-                                    className={`border-b border-r border-gray-300 py-2 px-3 text-xs font-bold transition-colors relative group select-none ${resizingCol === col.id ? 'bg-blue-50/20' : (!col.bgColor ? 'bg-white hover:bg-gray-50 text-gray-800' : 'text-gray-800')}`}
+                                    className={`border-b border-r border-gray-400 py-2 px-3 text-xs font-bold transition-colors relative group select-none ${resizingCol === col.id ? 'bg-blue-50/20' : (!col.bgColor ? 'bg-white hover:bg-gray-50 text-gray-800' : 'text-gray-800')}`}
                                     style={{ width: col.width || 220, minWidth: col.width || 220, backgroundColor: col.bgColor || undefined }}
                                 >
                                     {/* Resize handle */}
@@ -2137,24 +2380,6 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                             <span className={`whitespace-pre-wrap break-all font-bold transition-colors ${col.permission !== 'view' ? 'group-hover:text-blue-600 cursor-pointer' : 'cursor-default'}`}>{col.name}</span>
                                         </div>
                                         <div className="flex items-center gap-1 shrink-0">
-                                            {/* Sort arrow — shown on hover or when active */}
-                                            {!['multi_image', 'pdf', 'comment'].includes(col.type) && (
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); handleColumnSort(col.id); }}
-                                                    className={`p-0.5 rounded transition-all ${
-                                                        sortConfig.colId === col.id
-                                                            ? 'text-blue-600 opacity-100'
-                                                            : 'text-gray-400 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 hover:text-blue-500'
-                                                    }`}
-                                                    title={sortConfig.colId === col.id ? (sortConfig.direction === 'asc' ? 'Sorted A→Z (click for Z→A)' : 'Sorted Z→A (click to clear)') : 'Sort by this column'}
-                                                >
-                                                    {sortConfig.colId === col.id
-                                                        ? (sortConfig.direction === 'asc'
-                                                            ? <FiArrowUp className="w-3 h-3" />
-                                                            : <FiArrowDown className="w-3 h-3" />)
-                                                        : <BsSortAlphaDown className="w-3 h-3" />}
-                                                </button>
-                                            )}
                                             {col.permission !== 'view' && (
                                                 <FiChevronDown className={`w-3.5 h-3.5 shrink-0 cursor-pointer transition-transform ${activeColumnMenu?.id === col.id ? 'text-blue-600 rotate-180 opacity-100' : 'text-gray-400 hover:text-gray-600 lg:opacity-0 lg:group-hover:opacity-100 opacity-100'}`} />
                                             )}
@@ -2245,9 +2470,10 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                         className="hover:bg-blue-50/10 transition-colors group text-[#334155]"
                                         style={{ backgroundColor: computedRowBg }}
                                     >
-                                        <td 
-                                            className={`relative border-b border-r border-gray-300 text-center py-2 text-[13px] text-gray-500 group-hover:bg-gray-100/50 transition-colors w-12 sticky left-0 z-10 min-w-12 font-medium ${computedRowBg === 'transparent' ? 'bg-gray-50/50' : ''} ${activeRowMenu?.rowIndex === index ? 'bg-blue-100' : ''}`}
+                                        <td
+                                            className={`relative border-b border-r border-gray-400 text-center py-2 text-[13px] text-gray-500 group-hover:bg-gray-100/50 transition-colors w-12 sticky left-0 z-10 min-w-12 font-medium ${computedRowBg === 'transparent' ? 'bg-gray-50/50' : ''} ${activeRowMenu?.rowIndex === index ? 'bg-blue-100' : ''}`}
                                             onContextMenu={(e) => handleRowContextMenu(e, index)}
+                                            onClick={(e) => handleRowContextMenu(e, index)}
                                         >
                                             <span className="cursor-pointer">{index + 1}</span>
                                         </td>
@@ -2267,6 +2493,17 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                                 displayVal = isFocused
                                                     ? val
                                                     : (isNaN(d.getTime()) ? val : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }));
+                                            } else if (col.type === 'time' && val) {
+                                                // Show formatted "H:MM AM/PM" when not focused
+                                                if (!isFocused) {
+                                                    const parts = val.split(':');
+                                                    const h = parseInt(parts[0], 10);
+                                                    if (!isNaN(h) && parts.length >= 2) {
+                                                        const ampm = h >= 12 ? 'PM' : 'AM';
+                                                        const h12 = h % 12 || 12;
+                                                        displayVal = `${h12}:${parts[1]} ${ampm}`;
+                                                    }
+                                                }
                                             }
 
                                             const cellCommentCount = cell?.id ? (commentCounts[cell.id] || 0) : 0;
@@ -2274,7 +2511,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                             return (
                                                 <td
                                                     key={col.id}
-                                                    className={`border-b border-r border-gray-300 p-0 relative min-h-9 h-auto ${resizingCol === col.id ? 'bg-blue-50/10' : ''} ${activeCellMenu?.rowIndex === index && activeCellMenu?.colId === col.id ? 'ring-2 ring-blue-500 z-10 bg-blue-50/10' : ''}`}
+                                                    className={`border-b border-r border-gray-400 p-0 relative min-h-9 h-auto ${resizingCol === col.id ? 'bg-blue-50/10' : ''} ${activeCellMenu?.rowIndex === index && activeCellMenu?.colId === col.id ? 'ring-2 ring-blue-500 z-10 bg-blue-50/10' : ''}`}
                                                     style={{
                                                         width: col.width || 220,
                                                         minWidth: col.width || 220,
@@ -2304,7 +2541,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
                                                     {/* Cell Sub-Sheet Indicator */}
                                                     {(nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) && (
-                                                        <div 
+                                                        <div
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 handleOpenOrCreateDetails(row, col);
@@ -2365,7 +2602,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                                                             )}
                                                                         </div>
                                                                     );
-                                                                } catch (e) {
+                                                                } catch {
                                                                     return <span className="text-red-400 text-xs">Invalid format</span>;
                                                                 }
                                                             })()}
@@ -2374,7 +2611,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                                         <div
                                                             className="w-full min-h-9 flex items-center px-3 py-1 cursor-pointer hover:bg-black/5"
                                                             onClick={() => handlePDFGalleryOpen(row.id, col.id, displayVal, cell?.permission)}
-                                                        >
+                                                         >
                                                             {(() => {
                                                                 try {
                                                                     const docs = JSON.parse(displayVal || '[]');
@@ -2398,7 +2635,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                                                             </span>
                                                                         </div>
                                                                     );
-                                                                } catch (e) {
+                                                                } catch {
                                                                     return <span className="text-red-400 text-xs">Invalid format</span>;
                                                                 }
                                                             })()}
@@ -2417,13 +2654,51 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                                                     }
                                                                 }}
                                                                 readOnly={cell?.permission === 'view'}
-                                                                className={`w-full pl-3 ${ (nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-7' : 'pr-3' } py-1.5 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 ${cell?.permission === 'view' ? 'cursor-default' : 'cursor-text'} ${(cell?.isBold || row.isBold || col.isBold) ? 'font-bold' : ''} ${(cell?.isItalic || row.isItalic || col.isItalic) ? 'italic' : ''}`}
+                                                                className={`w-full pl-3 ${(nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-7' : 'pr-3'} py-1.5 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 ${cell?.permission === 'view' ? 'cursor-default' : 'cursor-text'} ${getCellFormattingClasses(cell, row, col)}`}
                                                             />
+                                                        </div>
+                                                    ) : col.type === 'time' ? (
+                                                        <div className="min-h-9 flex items-center w-full relative">
+                                                            {isFocused ? (
+                                                                /* When focused: native time picker for editing */
+                                                                <input
+                                                                    type="time"
+                                                                    autoFocus
+                                                                    defaultValue={val || ''}
+                                                                    onBlur={(e) => {
+                                                                        setFocusedCell(null);
+                                                                        if (e.target.value !== val) {
+                                                                            handleCellChange(row.id, col.id, e.target.value);
+                                                                        }
+                                                                    }}
+                                                                    readOnly={cell?.permission === 'view'}
+                                                                    className={`w-full pl-3 pr-3 py-1.5 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 ${cell?.permission === 'view' ? 'cursor-default' : 'cursor-text'} ${getCellFormattingClasses(cell, row, col)}`}
+                                                                />
+                                                            ) : (
+                                                                /* When not focused: show formatted time as text, click to edit */
+                                                                <div
+                                                                    onClick={() => {
+                                                                        if (cell?.permission !== 'view') {
+                                                                            // Auto-fill system time if empty, then focus
+                                                                            if (!val) {
+                                                                                const now = new Date();
+                                                                                const hh = String(now.getHours()).padStart(2, '0');
+                                                                                const mm = String(now.getMinutes()).padStart(2, '0');
+                                                                                handleCellChange(row.id, col.id, `${hh}:${mm}`);
+                                                                            }
+                                                                            setFocusedCell({ rowId: row.id, colId: col.id });
+                                                                        }
+                                                                    }}
+                                                                    className={`w-full pl-3 pr-3 py-1.5 min-h-9 flex items-center text-[13px] text-gray-800 ${cell?.permission === 'view' ? 'cursor-default' : 'cursor-pointer'} ${getCellFormattingClasses(cell, row, col)}`}
+                                                                >
+                                                                    {displayVal || <span className="text-gray-300 text-xs">--:-- --</span>}
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     ) : (
                                                         <div className="grid w-full min-w-0 relative group/textcell">
                                                             {/* Ghost div to expand height */}
-                                                            <div className={`invisible pl-3 ${ (nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-7' : 'pr-3' } py-2 text-[13px] whitespace-pre-wrap break-all w-full min-w-0 min-h-9 ${(cell?.isBold || row.isBold || col.isBold) ? 'font-bold' : ''} ${(cell?.isItalic || row.isItalic || col.isItalic) ? 'italic' : ''}`}>
+                                                            <div className={`invisible pl-3 ${(nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-7' : 'pr-3'} py-2 text-[13px] whitespace-pre-wrap break-all w-full min-w-0 min-h-9 ${getCellFormattingClasses(cell, row, col, isFormula)}`}>
                                                                 {displayVal || ' '}
                                                             </div>
                                                             <textarea
@@ -2461,24 +2736,24 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                                                 }}
                                                                 readOnly={cell?.permission === 'view' || isFormula}
                                                                 rows={1}
-                                                                className={`absolute inset-0 w-full h-full min-w-0 pl-3 ${ (nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-14' : 'pr-8' } py-2 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 resize-none overflow-hidden whitespace-pre-wrap break-all ${col.type === 'currency' && isFocused ? 'pl-8' : ''} ${cell?.permission === 'view' || isFormula ? 'cursor-default bg-gray-50/30' : 'cursor-text'} ${col.type === 'number' || col.type === 'currency' || isFormula ? 'text-right' : ''} ${(cell?.isBold || row.isBold || col.isBold) ? 'font-bold' : ''} ${(cell?.isItalic || row.isItalic || col.isItalic) ? 'italic' : ''}`}
+                                                                className={`absolute inset-0 w-full h-full min-w-0 pl-3 ${(nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-14' : 'pr-8'} py-2 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 resize-none overflow-hidden whitespace-pre-wrap break-all ${col.type === 'currency' && isFocused ? 'pl-8' : ''} ${cell?.permission === 'view' || isFormula ? 'cursor-default bg-gray-50/30' : 'cursor-text'} ${col.type === 'number' || col.type === 'currency' || isFormula ? 'text-right' : ''} ${getCellFormattingClasses(cell, row, col, isFormula)}`}
                                                             />
                                                             {/* Emoji button — only on text columns, not view-only */}
                                                             {col.type === 'text' && cell?.permission !== 'view' && (
                                                                 <div className={`absolute ${(nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'right-6' : 'right-1'} top-1/2 -translate-y-1/2 z-20`}>
                                                                     <button
                                                                         type="button"
-                                                                        onMouseDown={e => { 
-                                                                            e.preventDefault(); 
+                                                                        onMouseDown={e => {
+                                                                            e.preventDefault();
                                                                             if (emojiPickerCell?.rowId === row.id && emojiPickerCell?.colId === col.id) {
                                                                                 setEmojiPickerCell(null);
                                                                             } else {
                                                                                 const rect = e.currentTarget.getBoundingClientRect();
-                                                                                setEmojiPickerCell({ 
-                                                                                    rowId: row.id, 
-                                                                                    colId: col.id, 
-                                                                                    x: rect.right, 
-                                                                                    y: rect.bottom 
+                                                                                setEmojiPickerCell({
+                                                                                    rowId: row.id,
+                                                                                    colId: col.id,
+                                                                                    x: rect.right,
+                                                                                    y: rect.bottom
                                                                                 });
                                                                             }
                                                                         }}
@@ -2506,11 +2781,11 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         )}
                     </tbody>
                     {/* Bottom Calculation Bar */}
-                    <tfoot className="sticky bottom-0 z-30 bg-[#f8fafc] shadow-[0_-1px_0_#e5e7eb,0_1px_0_#e5e7eb]">
+                    <tfoot className="sticky bottom-0 z-30 bg-[#f8fafc] shadow-[0_-1px_0_#9ca3af,0_1px_0_#9ca3af]">
                         <tr className="h-10">
                             <td
                                 onClick={handleAddRow}
-                                className="w-12 min-w-12 border-r border-gray-200 bg-[#475569] hover:bg-[#334155] transition-colors p-0 sticky left-0 z-30 cursor-pointer"
+                                className="w-12 min-w-12 border-r border-gray-400 bg-[#475569] hover:bg-[#334155] transition-colors p-0 sticky left-0 z-30 cursor-pointer"
                                 title="Add Row"
                             >
                                 <div className="flex items-center justify-center w-full h-full">
@@ -2520,12 +2795,12 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                             {columns.map((col) => {
                                 const mode = columnCalcMode[col.id];
                                 const calcValue = mode ? getColumnCalcValue(col.id, mode) : null;
-                                const isNonCalcType = col.type === 'text' || col.type === 'multi_image' || col.type === 'comment' || col.type === 'image' || col.type === 'pdf' || col.type === 'date';
+                                const isNonCalcType = col.type === 'text' || col.type === 'multi_image' || col.type === 'comment' || col.type === 'image' || col.type === 'pdf' || col.type === 'date' || col.type === 'time';
 
                                 return (
                                     <td
                                         key={col.id}
-                                        className={`border-r border-gray-200 bg-[#f8fafc] relative p-0 ${resizingCol === col.id ? 'bg-blue-50/20' : ''}`}
+                                        className={`border-r border-gray-400 bg-[#f8fafc] relative p-0 ${resizingCol === col.id ? 'bg-blue-50/20' : ''}`}
                                     >
                                         {isNonCalcType ? null : mode ? (
                                             /* Show calculated value */
@@ -2587,11 +2862,11 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
             {/* Global Emoji Picker */}
             {emojiPickerCell && (
-                <div 
+                <div
                     className="fixed z-[9999] shadow-2xl rounded-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100"
-                    style={{ 
-                        top: Math.min(emojiPickerCell.y + 10, window.innerHeight - 450), 
-                        left: Math.max(10, Math.min(emojiPickerCell.x - 300, window.innerWidth - 320)) 
+                    style={{
+                        top: Math.min(emojiPickerCell.y + 10, window.innerHeight - 450),
+                        left: Math.max(10, Math.min(emojiPickerCell.x - 300, window.innerWidth - 320))
                     }}
                     onMouseDown={e => e.stopPropagation()}
                     onMouseLeave={() => setEmojiPickerCell(null)}
@@ -2635,8 +2910,8 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                             </button>
                         );
                     })()}
-                    <button 
-                        onClick={() => handleCellAction('paste', activeCellMenu.rowIndex, activeCellMenu.colId)} 
+                    <button
+                        onClick={() => handleCellAction('paste', activeCellMenu.rowIndex, activeCellMenu.colId)}
                         disabled={!cellClipboard}
                         className={`w-full text-left px-4 py-1.5 text-sm flex items-center gap-3 transition-colors ${cellClipboard ? 'hover:bg-gray-50 text-gray-700' : 'text-gray-300 cursor-not-allowed'}`}
                     >
@@ -2654,7 +2929,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                     }} className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors text-blue-600 font-medium">
                                         <FiColumns className="w-4 h-4" /> Open Cell Details
                                     </button>
-                                    <button 
+                                    <button
                                         onClick={() => {
                                             const row = filteredRows[activeCellMenu.rowIndex];
                                             const sheetId = nestedSheetsMapping[`${row.id}_${activeCellMenu.colId}`];
@@ -2662,7 +2937,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                             setRenamingSubSheetName("Cell Detail Sub-Sheet");
                                             setShowRenameSubSheetModal(true);
                                             setActiveCellMenu(null);
-                                        }} 
+                                        }}
                                         className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors text-gray-600"
                                     >
                                         <FiEdit2 className="w-4 h-4 text-gray-400" /> Rename Cell Details
@@ -2696,30 +2971,104 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         </div>
                     </div>
 
-                    <div className="px-4 py-1.5 flex gap-2">
-                        <button 
-                            onClick={() => handleCellAction('toggle_bold', activeCellMenu.rowIndex, activeCellMenu.colId)}
-                            className={`p-2 rounded hover:bg-gray-100 border ${filteredRows[activeCellMenu.rowIndex]?.cells?.find(c => c.columnId === activeCellMenu.colId)?.isBold ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
-                            title="Bold"
-                        >
-                            <FiBold className="w-4 h-4" />
-                        </button>
-                        <button 
-                            onClick={() => handleCellAction('toggle_italic', activeCellMenu.rowIndex, activeCellMenu.colId)}
-                            className={`p-2 rounded hover:bg-gray-100 border ${filteredRows[activeCellMenu.rowIndex]?.cells?.find(c => c.columnId === activeCellMenu.colId)?.isItalic ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
-                            title="Italic"
-                        >
-                            <FiItalic className="w-4 h-4" />
-                        </button>
-                    </div>
+                    {(() => {
+                        const targetCell = filteredRows[activeCellMenu.rowIndex]?.cells?.find(c => c.columnId === activeCellMenu.colId);
+                        const isUnderline = targetCell?.isUnderline || false;
+                        const isStrikethrough = targetCell?.isStrikethrough || false;
+                        const alignment = targetCell?.alignment || null;
+                        const fontFamily = targetCell?.fontFamily || 'sans';
+                        return (
+                            <>
+                                <div className="px-4 py-1 flex flex-wrap gap-1 border-t border-gray-100 pt-2.5">
+                                    <button
+                                        onClick={() => handleCellAction('toggle_bold', activeCellMenu.rowIndex, activeCellMenu.colId)}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border ${targetCell?.isBold ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Bold"
+                                    >
+                                        <FiBold className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                        onClick={() => handleCellAction('toggle_italic', activeCellMenu.rowIndex, activeCellMenu.colId)}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border ${targetCell?.isItalic ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Italic"
+                                    >
+                                        <FiItalic className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                        onClick={() => handleCellAction('toggle_underline', activeCellMenu.rowIndex, activeCellMenu.colId)}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border ${isUnderline ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Underline"
+                                    >
+                                        <FiUnderline className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                        onClick={() => handleCellAction('toggle_strikethrough', activeCellMenu.rowIndex, activeCellMenu.colId)}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border ${isStrikethrough ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Strikethrough"
+                                    >
+                                        <BiStrikethrough className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                                <div className="px-4 py-1 flex gap-1">
+                                    <button
+                                        onClick={() => handleCellAction('align_left', activeCellMenu.rowIndex, activeCellMenu.colId)}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border ${alignment === 'left' ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Align Left"
+                                    >
+                                        <FiAlignLeft className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                        onClick={() => handleCellAction('align_center', activeCellMenu.rowIndex, activeCellMenu.colId)}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border ${alignment === 'center' ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Align Center"
+                                    >
+                                        <FiAlignCenter className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                        onClick={() => handleCellAction('align_right', activeCellMenu.rowIndex, activeCellMenu.colId)}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border ${alignment === 'right' ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Align Right"
+                                    >
+                                        <FiAlignRight className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                                <div className="px-4 py-1.5">
+                                    <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">Font Family</span>
+                                    <select
+                                        value={fontFamily}
+                                        onChange={(e) => handleCellAction(`font_${e.target.value}`, activeCellMenu.rowIndex, activeCellMenu.colId)}
+                                        className="w-full text-xs bg-gray-50 border border-gray-200 rounded p-1 outline-none text-gray-700"
+                                    >
+                                        <option value="sans">Sans-Serif</option>
+                                        <option value="serif">Serif</option>
+                                        <option value="mono">Monospace</option>
+                                    </select>
+                                </div>
+                            </>
+                        );
+                    })()}
 
                     <div className="my-1 border-t border-gray-100"></div>
+                    {(() => {
+                        const row = filteredRows[activeCellMenu.rowIndex];
+                        const hasCC = row && nestedSheetsMapping[`${row.id}_${activeCellMenu.colId}`];
+                        if (hasCC) {
+                            return (
+                                <button onClick={() => handleCellAction('remove_cc', activeCellMenu.rowIndex, activeCellMenu.colId)} className="w-full text-left px-4 py-1.5 text-sm hover:bg-orange-50 text-orange-600 flex items-center gap-3 transition-colors mt-1">
+                                    <FiScissors className="w-4 h-4 text-orange-400" /> Remove C.C.
+                                </button>
+                            );
+                        }
+                        return null;
+                    })()}
                     <button onClick={() => handleCellAction('erase_data', activeCellMenu.rowIndex, activeCellMenu.colId)} className="w-full text-left px-4 py-1.5 text-sm hover:bg-red-50 text-red-600 flex items-center gap-3 transition-colors mt-1">
                         <FiDelete className="w-4 h-4 text-red-400" /> Erase Cell Data
                     </button>
-                    <button onClick={() => handleCellAction('delete_row', activeCellMenu.rowIndex, activeCellMenu.colId)} className="w-full text-left px-4 py-1.5 text-sm hover:bg-red-50 text-red-600 flex items-center gap-3 transition-colors">
-                        <FiTrash2 className="w-4 h-4 text-red-400" /> Delete Row
-                    </button>
+                    {sheetData?.userPermission === 'admin' && (
+                        <button onClick={() => handleCellAction('delete_row', activeCellMenu.rowIndex, activeCellMenu.colId)} className="w-full text-left px-4 py-1.5 text-sm hover:bg-red-50 text-red-600 flex items-center gap-3 transition-colors">
+                            <FiTrash2 className="w-4 h-4 text-red-400" /> Delete Row
+                        </button>
+                    )}
                 </div>
             )}
 
@@ -2730,20 +3079,20 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                     style={{ top: activeRowMenu.y, left: activeRowMenu.x }}
                     className="fixed mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-[300] text-gray-700 select-none animate-in fade-in zoom-in-95 duration-100"
                 >
-                    <button onClick={() => { 
-                        handleCellAction('add_row_above', activeRowMenu.rowIndex, null); 
-                        setActiveRowMenu(null); 
+                    <button onClick={() => {
+                        handleCellAction('add_row_above', activeRowMenu.rowIndex, null);
+                        setActiveRowMenu(null);
                     }} className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors">
                         <FiPlus className="w-4 h-4 text-blue-400" /> Add Row Above
                     </button>
-                    <button onClick={() => { 
-                        handleCellAction('add_row_below', activeRowMenu.rowIndex, null); 
-                        setActiveRowMenu(null); 
+                    <button onClick={() => {
+                        handleCellAction('add_row_below', activeRowMenu.rowIndex, null);
+                        setActiveRowMenu(null);
                     }} className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors">
                         <FiPlus className="w-4 h-4 text-blue-400" /> Add Row Below
                     </button>
                     <div className="my-1 border-t border-gray-100"></div>
-                    
+
                     <div className="px-4 py-1.5">
                         <span className="text-xs font-semibold text-gray-500 mb-2 block">Row Color</span>
                         <div className="flex flex-wrap gap-1.5">
@@ -2752,7 +3101,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                     key={color.name}
                                     onClick={() => {
                                         const rowId = filteredRows[activeRowMenu.rowIndex]?.id;
-                                        if(rowId) {
+                                        if (rowId) {
                                             updateRowStyle(rowId, { rowColor: color.value });
                                         }
                                         setActiveRowMenu(null);
@@ -2767,31 +3116,123 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         </div>
                     </div>
 
-                    <div className="px-4 py-1.5 flex gap-2">
-                        <button 
-                            onClick={() => {
-                                const row = filteredRows[activeRowMenu.rowIndex];
-                                if (row) updateRowStyle(row.id, { isBold: !row.isBold });
-                                setActiveRowMenu(null);
-                            }}
-                            className={`p-2 rounded hover:bg-gray-100 border ${filteredRows[activeRowMenu.rowIndex]?.isBold ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
-                            title="Bold Row"
-                        >
-                            <FiBold className="w-4 h-4" />
-                        </button>
-                        <button 
-                            onClick={() => {
-                                const row = filteredRows[activeRowMenu.rowIndex];
-                                if (row) updateRowStyle(row.id, { isItalic: !row.isItalic });
-                                setActiveRowMenu(null);
-                            }}
-                            className={`p-2 rounded hover:bg-gray-100 border ${filteredRows[activeRowMenu.rowIndex]?.isItalic ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
-                            title="Italic Row"
-                        >
-                            <FiItalic className="w-4 h-4" />
-                        </button>
-                    </div>
+                    {(() => {
+                        const targetRow = filteredRows[activeRowMenu.rowIndex];
+                        if (!targetRow) return null;
+                        const isUnderline = targetRow.isUnderline || false;
+                        const isStrikethrough = targetRow.isStrikethrough || false;
+                        const alignment = targetRow.alignment || '';
+                        const fontFamily = targetRow.fontFamily || 'sans';
+                        return (
+                            <>
+                                <div className="px-4 py-1.5 flex flex-wrap gap-1">
+                                    <button
+                                        onClick={() => {
+                                            updateRowStyle(targetRow.id, { isBold: !targetRow.isBold });
+                                            setActiveRowMenu(null);
+                                        }}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border ${targetRow.isBold ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Bold Row"
+                                    >
+                                        <FiBold className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            updateRowStyle(targetRow.id, { isItalic: !targetRow.isItalic });
+                                            setActiveRowMenu(null);
+                                        }}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border ${targetRow.isItalic ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Italic Row"
+                                    >
+                                        <FiItalic className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            updateRowStyle(targetRow.id, { isUnderline: !isUnderline });
+                                            setActiveRowMenu(null);
+                                        }}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border ${isUnderline ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Underline Row"
+                                    >
+                                        <FiUnderline className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            updateRowStyle(targetRow.id, { isStrikethrough: !isStrikethrough });
+                                            setActiveRowMenu(null);
+                                        }}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border ${isStrikethrough ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Strikethrough Row"
+                                    >
+                                        <BiStrikethrough className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                                <div className="px-4 py-1 flex gap-1">
+                                    <button
+                                        onClick={() => {
+                                            updateRowStyle(targetRow.id, { alignment: 'left' });
+                                            setActiveRowMenu(null);
+                                        }}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border ${alignment === 'left' ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Align Left Row"
+                                    >
+                                        <FiAlignLeft className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            updateRowStyle(targetRow.id, { alignment: 'center' });
+                                            setActiveRowMenu(null);
+                                        }}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border ${alignment === 'center' ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Align Center Row"
+                                    >
+                                        <FiAlignCenter className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            updateRowStyle(targetRow.id, { alignment: 'right' });
+                                            setActiveRowMenu(null);
+                                        }}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border ${alignment === 'right' ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Align Right Row"
+                                    >
+                                        <FiAlignRight className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                                <div className="px-4 py-1.5">
+                                    <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">Font Family</span>
+                                    <select
+                                        value={fontFamily}
+                                        onChange={(e) => {
+                                            updateRowStyle(targetRow.id, { fontFamily: e.target.value });
+                                            setActiveRowMenu(null);
+                                        }}
+                                        className="w-full text-xs bg-gray-50 border border-gray-200 rounded p-1 outline-none text-gray-700"
+                                    >
+                                        <option value="sans">Sans-Serif</option>
+                                        <option value="serif">Serif</option>
+                                        <option value="mono">Monospace</option>
+                                    </select>
+                                </div>
+                            </>
+                        );
+                    })()}
 
+                    {sheetData?.userPermission === 'admin' && (
+                        <>
+                            <div className="my-1 border-t border-gray-100"></div>
+                            <button
+                                onClick={() => {
+                                    handleCellAction('delete_row', activeRowMenu.rowIndex, null);
+                                    setActiveRowMenu(null);
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm hover:bg-red-50 text-red-600 flex items-center gap-3 transition-colors"
+                            >
+                                <FiTrash2 className="w-4 h-4 text-red-400" />
+                                Delete Row
+                            </button>
+                        </>
+                    )}
 
                 </div>
             )}
@@ -2849,30 +3290,107 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         </div>
                     </div>
 
-                    <div className="px-4 py-1.5 flex gap-2">
-                        <button 
-                            onClick={() => {
-                                const col = columns.find(c => c.id === activeColumnMenu.id);
-                                if (col) updateColumnStyle(col.id, { isBold: !col.isBold });
-                                setActiveColumnMenu(null);
-                            }}
-                            className={`p-2 rounded hover:bg-gray-100 border transition-colors ${columns.find(c => c.id === activeColumnMenu.id)?.isBold ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
-                            title="Bold Column"
-                        >
-                            <FiBold className="w-4 h-4" />
-                        </button>
-                        <button 
-                            onClick={() => {
-                                const col = columns.find(c => c.id === activeColumnMenu.id);
-                                if (col) updateColumnStyle(col.id, { isItalic: !col.isItalic });
-                                setActiveColumnMenu(null);
-                            }}
-                            className={`p-2 rounded hover:bg-gray-100 border transition-colors ${columns.find(c => c.id === activeColumnMenu.id)?.isItalic ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
-                            title="Italic Column"
-                        >
-                            <FiItalic className="w-4 h-4" />
-                        </button>
-                    </div>
+                    {(() => {
+                        const targetCol = columns.find(c => c.id === activeColumnMenu.id);
+                        if (!targetCol) return null;
+                        const isUnderline = targetCol.isUnderline || false;
+                        const isStrikethrough = targetCol.isStrikethrough || false;
+                        const alignment = targetCol.alignment || 'left';
+                        const fontFamily = targetCol.fontFamily || 'sans';
+                        return (
+                            <>
+                                <div className="px-4 py-1.5 flex flex-wrap gap-1">
+                                    <button
+                                        onClick={() => {
+                                            updateColumnStyle(targetCol.id, { isBold: !targetCol.isBold });
+                                            setActiveColumnMenu(null);
+                                        }}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border transition-colors ${targetCol.isBold ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Bold Column"
+                                    >
+                                        <FiBold className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            updateColumnStyle(targetCol.id, { isItalic: !targetCol.isItalic });
+                                            setActiveColumnMenu(null);
+                                        }}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border transition-colors ${targetCol.isItalic ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Italic Column"
+                                    >
+                                        <FiItalic className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            updateColumnStyle(targetCol.id, { isUnderline: !isUnderline });
+                                            setActiveColumnMenu(null);
+                                        }}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border transition-colors ${isUnderline ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Underline Column"
+                                    >
+                                        <FiUnderline className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            updateColumnStyle(targetCol.id, { isStrikethrough: !isStrikethrough });
+                                            setActiveColumnMenu(null);
+                                        }}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border transition-colors ${isStrikethrough ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Strikethrough Column"
+                                    >
+                                        <BiStrikethrough className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                                <div className="px-4 py-1 flex gap-1">
+                                    <button
+                                        onClick={() => {
+                                            updateColumnStyle(targetCol.id, { alignment: 'left' });
+                                            setActiveColumnMenu(null);
+                                        }}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border transition-colors ${alignment === 'left' ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Align Left Column"
+                                    >
+                                        <FiAlignLeft className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            updateColumnStyle(targetCol.id, { alignment: 'center' });
+                                            setActiveColumnMenu(null);
+                                        }}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border transition-colors ${alignment === 'center' ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Align Center Column"
+                                    >
+                                        <FiAlignCenter className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            updateColumnStyle(targetCol.id, { alignment: 'right' });
+                                            setActiveColumnMenu(null);
+                                        }}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border transition-colors ${alignment === 'right' ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Align Right Column"
+                                    >
+                                        <FiAlignRight className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                                <div className="px-4 py-1.5">
+                                    <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">Font Family</span>
+                                    <select
+                                        value={fontFamily}
+                                        onChange={(e) => {
+                                            updateColumnStyle(targetCol.id, { fontFamily: e.target.value });
+                                            setActiveColumnMenu(null);
+                                        }}
+                                        className="w-full text-xs bg-gray-50 border border-gray-200 rounded p-1 outline-none text-gray-700"
+                                    >
+                                        <option value="sans">Sans-Serif</option>
+                                        <option value="serif">Serif</option>
+                                        <option value="mono">Monospace</option>
+                                    </select>
+                                </div>
+                            </>
+                        );
+                    })()}
 
                     {(sheetData?.userPermission === 'admin' || sheetData?.userPermission === 'editor') && (
                         <>
@@ -2900,6 +3418,10 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                 <BiArrowToRight className="w-4 h-4 text-gray-400" />
                                 Add Column to Right
                             </button>
+                        </>
+                    )}
+                    {sheetData?.userPermission === 'admin' && (
+                        <>
                             <div className="my-1 border-t border-gray-100"></div>
                             <button
                                 onClick={() => handleDeleteClick(columns.find(c => c.id === activeColumnMenu.id))}
@@ -2992,19 +3514,73 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                             <div className="space-y-3 mt-4 pt-4 border-t border-gray-100">
                                 <label className="block text-sm font-semibold text-gray-700">Font Style</label>
                                 <div className="flex gap-2">
-                                    <button 
+                                    <button
                                         onClick={() => setNewColumnIsBold(!newColumnIsBold)}
                                         className={`p-2 rounded hover:bg-gray-100 border transition-colors ${newColumnIsBold ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
                                         title="Bold Column"
                                     >
                                         <FiBold className="w-4 h-4" />
                                     </button>
-                                    <button 
+                                    <button
                                         onClick={() => setNewColumnIsItalic(!newColumnIsItalic)}
                                         className={`p-2 rounded hover:bg-gray-100 border transition-colors ${newColumnIsItalic ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
                                         title="Italic Column"
                                     >
                                         <FiItalic className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={() => setNewColumnIsUnderline(!newColumnIsUnderline)}
+                                        className={`p-2 rounded hover:bg-gray-100 border transition-colors ${newColumnIsUnderline ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Underline Column"
+                                    >
+                                        <FiUnderline className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={() => setNewColumnIsStrikethrough(!newColumnIsStrikethrough)}
+                                        className={`p-2 rounded hover:bg-gray-100 border transition-colors ${newColumnIsStrikethrough ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Strikethrough Column"
+                                    >
+                                        <BiStrikethrough className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="space-y-3 mt-4 pt-4 border-t border-gray-100">
+                                <label className="block text-sm font-semibold text-gray-700">Font Family</label>
+                                <select
+                                    value={newColumnFontFamily}
+                                    onChange={(e) => setNewColumnFontFamily(e.target.value)}
+                                    className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-gray-50/50 text-sm text-gray-700"
+                                >
+                                    <option value="sans">Sans-Serif</option>
+                                    <option value="serif">Serif</option>
+                                    <option value="mono">Monospace</option>
+                                </select>
+                            </div>
+
+                            <div className="space-y-3 mt-4 pt-4 border-t border-gray-100">
+                                <label className="block text-sm font-semibold text-gray-700">Alignment</label>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => setNewColumnAlignment('left')}
+                                        className={`p-2 rounded hover:bg-gray-100 border transition-colors ${newColumnAlignment === 'left' ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Left Align"
+                                    >
+                                        <FiAlignLeft className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={() => setNewColumnAlignment('center')}
+                                        className={`p-2 rounded hover:bg-gray-100 border transition-colors ${newColumnAlignment === 'center' ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Center Align"
+                                    >
+                                        <FiAlignCenter className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={() => setNewColumnAlignment('right')}
+                                        className={`p-2 rounded hover:bg-gray-100 border transition-colors ${newColumnAlignment === 'right' ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        title="Right Align"
+                                    >
+                                        <FiAlignRight className="w-4 h-4" />
                                     </button>
                                 </div>
                             </div>
@@ -3013,7 +3589,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                 <div className="space-y-3 mt-4 pt-4 border-t border-gray-100">
                                     <label className="flex items-center gap-3 cursor-pointer group">
                                         <div className="relative flex items-center">
-                                            <input 
+                                            <input
                                                 type="checkbox"
                                                 checked={newColumnIsDetailedView}
                                                 onChange={(e) => setNewColumnIsDetailedView(e.target.checked)}
@@ -3173,7 +3749,15 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                         pendingFormulaColumnDesc.name,
                                         pendingFormulaColumnDesc.type,
                                         pendingFormulaColumnDesc.id,
-                                        query
+                                        query,
+                                        newColumnBgColor,
+                                        newColumnIsBold,
+                                        newColumnIsItalic,
+                                        newColumnWidth,
+                                        newColumnIsUnderline,
+                                        newColumnIsStrikethrough,
+                                        newColumnFontFamily,
+                                        newColumnAlignment
                                     );
                                 }}
                                 disabled={!formulaString.trim()}
@@ -3214,10 +3798,13 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                             ) : (
                                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                                     {activeImageCell.images.map((img, index) => (
-                                        <div 
-                                            key={index} 
+                                        <div
+                                            key={index}
                                             className="group relative aspect-square bg-gray-100 rounded-lg border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-zoom-in"
-                                            onClick={() => setSelectedPreviewImage(getMediaUrl(img.url))}
+                                            onClick={() => {
+                                                setSelectedPreviewImage(getMediaUrl(img.url));
+                                                setActivePreviewIndex(index);
+                                            }}
                                         >
                                             <img
                                                 src={getMediaUrl(img.url)}
@@ -3310,8 +3897,8 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                             ) : (
                                 <div className="space-y-2">
                                     {activePDFCell.documents.map((doc, index) => (
-                                        <div 
-                                            key={index} 
+                                        <div
+                                            key={index}
                                             className="group flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200 shadow-sm hover:border-red-200 transition-all"
                                         >
                                             <div className="flex items-center gap-3 overflow-hidden">
@@ -3562,25 +4149,66 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
             {/* Image Zoom/Preview Modal */}
             {selectedPreviewImage && (
-                <div 
-                    className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 sm:p-10 cursor-zoom-out"
-                    onClick={() => setSelectedPreviewImage(null)}
+                <div
+                    className="fixed inset-0 bg-black/95 backdrop-blur-sm z-[100] flex items-center justify-center p-4 sm:p-10 select-none cursor-default"
+                    onClick={() => { setSelectedPreviewImage(null); setActivePreviewIndex(null); }}
                 >
-                    <button 
-                        className="absolute top-6 right-6 text-white/70 hover:text-white transition-colors"
-                        onClick={() => setSelectedPreviewImage(null)}
+                    {/* Close Button */}
+                    <button
+                        className="absolute top-6 right-6 text-white/70 hover:text-white transition-all duration-200 hover:scale-110 active:scale-95 bg-white/5 hover:bg-white/10 p-3 rounded-full backdrop-blur-md border border-white/10 shadow-lg z-[110]"
+                        onClick={() => { setSelectedPreviewImage(null); setActivePreviewIndex(null); }}
+                        title="Close (Esc)"
                     >
-                        <FiX className="w-8 h-8" />
+                        <FiX className="w-6 h-6" />
                     </button>
-                    <img 
-                        src={selectedPreviewImage} 
-                        className="max-w-full max-h-full object-contain shadow-2xl rounded-sm"
-                        alt="Zoomed Preview"
+
+                    {/* Left Navigation Arrow */}
+                    {activeImageCell?.images && activeImageCell.images.length > 1 && (
+                        <button
+                            className="absolute left-3 sm:left-8 top-1/2 -translate-y-1/2 text-white/90 hover:text-white bg-black/60 hover:bg-black/85 backdrop-blur-md border border-white/15 rounded-full p-3 sm:p-4 transition-all duration-300 transform hover:scale-110 active:scale-95 flex items-center justify-center pointer-events-auto cursor-pointer shadow-2xl z-[110]"
+                            onClick={handlePrevImage}
+                            title="Previous Image (Left Arrow)"
+                        >
+                            <FiChevronLeft className="w-6 h-6 sm:w-8 sm:h-8" />
+                        </button>
+                    )}
+
+                    {/* Image Display Container */}
+                    <div 
+                        className="relative max-w-full max-h-full flex flex-col items-center justify-center px-16 sm:px-0"
                         onClick={(e) => e.stopPropagation()}
-                    />
+                    >
+                        <img
+                            src={selectedPreviewImage}
+                            className="max-w-full max-h-[75vh] sm:max-h-[80vh] object-contain shadow-2xl rounded-lg border border-white/10 transition-all duration-300 animate-in fade-in zoom-in-95"
+                            alt="Zoomed Preview"
+                        />
+                        
+                        {/* Image Counter & Filename */}
+                        {activeImageCell?.images && activeImageCell.images.length > 1 && activePreviewIndex !== null && (
+                            <div className="absolute -bottom-14 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur-md px-4 py-2 rounded-full text-white/90 text-xs sm:text-sm font-medium flex items-center gap-2 border border-white/10 shadow-xl whitespace-nowrap">
+                                <span className="text-white/60">{activePreviewIndex + 1} / {activeImageCell.images.length}</span>
+                                <span className="w-1 h-1 rounded-full bg-white/30"></span>
+                                <span className="max-w-[150px] sm:max-w-[250px] truncate text-white/80 font-normal">
+                                    {activeImageCell.images[activePreviewIndex]?.fileName || 'Image'}
+                                </span>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Right Navigation Arrow */}
+                    {activeImageCell?.images && activeImageCell.images.length > 1 && (
+                        <button
+                            className="absolute right-3 sm:right-8 top-1/2 -translate-y-1/2 text-white/90 hover:text-white bg-black/60 hover:bg-black/85 backdrop-blur-md border border-white/15 rounded-full p-3 sm:p-4 transition-all duration-300 transform hover:scale-110 active:scale-95 flex items-center justify-center pointer-events-auto cursor-pointer shadow-2xl z-[110]"
+                            onClick={handleNextImage}
+                            title="Next Image (Right Arrow)"
+                        >
+                            <FiChevronRight className="w-6 h-6 sm:w-8 sm:h-8" />
+                        </button>
+                    )}
                 </div>
             )}
-            <ColumnUpdateConfirmModal 
+            <ColumnUpdateConfirmModal
                 isOpen={showUpdateConfirmModal}
                 onClose={() => setShowUpdateConfirmModal(false)}
                 onConfirm={performUpdateColumn}
@@ -3588,7 +4216,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                 isEdit={!!editingColId}
                 isTypeChanged={!!(editingColId && columns.find(c => c.id === editingColId)?.type !== newColumnType)}
             />
-            <ColumnDeleteConfirmModal 
+            <ColumnDeleteConfirmModal
                 isOpen={showDeleteConfirmModal}
                 onClose={() => setShowDeleteConfirmModal(false)}
                 onConfirm={performDeleteColumn}
@@ -3608,8 +4236,8 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                     <div className="bg-white rounded-2xl shadow-2xl w-[95vw] max-w-7xl h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
                         {/* Recursive Nested Content */}
                         <div className="flex-1 overflow-hidden relative bg-white">
-                             {/* Close button overlayed or integrated into child header */}
-                             <button
+                            {/* Close button overlayed or integrated into child header */}
+                            <button
                                 onClick={() => setActiveNestedSheetId(null)}
                                 className="absolute top-4 right-6 z-[310] text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-colors p-1.5 rounded-lg"
                                 title="Close Details"
@@ -3622,7 +4250,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                 </div>
             )}
 
-            <RenameSubSheetModal 
+            <RenameSubSheetModal
                 isOpen={showRenameSubSheetModal}
                 onClose={() => setShowRenameSubSheetModal(false)}
                 onConfirm={performRenameSubSheet}
@@ -3666,6 +4294,8 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                 setTemplateColumns={setCcTemplateColumns}
                 columnTypes={columnTypes}
             />
+            </>
+            )}
         </div>
     );
 }
@@ -3682,14 +4312,14 @@ const CCConfigModal = ({ isOpen, onClose, onConfirm, templateColumns, setTemplat
     };
 
     const updateColumn = (index, field, value) => {
-        setTemplateColumns(templateColumns.map((col, i) => 
+        setTemplateColumns(templateColumns.map((col, i) =>
             i === index ? { ...col, [field]: value } : col
         ));
     };
 
     return (
         <div className="fixed inset-0 z-[600] flex items-center justify-center p-4">
-            <div 
+            <div
                 className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-all duration-300"
                 onClick={onClose}
             ></div>
@@ -3721,7 +4351,7 @@ const CCConfigModal = ({ isOpen, onClose, onConfirm, templateColumns, setTemplat
                                 <div className="flex items-center justify-between gap-4">
                                     <div className="flex-1 space-y-1.5">
                                         <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Column Name</label>
-                                        <input 
+                                        <input
                                             type="text"
                                             value={col.name}
                                             onChange={(e) => updateColumn(idx, 'name', e.target.value)}
@@ -3731,7 +4361,7 @@ const CCConfigModal = ({ isOpen, onClose, onConfirm, templateColumns, setTemplat
                                     </div>
                                     <div className="w-48 space-y-1.5">
                                         <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Type</label>
-                                        <select 
+                                        <select
                                             value={col.type}
                                             onChange={(e) => updateColumn(idx, 'type', e.target.value)}
                                             className="w-full px-4 py-2 bg-[#1a1c23] border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
@@ -3741,7 +4371,7 @@ const CCConfigModal = ({ isOpen, onClose, onConfirm, templateColumns, setTemplat
                                             ))}
                                         </select>
                                     </div>
-                                    <button 
+                                    <button
                                         onClick={() => removeColumn(idx)}
                                         className="mt-6 p-2 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
                                         title="Remove Column"
@@ -3751,7 +4381,7 @@ const CCConfigModal = ({ isOpen, onClose, onConfirm, templateColumns, setTemplat
                                 </div>
                             </div>
                         ))}
-                        
+
                         <button
                             onClick={addColumn}
                             className="w-full py-3 border-2 border-dashed border-white/10 rounded-xl text-gray-400 hover:text-white hover:border-blue-500/50 hover:bg-blue-500/5 transition-all flex items-center justify-center gap-2 group"
@@ -3788,7 +4418,7 @@ const EnableRowConfirmModal = ({ isOpen, onClose, onConfirm, value, onChange }) 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             {/* Glass Backdrop */}
-            <div 
+            <div
                 className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-all duration-300"
                 onClick={onClose}
             ></div>
@@ -3814,7 +4444,7 @@ const EnableRowConfirmModal = ({ isOpen, onClose, onConfirm, value, onChange }) 
 
                         <div className="space-y-1.5">
                             <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider ml-1">Sub-Sheet Name</label>
-                            <input 
+                            <input
                                 type="text"
                                 value={value}
                                 onChange={(e) => onChange(e.target.value)}
@@ -3842,7 +4472,7 @@ const EnableRowConfirmModal = ({ isOpen, onClose, onConfirm, value, onChange }) 
                     </div>
                 </div>
 
-                <button 
+                <button
                     onClick={onClose}
                     className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
                 >
@@ -3859,7 +4489,7 @@ const RenameSubSheetModal = ({ isOpen, onClose, onConfirm, value, onChange }) =>
     return (
         <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
             {/* Glass Backdrop */}
-            <div 
+            <div
                 className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-all duration-300"
                 onClick={onClose}
             ></div>
@@ -3885,7 +4515,7 @@ const RenameSubSheetModal = ({ isOpen, onClose, onConfirm, value, onChange }) =>
 
                         <div className="space-y-1.5">
                             <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider ml-1">New Name</label>
-                            <input 
+                            <input
                                 type="text"
                                 value={value}
                                 onChange={(e) => onChange(e.target.value)}
@@ -3913,7 +4543,7 @@ const RenameSubSheetModal = ({ isOpen, onClose, onConfirm, value, onChange }) =>
                     </div>
                 </div>
 
-                <button 
+                <button
                     onClick={onClose}
                     className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
                 >
@@ -3930,7 +4560,7 @@ const ColumnUpdateConfirmModal = ({ isOpen, onClose, onConfirm, columnName, isEd
     return (
         <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
             {/* Glass Backdrop */}
-            <div 
+            <div
                 className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-all duration-300"
                 onClick={onClose}
             ></div>
@@ -3952,7 +4582,7 @@ const ColumnUpdateConfirmModal = ({ isOpen, onClose, onConfirm, columnName, isEd
                         </h3>
                         <div className="text-gray-400 text-sm leading-relaxed space-y-3">
                             <p>
-                                {isEdit 
+                                {isEdit
                                     ? `Are you sure you want to save the changes for "${columnName}"?`
                                     : `Are you sure you want to add the column "${columnName}" to this spreadsheet?`
                                 }
@@ -3983,7 +4613,7 @@ const ColumnUpdateConfirmModal = ({ isOpen, onClose, onConfirm, columnName, isEd
                     </div>
                 </div>
 
-                <button 
+                <button
                     onClick={onClose}
                     className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
                 >
@@ -4000,7 +4630,7 @@ const ColumnDeleteConfirmModal = ({ isOpen, onClose, onConfirm, columnName }) =>
     return (
         <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
             {/* Glass Backdrop */}
-            <div 
+            <div
                 className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-all duration-300"
                 onClick={onClose}
             ></div>
@@ -4040,7 +4670,7 @@ const ColumnDeleteConfirmModal = ({ isOpen, onClose, onConfirm, columnName }) =>
                     </div>
                 </div>
 
-                <button 
+                <button
                     onClick={onClose}
                     className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
                 >
@@ -4072,7 +4702,7 @@ const PDFExportModal = ({ isOpen, onClose, onExport, columns, selectedColumns, s
 
                 <div className="flex-1 overflow-y-auto p-6">
                     <div className="mb-2 text-sm text-gray-600">Select which columns to export into the PDF.</div>
-                    
+
                     <div className="mb-5 border border-blue-100 rounded-xl bg-blue-50/30 p-4">
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-2">
@@ -4139,7 +4769,7 @@ const PDFDeleteConfirmModal = ({ isOpen, onClose, onConfirm, fileName }) => {
     return (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
             {/* Glass Backdrop */}
-            <div 
+            <div
                 className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-all duration-300"
                 onClick={onClose}
             ></div>
@@ -4179,7 +4809,7 @@ const PDFDeleteConfirmModal = ({ isOpen, onClose, onConfirm, fileName }) => {
                     </div>
                 </div>
 
-                <button 
+                <button
                     onClick={onClose}
                     className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
                 >
@@ -4196,7 +4826,7 @@ const ImageDeleteConfirmModal = ({ isOpen, onClose, onConfirm, fileName }) => {
     return (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
             {/* Glass Backdrop */}
-            <div 
+            <div
                 className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-all duration-300"
                 onClick={onClose}
             ></div>
@@ -4236,7 +4866,7 @@ const ImageDeleteConfirmModal = ({ isOpen, onClose, onConfirm, fileName }) => {
                     </div>
                 </div>
 
-                <button 
+                <button
                     onClick={onClose}
                     className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
                 >
@@ -4253,7 +4883,7 @@ const CommentDeleteConfirmModal = ({ isOpen, onClose, onConfirm }) => {
     return (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
             {/* Glass Backdrop */}
-            <div 
+            <div
                 className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-all duration-300"
                 onClick={onClose}
             ></div>
@@ -4293,7 +4923,7 @@ const CommentDeleteConfirmModal = ({ isOpen, onClose, onConfirm }) => {
                     </div>
                 </div>
 
-                <button 
+                <button
                     onClick={onClose}
                     className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
                 >

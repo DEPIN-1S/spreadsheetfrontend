@@ -181,7 +181,7 @@ export default function Login({ setActivePath }) {
                                         <input
                                             type="tel"
                                             className="block w-full pl-11 pr-4 py-3 border border-gray-200 bg-white rounded-xl focus:ring-2 focus:ring-indigo-600 focus:border-transparent outline-none transition-all shadow-sm text-gray-900 font-medium"
-                                            placeholder="9876543210"
+                                            placeholder="Enter 10 digit number"
                                             value={phone}
                                             onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 15))}
                                             required

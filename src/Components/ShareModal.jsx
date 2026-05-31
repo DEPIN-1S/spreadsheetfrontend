@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { FiX, FiTrash2, FiSearch, FiChevronDown, FiCheck, FiColumns, FiEye, FiEdit2, FiLock, FiUnlock } from "react-icons/fi";
 import { BsFileEarmarkSpreadsheet } from "react-icons/bs";
 import apiClient from "../api/apiClient";
+import Swal from "sweetalert2";
 const Toggle = ({ checked, onChange, disabled }) => (
     <div
         onClick={() => !disabled && onChange(!checked)}
@@ -249,13 +250,47 @@ export default function ShareModal({ isOpen, onClose, sheetId, folderId }) {
 
 
     const handleRemove = async (userId) => {
+        const member = members.find(m => m.userId === userId);
+        const memberName = member?.User?.name || "this user";
+
+        const result = await Swal.fire({
+            title: 'Remove Access?',
+            text: `Are you sure you want to remove access for ${memberName}?`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: 'Remove',
+            cancelButtonText: 'Cancel',
+            customClass: {
+                popup: 'rounded-2xl',
+                confirmButton: 'rounded-xl px-5',
+                cancelButton: 'rounded-xl px-5'
+            }
+        });
+
+        if (!result.isConfirmed) return;
+
         try {
             const url = isFolder ? `/folders/${folderId}/permissions/${userId}` : `/sheets/${sheetId}/permissions/${userId}`;
             await apiClient.delete(url);
+            Swal.fire({
+                icon: 'success',
+                title: 'Removed',
+                text: 'Access removed successfully.',
+                timer: 1500,
+                showConfirmButton: false,
+                customClass: { popup: 'rounded-2xl' }
+            });
             fetchMembers();
         } catch (err) {
             console.error("Error removing access:", err);
-            setError("Failed to remove access.");
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: 'Failed to remove access.',
+                customClass: { popup: 'rounded-2xl' }
+            });
         }
     };
 
@@ -431,6 +466,18 @@ export default function ShareModal({ isOpen, onClose, sheetId, folderId }) {
                                 )}
                             </div>
 
+                            {selectedUser && (
+                                <div className="relative shrink-0">
+                                    <select
+                                        value={role}
+                                        onChange={(e) => setRole(e.target.value)}
+                                        className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold cursor-pointer shadow-sm hover:border-gray-300"
+                                    >
+                                        <option value="viewer">Viewer</option>
+                                        <option value="editor">Editor</option>
+                                    </select>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -609,7 +656,7 @@ export default function ShareModal({ isOpen, onClose, sheetId, folderId }) {
                                                 <div className="flex items-center gap-2 shrink-0">
                                                     <button
                                                         onClick={() => handleRemove(member.userId)}
-                                                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                                                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors md:opacity-0 md:group-hover:opacity-100 opacity-100 focus:opacity-100"
                                                         title="Remove access"
                                                     >
                                                         <FiTrash2 className="w-4 h-4" />
