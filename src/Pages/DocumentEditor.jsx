@@ -1756,36 +1756,43 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
     const handleAddRow = async () => {
         try {
-            const resp = await apiClient.post(`/sheets/${docName}/rows`, {});
-            const newRow = resp.data.data;
+            const resp = await apiClient.post(`/sheets/${docName}/rows`, { count: 5 });
+            const data = resp.data.data;
+            const newRows = Array.isArray(data) ? data : [data];
 
             // Optimistically add the row to local state using the API response
             // This is more reliable than depending on socket events
             setRows(prev => {
-                if (prev.some(r => r.id === newRow.id)) return prev;
+                let updatedRows = [...prev];
 
-                // Build empty cells for the new row using the current column structure
-                const templateRow = prev.find(r => r.cells && r.cells.length > 0);
-                const emptyCells = templateRow
-                    ? templateRow.cells.map(c => ({
-                        columnId: c.columnId,
-                        rowId: newRow.id,
-                        rawValue: '',
-                        computedValue: '',
-                        formattedValue: ''
-                    }))
-                    : columns.map(c => ({
-                        columnId: c.id,
-                        rowId: newRow.id,
-                        rawValue: '',
-                        computedValue: '',
-                        formattedValue: ''
-                    }));
+                newRows.forEach(newRow => {
+                    if (updatedRows.some(r => r.id === newRow.id)) return;
 
-                return [...prev, { ...newRow, cells: emptyCells }].sort((a, b) => (a.order || 0) - (b.order || 0));
+                    // Build empty cells for the new row using the current column structure
+                    const templateRow = updatedRows.find(r => r.cells && r.cells.length > 0);
+                    const emptyCells = templateRow
+                        ? templateRow.cells.map(c => ({
+                            columnId: c.columnId,
+                            rowId: newRow.id,
+                            rawValue: '',
+                            computedValue: '',
+                            formattedValue: ''
+                        }))
+                        : columns.map(c => ({
+                            columnId: c.id,
+                            rowId: newRow.id,
+                            rawValue: '',
+                            computedValue: '',
+                            formattedValue: ''
+                        }));
+
+                    updatedRows.push({ ...newRow, cells: emptyCells });
+                });
+
+                return updatedRows.sort((a, b) => (a.order || 0) - (b.order || 0));
             });
         } catch (error) {
-            console.error("Error adding row:", error);
+            console.error("Error adding rows:", error);
         }
     };
 
