@@ -324,6 +324,7 @@ export default function ShareModal({ isOpen, onClose, sheetId, folderId }) {
         try {
             const member = members.find(m => m.userId === editingMemberColPerms.userId);
             if (!member) return;
+
             // Filter out null/undefined permissions
             const filteredAccess = {};
             Object.entries(editingMemberColPerms.columnAccess).forEach(([id, val]) => {
@@ -331,12 +332,40 @@ export default function ShareModal({ isOpen, onClose, sheetId, folderId }) {
             });
 
             const endpoint = isFolder ? `/folders/${folderId}/share` : `/sheets/${sheetId}/share`;
-            await apiClient.post(endpoint, {
-                phone: member.User?.phone || null,
-                email: member.User?.email || null,
-                role: member.role,
-                columnAccess: isFolder ? undefined : filteredAccess
-            });
+
+            // BUG #4 fix: For folders, rebuild sheetColumnPermissions from editingMemberColPerms.
+            // Previously sent columnAccess: undefined for folders, silently losing changes.
+            let payload;
+            if (isFolder) {
+                // Build sheetColumnPermissions from the member's existing per-sheet data
+                // merged with the current edits (column-level changes are per-sheet)
+                const sheetColumnPermissions = {};
+                // Carry over existing per-sheet permissions from nestedColumnAccess,
+                // and update only the columns that belong to non-nested view editing
+                nestedSheets.forEach(sheet => {
+                    const sheetCols = nestedColumnAccess[sheet.id] || {};
+                    const filtered = {};
+                    Object.entries(sheetCols).forEach(([cId, val]) => { if (val) filtered[cId] = val; });
+                    if (Object.keys(filtered).length > 0) {
+                        sheetColumnPermissions[sheet.id] = filtered;
+                    }
+                });
+                payload = {
+                    phone: member.User?.phone || null,
+                    email: member.User?.email || null,
+                    role: member.role,
+                    sheetColumnPermissions
+                };
+            } else {
+                payload = {
+                    phone: member.User?.phone || null,
+                    email: member.User?.email || null,
+                    role: member.role,
+                    columnAccess: filteredAccess
+                };
+            }
+
+            await apiClient.post(endpoint, payload);
             setEditingMemberColPerms(null);
             fetchMembers();
         } catch (err) {

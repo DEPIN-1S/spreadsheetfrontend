@@ -20,6 +20,9 @@ function App() {
     const [returnPath, setReturnPath] = useState('/my-files');
     const [myFilesCurrentFolderId, setMyFilesCurrentFolderId] = useState(null);
     const [myFilesPath, setMyFilesPath] = useState([{ id: null, title: "My Files" }]);
+    // BUG #12: lift SharedWithMe folder state so it persists on tab switch
+    const [sharedCurrentFolderId, setSharedCurrentFolderId] = useState(null);
+    const [sharedPath, setSharedPath] = useState([{ id: null, title: "Shared with me" }]);
 
     const toggleCollapse = () => setIsCollapsed((prev) => !prev);
 
@@ -62,6 +65,10 @@ function App() {
                             setActivePath={setActivePath}
                             setCurrentDocName={setCurrentDocName}
                             setReturnPath={setReturnPath}
+                            currentFolderId={sharedCurrentFolderId}
+                            setCurrentFolderId={setSharedCurrentFolderId}
+                            path={sharedPath}
+                            setPath={setSharedPath}
                         />
                     )}
                     {activePath === "/users" && (

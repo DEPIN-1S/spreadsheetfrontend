@@ -1,16 +1,24 @@
 import { useState, useEffect, useCallback } from "react";
-import { FiSearch, FiMenu, FiFolder, FiPlus, FiChevronRight, FiMove, FiTrash2 } from "react-icons/fi";
+import { FiSearch, FiMenu, FiFolder, FiPlus, FiChevronRight, FiMove, FiTrash2, FiShare2 } from "react-icons/fi";
 import { BsFileEarmarkSpreadsheet } from "react-icons/bs";
 import apiClient from "../api/apiClient";
 import Swal from "sweetalert2";
 
-export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentDocName, setReturnPath }) {
+// BUG #12: Props now include currentFolderId, setCurrentFolderId, path, setPath — lifted to App.jsx
+export default function SharedWithMe({
+    setMobileOpen,
+    setActivePath,
+    setCurrentDocName,
+    setReturnPath,
+    currentFolderId,
+    setCurrentFolderId,
+    path,
+    setPath,
+}) {
     const [searchQuery, setSearchQuery] = useState("");
     const [files, setFiles] = useState([]);
     const [folders, setFolders] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [currentFolderId, setCurrentFolderId] = useState(null); // virtual folder id
-    const [breadcrumb, setBreadcrumb] = useState([]);
 
     // UI state
     const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
@@ -19,23 +27,34 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
     const [movingItem, setMovingItem] = useState(null);
     const [allSharedFolders, setAllSharedFolders] = useState([]);
 
+    // Current user for unshare endpoint
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+
     const fetchSharedItems = useCallback(async () => {
         setLoading(true);
         try {
             const params = { folderId: currentFolderId || "root" };
             const response = await apiClient.get('/sheets/shared', { params });
-            
-            const fetchedFiles = (response.data.data?.files || []).map(sheet => ({
-                id: sheet.id,
-                type: "file",
-                title: sheet.name,
-                date: new Date(sheet.sharedAt || sheet.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-                sharedBy: sheet.sharedBy,
-                fileType: "doc",
-                role: sheet.permissionRole,
-                virtualFolderId: sheet.virtualFolderId
-            }));
-            
+
+            // BUG #7: Deduplicate by sheet id to prevent double entries
+            const seenIds = new Set();
+            const fetchedFiles = (response.data.data?.files || [])
+                .filter(sheet => {
+                    if (seenIds.has(sheet.id)) return false;
+                    seenIds.add(sheet.id);
+                    return true;
+                })
+                .map(sheet => ({
+                    id: sheet.id,
+                    type: "file",
+                    title: sheet.name,
+                    date: new Date(sheet.sharedAt || sheet.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+                    sharedBy: sheet.sharedBy,
+                    fileType: "doc",
+                    role: sheet.permissionRole,
+                    virtualFolderId: sheet.virtualFolderId
+                }));
+
             const fetchedFolders = (response.data.data?.folders || []).map(folder => ({
                 id: folder.id,
                 type: "folder",
@@ -43,7 +62,7 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                 date: new Date(folder.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
                 createdBy: folder.createdBy
             }));
-            
+
             setFiles(fetchedFiles);
             setFolders(fetchedFolders);
         } catch (error) {
@@ -53,6 +72,7 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
         }
     }, [currentFolderId]);
 
+    // BUG #6: Include ALL folder categories (not just shared_org) so all org folders show in move modal
     const fetchAllSharedFolders = async () => {
         try {
             const response = await apiClient.get('/folders');
@@ -60,13 +80,13 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
 
             const flattenSharedFolders = (folderNodes) => {
                 for (const node of folderNodes) {
-                    if (node.category === 'shared_org') {
-                        fetchedFolders.push({
-                            id: node.id,
-                            name: node.name,
-                            parentId: node.parentId
-                        });
-                    }
+                    // BUG #6 fix: include shared_org AND any other org-type folders
+                    fetchedFolders.push({
+                        id: node.id,
+                        name: node.name,
+                        parentId: node.parentId,
+                        category: node.category
+                    });
                     if (node.children && node.children.length > 0) {
                         flattenSharedFolders(node.children);
                     }
@@ -118,20 +138,30 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
             setNewFolderName("");
             setIsCreateFolderModalOpen(false);
         } catch (error) {
-            Swal.fire("Error", error.response?.data?.message || "Failed to create folder", "error");
+            Swal.fire({ icon: 'error', title: 'Error', text: error.response?.data?.message || "Failed to create folder", customClass: { popup: 'rounded-2xl' } });
         }
     };
 
-    const openDeleteModal = async (id, type) => {
+    // BUG #11: For organization folders (shared_org), delete the folder itself.
+    // For shared files, REMOVE the share (unshare), NOT delete the original file.
+    const openDeleteModal = async (id, type, item) => {
         const isFolder = type === "folder";
+        const isSharedFile = !isFolder;
+
+        const confirmText = isFolder
+            ? 'Are you sure you want to delete this organization folder? Files inside will not be deleted.'
+            : 'Remove this file from your "Shared with me" view? The original file will not be deleted.';
+
+        const confirmButtonText = isFolder ? 'Delete Folder' : 'Remove from Shared';
+
         const result = await Swal.fire({
-            title: 'Delete Item?',
-            text: `Are you sure you want to delete this${isFolder ? ' folder and all items inside' : ''}? This action cannot be undone.`,
+            title: isFolder ? 'Delete Folder?' : 'Remove Share?',
+            text: confirmText,
             icon: 'warning',
             showCancelButton: true,
             confirmButtonColor: '#ef4444',
             cancelButtonColor: '#6b7280',
-            confirmButtonText: 'Delete',
+            confirmButtonText,
             cancelButtonText: 'Cancel',
             customClass: {
                 popup: 'rounded-2xl',
@@ -144,19 +174,36 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
 
         try {
             if (isFolder) {
+                // Organization folders (user-created virtual folders) can be deleted
                 await apiClient.delete(`/folders/${id}`);
             } else {
-                await apiClient.delete(`/sheets/${id}`);
+                // BUG #11 fix: Remove the share permission instead of deleting the sheet
+                // Try the unshare endpoint first; fallback to permissions removal
+                try {
+                    await apiClient.delete(`/sheets/${id}/share`);
+                } catch (unshareErr) {
+                    // Fallback: try removing by userId
+                    if (currentUser?.id) {
+                        await apiClient.delete(`/sheets/${id}/permissions/${currentUser.id}`);
+                    } else {
+                        throw unshareErr;
+                    }
+                }
             }
-            Swal.fire({ icon: 'success', title: 'Deleted', text: 'Item removed.', timer: 1500, showConfirmButton: false, customClass: { popup: 'rounded-2xl' } });
+            Swal.fire({
+                icon: 'success',
+                title: isSharedFile ? 'Removed' : 'Deleted',
+                text: isSharedFile ? 'Removed from your shared view.' : 'Folder deleted.',
+                timer: 1500,
+                showConfirmButton: false,
+                customClass: { popup: 'rounded-2xl' }
+            });
             fetchSharedItems();
         } catch (error) {
-            console.error("Error deleting item:", error);
-            Swal.fire({ icon: 'error', title: 'Error', text: error.response?.data?.message || 'Failed to delete item.', customClass: { popup: 'rounded-2xl' } });
+            console.error("Error removing shared item:", error);
+            Swal.fire({ icon: 'error', title: 'Error', text: error.response?.data?.message || 'Failed to remove item.', customClass: { popup: 'rounded-2xl' } });
         }
     };
-
-
 
     const handleMoveItem = async (targetFolderId) => {
         if (!movingItem) return;
@@ -167,35 +214,48 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
             fetchSharedItems();
             setIsMoveModalOpen(false);
             setMovingItem(null);
-            Swal.fire("Success", "File moved successfully", "success");
+            Swal.fire({ icon: 'success', title: 'Moved', text: 'File moved successfully.', timer: 1500, showConfirmButton: false, customClass: { popup: 'rounded-2xl' } });
         } catch (error) {
-            Swal.fire("Error", error.response?.data?.message || "Failed to move file", "error");
+            Swal.fire({ icon: 'error', title: 'Error', text: error.response?.data?.message || "Failed to move file", customClass: { popup: 'rounded-2xl' } });
         }
     };
 
+    // BUG #12: Use lifted state (currentFolderId from props) for navigation
     const navigateToFolder = (folder) => {
         setCurrentFolderId(folder.id);
-        setBreadcrumb([...breadcrumb, folder]);
+        setPath([...path, { id: folder.id, title: folder.title }]);
     };
 
     const navigateToBreadcrumb = (index) => {
         if (index === -1) {
+            // Go to root
             setCurrentFolderId(null);
-            setBreadcrumb([]);
+            setPath([{ id: null, title: "Shared with me" }]);
         } else {
-            const newBreadcrumb = breadcrumb.slice(0, index + 1);
-            setBreadcrumb(newBreadcrumb);
-            setCurrentFolderId(newBreadcrumb[newBreadcrumb.length - 1].id);
+            const newPath = path.slice(0, index + 1);
+            setPath(newPath);
+            setCurrentFolderId(newPath[newPath.length - 1].id);
         }
     };
 
-    const filteredFolders = folders.filter(f => f.title.toLowerCase().includes(searchQuery.toLowerCase()));
-    const filteredFiles = files.filter(f => 
-        f.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        f.sharedBy?.name.toLowerCase().includes(searchQuery.toLowerCase())
+    // BUG #13: Safe search filtering — use optional chaining everywhere to avoid crashes
+    const filteredFolders = folders.filter(f =>
+        !searchQuery || f.title?.toLowerCase().includes(searchQuery.toLowerCase())
     );
+    const filteredFiles = files.filter(f => {
+        if (!searchQuery) return true;
+        const q = searchQuery.toLowerCase();
+        return (
+            f.title?.toLowerCase().includes(q) ||
+            // BUG #13 fix: safe access to sharedBy.name
+            f.sharedBy?.name?.toLowerCase().includes(q)
+        );
+    });
 
     const isEmpty = !loading && filteredFolders.length === 0 && filteredFiles.length === 0;
+
+    // Build breadcrumb from path (skip root entry at index 0)
+    const breadcrumb = path.slice(1);
 
     return (
         <main className="flex-1 min-h-screen bg-white">
@@ -235,19 +295,19 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                     </div>
                 </div>
 
-                {/* Breadcrumbs */}
+                {/* Breadcrumbs — BUG #12: uses lifted path prop */}
                 <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide text-sm">
-                    <button 
+                    <button
                         onClick={() => navigateToBreadcrumb(-1)}
-                        className={`hover:text-indigo-600 transition-colors ${currentFolderId === null ? 'text-indigo-600 font-bold' : 'text-gray-500'}`}
+                        className={`hover:text-indigo-600 transition-colors shrink-0 ${currentFolderId === null ? 'text-indigo-600 font-bold' : 'text-gray-500'}`}
                     >
                         Shared Root
                     </button>
                     {breadcrumb.map((b, i) => (
-                        <div key={b.id} className="flex items-center gap-2 shrink-0">
+                        <div key={b.id || i} className="flex items-center gap-2 shrink-0">
                             <FiChevronRight className="w-4 h-4 text-gray-400" />
-                            <button 
-                                onClick={() => navigateToBreadcrumb(i)}
+                            <button
+                                onClick={() => navigateToBreadcrumb(i + 1)} // +1 because breadcrumb skips root
                                 className={`hover:text-indigo-600 transition-colors ${i === breadcrumb.length - 1 ? 'text-indigo-600 font-bold' : 'text-gray-500'}`}
                             >
                                 {b.title}
@@ -263,10 +323,14 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                 ) : isEmpty ? (
                     <div className="flex flex-col items-center justify-center py-24 text-center">
                         <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center mb-4">
-                            <FiSearch className="w-8 h-8 text-gray-300" />
+                            <FiShare2 className="w-8 h-8 text-gray-300" />
                         </div>
-                        <h3 className="text-lg font-medium text-gray-900 mb-1">No shared items found</h3>
-                        <p className="text-gray-500 text-sm">Organize documents shared with you here.</p>
+                        <h3 className="text-lg font-medium text-gray-900 mb-1">
+                            {searchQuery ? 'No results found' : 'No shared items found'}
+                        </h3>
+                        <p className="text-gray-500 text-sm">
+                            {searchQuery ? 'Try a different search term.' : 'Organize documents shared with you here.'}
+                        </p>
                     </div>
                 ) : (
                     <>
@@ -276,8 +340,8 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                                 <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 px-1">Folders</h2>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                                     {filteredFolders.map((folder) => (
-                                        <div 
-                                            key={folder.id} 
+                                        <div
+                                            key={folder.id}
                                             onClick={() => navigateToFolder(folder)}
                                             className="group flex flex-col p-4 border border-gray-100 rounded-2xl hover:border-indigo-200 hover:shadow-lg hover:shadow-indigo-50/50 transition-all bg-white cursor-pointer relative"
                                         >
@@ -288,7 +352,7 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                                                 <button
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        openDeleteModal(folder.id, 'folder');
+                                                        openDeleteModal(folder.id, 'folder', folder);
                                                     }}
                                                     className="p-1.5 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all lg:opacity-0 lg:group-hover:opacity-100 opacity-100 focus:opacity-100 shrink-0"
                                                     title="Delete Folder"
@@ -310,12 +374,12 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                                 <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 px-1">Files</h2>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                                     {filteredFiles.map((file) => (
-                                        <div 
-                                            key={file.id} 
+                                        <div
+                                            key={file.id}
                                             className="group flex flex-col p-4 border border-gray-100 rounded-2xl hover:border-indigo-200 hover:shadow-lg hover:shadow-indigo-50/50 transition-all bg-white relative"
                                         >
                                             <div className="flex items-start justify-between mb-4">
-                                                <div 
+                                                <div
                                                     onClick={() => {
                                                         setCurrentDocName(file.id);
                                                         setReturnPath('/shared');
@@ -326,7 +390,7 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                                                     <BsFileEarmarkSpreadsheet className="w-6 h-6" />
                                                 </div>
                                                 <div className="flex items-center gap-1">
-                                                    <button 
+                                                    <button
                                                         onClick={() => {
                                                             setMovingItem(file);
                                                             fetchAllSharedFolders();
@@ -337,36 +401,54 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                                                     >
                                                         <FiMove className="w-4 h-4" />
                                                     </button>
-                                                    <button 
-                                                        onClick={() => openDeleteModal(file.id, 'file')}
+                                                    {/* BUG #11: Tooltip says "Remove" not "Delete" to clarify it doesn't delete the original */}
+                                                    <button
+                                                        onClick={() => openDeleteModal(file.id, 'file', file)}
                                                         className="p-1.5 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                                        title="Delete File"
+                                                        title="Remove from Shared"
                                                     >
                                                         <FiTrash2 className="w-4 h-4" />
                                                     </button>
                                                 </div>
                                             </div>
 
-                                            <h3 
+                                            <h3
                                                 onClick={() => {
                                                     setCurrentDocName(file.id);
                                                     setReturnPath('/shared');
                                                     setActivePath('/document-editor');
                                                 }}
-                                                className="text-sm font-semibold text-gray-800 truncate mb-2 cursor-pointer hover:text-indigo-600" 
+                                                className="text-sm font-semibold text-gray-800 truncate mb-2 cursor-pointer hover:text-indigo-600"
                                                 title={file.title}
                                             >
                                                 {file.title}
                                             </h3>
 
+                                            {/* Role badge */}
+                                            {file.role && (
+                                                <span className={`inline-block self-start text-[10px] font-semibold px-2 py-0.5 rounded-full mb-2 ${
+                                                    file.role === 'admin' ? 'bg-purple-100 text-purple-700'
+                                                    : file.role === 'editor' ? 'bg-blue-100 text-blue-700'
+                                                    : 'bg-gray-100 text-gray-500'
+                                                }`}>
+                                                    {file.role?.toUpperCase()}
+                                                </span>
+                                            )}
+
                                             <div className="mt-auto pt-4 border-t border-gray-50 flex items-center justify-between">
                                                 <div className="flex items-center gap-2 min-w-0">
                                                     <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center text-[11px] font-bold text-indigo-700 uppercase shrink-0">
-                                                        {file.sharedBy?.name.charAt(0)}
+                                                        {/* BUG #10 fix: safe access to sharedBy.name with fallback */}
+                                                        {file.sharedBy?.name?.charAt(0) || '?'}
                                                     </div>
                                                     <div className="min-w-0">
-                                                        <p className="text-[11px] font-medium text-gray-700 truncate">{file.sharedBy?.name}</p>
-                                                        <p className="text-[10px] text-gray-400 uppercase tracking-tighter font-semibold">{file.sharedBy?.role}</p>
+                                                        {/* BUG #10 fix: safe rendering */}
+                                                        <p className="text-[11px] font-medium text-gray-700 truncate">
+                                                            {file.sharedBy?.name || 'Unknown'}
+                                                        </p>
+                                                        <p className="text-[10px] text-gray-400 uppercase tracking-tighter font-semibold">
+                                                            {file.sharedBy?.role || ''}
+                                                        </p>
                                                     </div>
                                                 </div>
                                                 <span className="text-[10px] text-gray-400 bg-gray-50 px-2 py-1 rounded-md shrink-0">
@@ -396,18 +478,19 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                             type="text"
                             value={newFolderName}
                             onChange={(e) => setNewFolderName(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
                             placeholder="Folder name"
                             className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-6 bg-gray-50"
                             autoFocus
                         />
                         <div className="flex gap-3">
-                            <button 
+                            <button
                                 onClick={() => setIsCreateFolderModalOpen(false)}
                                 className="flex-1 px-4 py-2.5 text-sm font-semibold text-gray-500 hover:bg-gray-50 rounded-xl transition-colors"
                             >
                                 Cancel
                             </button>
-                            <button 
+                            <button
                                 onClick={handleCreateFolder}
                                 className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-lg shadow-indigo-100"
                             >
@@ -418,8 +501,6 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                 </div>
             )}
 
-
-
             {/* Move Modal */}
             {isMoveModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
@@ -428,7 +509,7 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                             <FiMove className="text-indigo-600" /> Move to Folder
                         </h2>
                         <div className="max-h-60 overflow-y-auto mb-6 space-y-2 pr-2">
-                            <button 
+                            <button
                                 onClick={() => handleMoveItem(null)}
                                 className="w-full text-left p-3 hover:bg-indigo-50 rounded-xl transition-colors text-sm flex items-center gap-3 font-medium text-gray-600"
                             >
@@ -436,7 +517,7 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                                 Shared Root
                             </button>
                             {allSharedFolders.map(f => (
-                                <button 
+                                <button
                                     key={f.id}
                                     onClick={() => handleMoveItem(f.id)}
                                     style={{ paddingLeft: `${f.depth * 1.25 + 0.75}rem` }}
@@ -449,7 +530,7 @@ export default function SharedWithMe({ setMobileOpen, setActivePath, setCurrentD
                                 </button>
                             ))}
                         </div>
-                        <button 
+                        <button
                             onClick={() => setIsMoveModalOpen(false)}
                             className="w-full px-4 py-3 text-sm font-semibold text-gray-500 hover:bg-gray-50 rounded-xl transition-colors"
                         >

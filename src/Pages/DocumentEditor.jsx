@@ -20,6 +20,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { useClipboard } from "../context/ClipboardContext";
 import EmojiPicker from "emoji-picker-react";
+import Swal from "sweetalert2";
 
 export default function DocumentEditor({ docName, setActivePath, returnPath, isNested = false }) {
     const [sheetData, setSheetData] = useState(null);
@@ -55,6 +56,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
     const [rowToEnable, setRowToEnable] = useState(null);
     const [nestedSheetsMapping, setNestedSheetsMapping] = useState({});
     const [activeNestedSheetId, setActiveNestedSheetId] = useState(null);
+    const [isCreatingCC, setIsCreatingCC] = useState(false); // BUG #8: prevent double-click / show loading
     const { cellClipboard, setCellClipboard } = useClipboard();
     const [emojiPickerCell, setEmojiPickerCell] = useState(null); // { rowId, colId }
     const emojiTextareaRefs = useRef({});
@@ -831,7 +833,24 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         }
 
         if (result === null) return null;
-        return colDef?.type === 'currency' ? formatCurrency(result, colDef.currencyCode) : (mode === 'average' ? result.toFixed(2) : result);
+
+        let isCurrencyFormula = false;
+        let formulaCurrencyCode = 'INR';
+        if (colDef?.type === 'formula' && colDef.formulaExpr) {
+            const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            for (const refCol of columns) {
+                if (refCol.type === 'currency' && refCol.name) {
+                    const regex = new RegExp(`(?<=^|[^a-zA-Z0-9_])${escapeRegExp(refCol.name.trim())}(?=$|[^a-zA-Z0-9_])`, "gi");
+                    if (regex.test(colDef.formulaExpr)) {
+                        isCurrencyFormula = true;
+                        formulaCurrencyCode = refCol.currencyCode || 'INR';
+                        break;
+                    }
+                }
+            }
+        }
+
+        return (colDef?.type === 'currency' || isCurrencyFormula) ? formatCurrency(result, colDef?.type === 'currency' ? colDef.currencyCode : formulaCurrencyCode) : (mode === 'average' ? result.toFixed(2) : result);
     };
 
     const columnTypes = [
@@ -1111,6 +1130,10 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             return;
         }
 
+        // BUG #8: Prevent duplicate creation on double-click
+        if (isCreatingCC) return;
+        setIsCreatingCC(true);
+
         // Auto-create sub-sheet
         try {
             const cell = row.cells?.find(c => c.columnId === col.id);
@@ -1123,10 +1146,12 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
             const opts = parseOptions(col.options);
             const hasTemplate = opts.ccTemplateColumns && Array.isArray(opts.ccTemplateColumns) && opts.ccTemplateColumns.length > 0;
 
+            // BUG #2/#3: Pass parentSheetId so backend inherits permissions from parent sheet
             const response = await apiClient.post('/sheets', {
                 name: defaultName,
                 folderId: null,
                 isDetailedView: true,
+                parentSheetId: docName,
                 columns: hasTemplate ? opts.ccTemplateColumns : undefined
             });
             const newDocId = response.data.data.id;
@@ -1146,10 +1171,12 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         } catch (e) {
             console.error("Error auto-creating nested sheet", e);
             if (e.response && e.response.status === 403) {
-                alert("You do not have permission to create or access this C.C. detail.");
+                Swal.fire({ icon: 'error', title: 'Access Denied', text: 'You do not have permission to create or access this C.C. detail.', customClass: { popup: 'rounded-2xl' } });
             } else {
-                alert("Failed to initialize C.C.");
+                Swal.fire({ icon: 'error', title: 'Error', text: 'Failed to initialize C.C. Please try again.', customClass: { popup: 'rounded-2xl' } });
             }
+        } finally {
+            setIsCreatingCC(false);
         }
     };
 
@@ -1170,10 +1197,12 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                 const opts = parseOptions(col.options);
                 const hasTemplate = opts.ccTemplateColumns && Array.isArray(opts.ccTemplateColumns) && opts.ccTemplateColumns.length > 0;
 
+                // BUG #2/#3: Pass parentSheetId so backend inherits permissions
                 const response = await apiClient.post('/sheets', {
                     name: newNestedSheetName || defaultName,
                     folderId: null,
                     isDetailedView: true,
+                    parentSheetId: docName,
                     columns: hasTemplate ? opts.ccTemplateColumns : undefined
                 });
                 const newDocId = response.data.data.id;
@@ -1816,12 +1845,23 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         try {
             setIsExportModalOpen(false);
             setIsLoading(true);
-            const doc = new jsPDF('landscape');
-            doc.text(`${sheetData?.name || 'Spreadsheet'} - Export`, 14, 15);
-
             const EXCLUDED_TYPES = ['comment', 'pdf'];
             const colsToExport = columns.filter(c => exportSelectedColumns[c.id] && !EXCLUDED_TYPES.includes(c.type));
             const tableCols = colsToExport.map(c => ({ header: c.name, dataKey: c.id }));
+            
+            // Add a serial number column to the beginning
+            tableCols.unshift({ header: 'S.No.', dataKey: 'serial_number' });
+
+            // Calculate dynamic page width based on number of columns to prevent cutoff
+            const minWidthPerCol = 35; // mm per column
+            const calculatedWidth = Math.max(297, colsToExport.length * minWidthPerCol + 40); // 297 is standard A4 landscape width
+
+            const doc = new jsPDF({
+                orientation: 'landscape',
+                unit: 'mm',
+                format: [calculatedWidth, 210]
+            });
+            doc.text(`${sheetData?.name || 'Spreadsheet'} - Export`, 14, 15);
 
             const tableData = [];
             const imagesToDraw = {};
@@ -1861,7 +1901,9 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
             for (let i = 0; i < rows.length; i++) {
                 const row = rows[i];
-                const rowData = {};
+                const rowData = {
+                    serial_number: (i + 1).toString()
+                };
 
                 // Determine row background color (same logic as grid rendering)
                 let computedRowBg = row.rowColor || null;
@@ -1887,8 +1929,25 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         val = val.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
                     }
 
-                    if (col.type === 'currency' && val !== '') {
-                        val = cell?.formattedValue || formatCurrency(val, col.currencyCode);
+                    // Determine if formula should be formatted as currency
+                    let isCurrencyFormula = false;
+                    let formulaCurrencyCode = 'INR';
+                    if (col.type === 'formula' && col.formulaExpr) {
+                        const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                        for (const refCol of columns) {
+                            if (refCol.type === 'currency' && refCol.name) {
+                                const regex = new RegExp(`(?<=^|[^a-zA-Z0-9_])${escapeRegExp(refCol.name.trim())}(?=$|[^a-zA-Z0-9_])`, "gi");
+                                if (regex.test(col.formulaExpr)) {
+                                    isCurrencyFormula = true;
+                                    formulaCurrencyCode = refCol.currencyCode || 'INR';
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if ((col.type === 'currency' || isCurrencyFormula) && val !== '') {
+                        val = cell?.formattedValue || formatCurrency(val, col.type === 'currency' ? col.currencyCode : formulaCurrencyCode);
                         val = val.replace('₹', 'Rs.');
                     } else if (col.type === 'date') {
                         if (val) {
@@ -1970,11 +2029,13 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                 }
                 return { content: '' };
             });
+            // Prepend empty cell for S.No. footer
+            footRow.unshift({ content: '' });
 
             autoTable(doc, {
                 startY: 20,
                 theme: 'grid',
-                tableWidth: 'wrap',
+                tableWidth: 'auto',
                 columns: tableCols,
                 body: tableData,
                 foot: hasCalc ? [footRow] : [],
@@ -2009,7 +2070,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         acc[col.id] = { ...acc[col.id], halign: 'right' };
                     }
                     return acc;
-                }, {}),
+                }, { serial_number: { halign: 'center', minCellWidth: 15 } }),
                 didParseCell: (data) => {
                     if (data.section === 'body') {
                         const colId = data.column.dataKey;
@@ -2458,7 +2519,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         ) : (
                             sortedRows.map((row, index) => {
                                 // Determine row background color
-                                let computedRowBg = row.rowColor || 'transparent';
+                                let computedRowBg = row.rowColor || null;
                                 const sourceCol = columns.find(c => {
                                     const opts = parseOptions(c.options);
                                     return opts.isRowColorSource && c.bgColor;
@@ -2475,10 +2536,10 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                     <tr
                                         key={row.id || index}
                                         className="hover:bg-blue-50/10 transition-colors group text-[#334155]"
-                                        style={{ backgroundColor: computedRowBg }}
+                                        style={{ backgroundColor: computedRowBg || 'transparent' }}
                                     >
                                         <td
-                                            className={`relative border-b border-r border-gray-400 text-center py-2 text-[13px] text-gray-500 group-hover:bg-gray-100/50 transition-colors w-12 sticky left-0 z-10 min-w-12 font-medium ${computedRowBg === 'transparent' ? 'bg-gray-50/50' : ''} ${activeRowMenu?.rowIndex === index ? 'bg-blue-100' : ''}`}
+                                            className={`relative border-b border-r border-gray-400 text-center py-2 text-[13px] text-gray-500 group-hover:bg-gray-100/50 transition-colors w-12 sticky left-0 z-10 min-w-12 font-medium ${!computedRowBg ? 'bg-gray-50/50' : ''} ${activeRowMenu?.rowIndex === index ? 'bg-blue-100' : ''}`}
                                             onContextMenu={(e) => handleRowContextMenu(e, index)}
                                             onClick={(e) => handleRowContextMenu(e, index)}
                                         >
@@ -2493,8 +2554,26 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
                                             const isFocused = focusedCell?.rowId === row.id && focusedCell?.colId === col.id;
                                             let displayVal = val;
-                                            if (col.type === 'currency' && val !== '') {
-                                                displayVal = isFocused ? val : (cell?.formattedValue || formatCurrency(val, col.currencyCode));
+                                            
+                                            // Determine if formula should be formatted as currency
+                                            let isCurrencyFormula = false;
+                                            let formulaCurrencyCode = 'INR';
+                                            if (isFormula && col.formulaExpr) {
+                                                const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                                                for (const refCol of columns) {
+                                                    if (refCol.type === 'currency' && refCol.name) {
+                                                        const regex = new RegExp(`(?<=^|[^a-zA-Z0-9_])${escapeRegExp(refCol.name.trim())}(?=$|[^a-zA-Z0-9_])`, "gi");
+                                                        if (regex.test(col.formulaExpr)) {
+                                                            isCurrencyFormula = true;
+                                                            formulaCurrencyCode = refCol.currencyCode || 'INR';
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            if ((col.type === 'currency' || isCurrencyFormula) && val !== '' && !isNaN(val)) {
+                                                displayVal = isFocused ? val : (col.type === 'currency' && cell?.formattedValue ? cell.formattedValue : formatCurrency(val, col.type === 'currency' ? col.currencyCode : formulaCurrencyCode));
                                             } else if (col.type === 'date' && val) {
                                                 const d = new Date(val + 'T00:00:00');
                                                 displayVal = isFocused
@@ -2522,7 +2601,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                                     style={{
                                                         width: col.width || 220,
                                                         minWidth: col.width || 220,
-                                                        backgroundColor: cell?.bgColor || col.bgColor || computedRowBg || 'transparent'
+                                                        backgroundColor: cell?.bgColor || computedRowBg || col.bgColor || 'transparent'
                                                     }}
                                                     onContextMenu={(e) => handleCellContextMenu(e, index, col.id)}
                                                 >
@@ -2546,17 +2625,24 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                                         </div>
                                                     )}
 
-                                                    {/* Cell Sub-Sheet Indicator */}
-                                                    {(nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) && (
+                                                    {/* Cell Sub-Sheet Indicator — BUG #8: hide for view-only, show loading */}
+                                                    {(nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) && cell?.permission !== 'view' && (
                                                         <div
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                handleOpenOrCreateDetails(row, col);
+                                                                if (!isCreatingCC) handleOpenOrCreateDetails(row, col);
                                                             }}
-                                                            className="absolute bottom-0 right-0 z-20 cursor-pointer p-1 bg-blue-500 rounded-tl-md shadow-sm"
-                                                            title="Open Details"
+                                                            className={`absolute bottom-0 right-0 z-20 p-1 rounded-tl-md shadow-sm transition-colors ${
+                                                                isCreatingCC
+                                                                    ? 'bg-blue-300 cursor-wait'
+                                                                    : 'bg-blue-500 cursor-pointer hover:bg-blue-600'
+                                                            }`}
+                                                            title={isCreatingCC ? 'Creating...' : 'Open Details'}
                                                         >
-                                                            <FiColumns className="w-2.5 h-2.5 text-white" />
+                                                            {isCreatingCC
+                                                                ? <div className="w-2.5 h-2.5 border border-white border-t-transparent rounded-full animate-spin" />
+                                                                : <FiColumns className="w-2.5 h-2.5 text-white" />
+                                                            }
                                                         </div>
                                                     )}
                                                     {col.type === 'currency' && isFocused && (
@@ -4251,7 +4337,8 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                             >
                                 <FiX className="w-6 h-6" />
                             </button>
-                            <DocumentEditor docName={activeNestedSheetId} isNested={true} />
+                            {/* BUG #9: pass setActivePath and returnPath to nested editor */}
+                            <DocumentEditor docName={activeNestedSheetId} isNested={true} setActivePath={setActivePath} returnPath={returnPath} />
                         </div>
                     </div>
                 </div>
