@@ -836,7 +836,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
         let isCurrencyFormula = false;
         let formulaCurrencyCode = 'INR';
-        if (colDef?.type === 'formula' && colDef.formulaExpr) {
+        if (colDef?.type === 'formula' && colDef.formulaExpr && !colDef.formulaExpr.includes('/')) {
             const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
             for (const refCol of columns) {
                 if (refCol.type === 'currency' && refCol.name) {
@@ -1138,7 +1138,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         try {
             const cell = row.cells?.find(c => c.columnId === col.id);
             const cellValue = cell?.computedValue ?? cell?.rawValue;
-            const rowNo = (row.order !== undefined ? row.order + 1 : filteredRows.indexOf(row) + 1);
+            const rowNo = sortedRows.indexOf(row) + 1;
             const defaultName = (cellValue && cellValue.toString().trim() !== "")
                 ? cellValue.toString().trim()
                 : `${col.name}-${rowNo}`;
@@ -1181,14 +1181,14 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
     };
 
     const performEnableRow = async () => {
-        const row = filteredRows[rowToEnable];
+        const row = sortedRows[rowToEnable];
         const colId = editingColId; // repurposed
         if (row && colId) {
             try {
                 // Create sub-sheet
                 const cell = row.cells?.find(c => c.columnId === colId);
                 const cellValue = cell?.computedValue ?? cell?.rawValue;
-                const rowNo = (row.order !== undefined ? row.order + 1 : filteredRows.indexOf(row) + 1);
+                const rowNo = sortedRows.indexOf(row) + 1;
                 const col = columns.find(c => c.id === colId);
                 const defaultName = (cellValue && cellValue.toString().trim() !== "")
                     ? cellValue.toString().trim()
@@ -1422,8 +1422,8 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
         if (rowIndex === null) return;
 
-        // Use filteredRows to get the correct row when filters are active
-        const row = filteredRows[rowIndex];
+        // Use sortedRows to get the correct row when filters/sorts are active
+        const row = sortedRows[rowIndex];
         if (!row) return;
 
         try {
@@ -1932,7 +1932,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                     // Determine if formula should be formatted as currency
                     let isCurrencyFormula = false;
                     let formulaCurrencyCode = 'INR';
-                    if (col.type === 'formula' && col.formulaExpr) {
+                    if (col.type === 'formula' && col.formulaExpr && !col.formulaExpr.includes('/')) {
                         const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
                         for (const refCol of columns) {
                             if (refCol.type === 'currency' && refCol.name) {
@@ -2540,6 +2540,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                     >
                                         <td
                                             className={`relative border-b border-r border-gray-400 text-center py-2 text-[13px] text-gray-500 group-hover:bg-gray-100/50 transition-colors w-12 sticky left-0 z-10 min-w-12 font-medium ${!computedRowBg ? 'bg-gray-50/50' : ''} ${activeRowMenu?.rowIndex === index ? 'bg-blue-100' : ''}`}
+                                            style={{ backgroundColor: activeRowMenu?.rowIndex === index ? '#dbeafe' : (computedRowBg || undefined) }}
                                             onContextMenu={(e) => handleRowContextMenu(e, index)}
                                             onClick={(e) => handleRowContextMenu(e, index)}
                                         >
@@ -2558,7 +2559,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                             // Determine if formula should be formatted as currency
                                             let isCurrencyFormula = false;
                                             let formulaCurrencyCode = 'INR';
-                                            if (isFormula && col.formulaExpr) {
+                                            if (isFormula && col.formulaExpr && !col.formulaExpr.includes('/')) {
                                                 const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
                                                 for (const refCol of columns) {
                                                     if (refCol.type === 'currency' && refCol.name) {
@@ -2860,7 +2861,10 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                                 </td>
                                             );
                                         })}
-                                        <td className="border-b border-gray-200 w-12 sticky right-0 z-10 min-w-12"></td>
+                                        <td 
+                                            className="border-b border-gray-200 w-12 sticky right-0 z-10 min-w-12"
+                                            style={{ backgroundColor: computedRowBg || undefined }}
+                                        ></td>
                                     </tr>
                                 );
                             })
@@ -2994,7 +2998,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                     className="fixed mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-[300] text-gray-700 select-none animate-in fade-in zoom-in-95 duration-100"
                 >
                     {(() => {
-                        const cell = filteredRows[activeCellMenu.rowIndex]?.cells?.find(c => c.columnId === activeCellMenu.colId);
+                        const cell = sortedRows[activeCellMenu.rowIndex]?.cells?.find(c => c.columnId === activeCellMenu.colId);
                         const hasData = cell?.rawValue && cell.rawValue.trim() !== "";
                         if (!hasData) return null;
                         return (
@@ -3014,17 +3018,17 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                     {!isNested && (
                         <>
                             <div className="my-1 border-t border-gray-100"></div>
-                            {nestedSheetsMapping[`${filteredRows[activeCellMenu.rowIndex]?.id}_${activeCellMenu.colId}`] && (
+                            {nestedSheetsMapping[`${sortedRows[activeCellMenu.rowIndex]?.id}_${activeCellMenu.colId}`] && (
                                 <>
                                     <button onClick={() => {
-                                        setActiveNestedSheetId(nestedSheetsMapping[`${filteredRows[activeCellMenu.rowIndex].id}_${activeCellMenu.colId}`]);
+                                        setActiveNestedSheetId(nestedSheetsMapping[`${sortedRows[activeCellMenu.rowIndex].id}_${activeCellMenu.colId}`]);
                                         setActiveCellMenu(null);
                                     }} className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors text-blue-600 font-medium">
                                         <FiColumns className="w-4 h-4" /> Open Cell Details
                                     </button>
                                     <button
                                         onClick={() => {
-                                            const row = filteredRows[activeCellMenu.rowIndex];
+                                            const row = sortedRows[activeCellMenu.rowIndex];
                                             const sheetId = nestedSheetsMapping[`${row.id}_${activeCellMenu.colId}`];
                                             setRenamingSubSheetId(sheetId);
                                             setRenamingSubSheetName("Cell Detail Sub-Sheet");
@@ -3048,7 +3052,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                 <button
                                     key={color.name}
                                     onClick={() => {
-                                        const rowId = filteredRows[activeCellMenu.rowIndex]?.id;
+                                        const rowId = sortedRows[activeCellMenu.rowIndex]?.id;
                                         if (rowId) {
                                             updateCellStyle(rowId, activeCellMenu.colId, { bgColor: color.value });
                                         }
@@ -3065,7 +3069,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                     </div>
 
                     {(() => {
-                        const targetCell = filteredRows[activeCellMenu.rowIndex]?.cells?.find(c => c.columnId === activeCellMenu.colId);
+                        const targetCell = sortedRows[activeCellMenu.rowIndex]?.cells?.find(c => c.columnId === activeCellMenu.colId);
                         const isUnderline = targetCell?.isUnderline || false;
                         const isStrikethrough = targetCell?.isStrikethrough || false;
                         const alignment = targetCell?.alignment || null;
@@ -3143,7 +3147,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
                     <div className="my-1 border-t border-gray-100"></div>
                     {(() => {
-                        const row = filteredRows[activeCellMenu.rowIndex];
+                        const row = sortedRows[activeCellMenu.rowIndex];
                         const hasCC = row && nestedSheetsMapping[`${row.id}_${activeCellMenu.colId}`];
                         if (hasCC) {
                             return (
@@ -3193,7 +3197,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                 <button
                                     key={color.name}
                                     onClick={() => {
-                                        const rowId = filteredRows[activeRowMenu.rowIndex]?.id;
+                                        const rowId = sortedRows[activeRowMenu.rowIndex]?.id;
                                         if (rowId) {
                                             updateRowStyle(rowId, { rowColor: color.value });
                                         }
@@ -3210,7 +3214,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                     </div>
 
                     {(() => {
-                        const targetRow = filteredRows[activeRowMenu.rowIndex];
+                        const targetRow = sortedRows[activeRowMenu.rowIndex];
                         if (!targetRow) return null;
                         const isUnderline = targetRow.isUnderline || false;
                         const isStrikethrough = targetRow.isStrikethrough || false;

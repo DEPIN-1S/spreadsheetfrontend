@@ -61,7 +61,8 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                             title: node.name,
                             date: new Date(node.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
                             rawDate: node.createdAt, // kept for accurate date sort
-                            parentId: node.parentId
+                            parentId: node.parentId,
+                            createdBy: node.createdBy
                         });
                     }
                     if (node.children && node.children.length > 0) {
@@ -85,7 +86,8 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                     title: sheet.name,
                     date: new Date(sheet.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
                     rawDate: sheet.createdAt, // kept for accurate date sort
-                    parentId: sheet.folderId || null
+                    parentId: sheet.folderId || null,
+                    createdBy: sheet.createdBy
                 });
             }
 
@@ -567,7 +569,7 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                                             onMove={() => openMoveModal(folder.id)}
                                             onShare={() => handleShareItem(folder.id, 'folder')}
                                             onDuplicate={() => handleDuplicateItem(folder.id, folder.title, "folder")}
-                                            onDelete={!isStaff ? () => openDeleteModal(folder.id) : undefined}
+                                            onDelete={(!isStaff || folder.createdBy === currentUser.id) ? () => openDeleteModal(folder.id) : undefined}
                                         />
                                     ))}
                                 </div>
@@ -596,7 +598,7 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                                             onMove={() => openMoveModal(file.id)}
                                             onShare={() => handleShareItem(file.id, 'file')}
                                             onDuplicate={() => handleDuplicateItem(file.id, file.title, "file")}
-                                            onDelete={!isStaff ? () => openDeleteModal(file.id) : undefined}
+                                            onDelete={(!isStaff || file.createdBy === currentUser.id) ? () => openDeleteModal(file.id) : undefined}
                                         />
                                     ))}
                                 </div>
