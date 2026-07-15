@@ -5,9 +5,24 @@ import SharedWithMe from "./Pages/SharedWithMe";
 import Users from "./Pages/Users";
 import Messages from "./Pages/Messages";
 import DocumentEditor from "./Pages/DocumentEditor";
+import InventoryDocumentEditor from "./Pages/InventoryDocumentEditor";
 import AuditLogs from "./Pages/AuditLogs";
 import Login from "./Pages/Login";
+import RetailInventory from "./Pages/RetailInventory";
+import Downloads from "./Pages/Downloads";
+import RetailBilling from "./Pages/RetailBilling";
+import RetailParties from "./Pages/RetailParties";
+import RetailInvoices from "./Pages/RetailInvoices";
+import GenerateRetailInvoice from "./Pages/GenerateRetailInvoice";
+import WholesaleBilling from "./Pages/WholesaleBilling";
+import WholesaleParties from "./Pages/WholesaleParties";
+import WholesaleInvoices from "./Pages/WholesaleInvoices";
+import GenerateWholesaleInvoice from "./Pages/GenerateWholesaleInvoice";
+import BillingHistory from "./Pages/BillingHistory";
+import Ledger from "./Pages/Ledger";
 import { ClipboardProvider } from "./context/ClipboardContext";
+
+
 
 function App() {
     const [isCollapsed, setIsCollapsed] = useState(false);
@@ -26,7 +41,7 @@ function App() {
 
     const toggleCollapse = () => setIsCollapsed((prev) => !prev);
 
-    const isEditor = activePath === "/document-editor";
+    const isEditor = activePath === "/document-editor" || activePath === "/inventory-document-editor";
     const isLogin = activePath === "/login";
 
     return (
@@ -77,11 +92,59 @@ function App() {
                     {activePath === "/audit" && (
                         <AuditLogs setMobileOpen={setMobileOpen} />
                     )}
+                    {activePath === "/inventory/files" && (
+                        <RetailInventory 
+                            setMobileOpen={setMobileOpen} 
+                            setActivePath={setActivePath}
+                            setCurrentDocName={setCurrentDocName}
+                            setReturnPath={setReturnPath}
+                        />
+                    )}
+                    {activePath === "/downloads/transactions" && (
+                        <Downloads setMobileOpen={setMobileOpen} />
+                    )}
+                    {activePath === "/inventory/retail-billing" && (
+                        <RetailBilling setMobileOpen={setMobileOpen} setActivePath={setActivePath} />
+                    )}
+                    {activePath === "/inventory/retail-parties" && (
+                        <RetailParties setMobileOpen={setMobileOpen} setActivePath={setActivePath} />
+                    )}
+                    {activePath === "/inventory/retail-invoices" && (
+                        <RetailInvoices setMobileOpen={setMobileOpen} setActivePath={setActivePath} />
+                    )}
+                    {activePath === "/inventory/retail-invoices/generate" && (
+                        <GenerateRetailInvoice setMobileOpen={setMobileOpen} setActivePath={setActivePath} />
+                    )}
+                    {activePath === "/inventory/wholesale-billing" && (
+                        <WholesaleBilling setMobileOpen={setMobileOpen} setActivePath={setActivePath} />
+                    )}
+                    {activePath === "/inventory/wholesale-parties" && (
+                        <WholesaleParties setMobileOpen={setMobileOpen} setActivePath={setActivePath} />
+                    )}
+                    {activePath === "/inventory/wholesale-invoices" && (
+                        <WholesaleInvoices setMobileOpen={setMobileOpen} setActivePath={setActivePath} />
+                    )}
+                    {activePath === "/inventory/wholesale-invoices/generate" && (
+                        <GenerateWholesaleInvoice setMobileOpen={setMobileOpen} setActivePath={setActivePath} />
+                    )}
+                    {activePath === "/inventory/transaction-history" && (
+                        <BillingHistory setMobileOpen={setMobileOpen} setActivePath={setActivePath} />
+                    )}
+                    {activePath === "/inventory/ledger" && (
+                        <Ledger setMobileOpen={setMobileOpen} setActivePath={setActivePath} />
+                    )}
                     {activePath === "/messages" && (
                         <Messages setMobileOpen={setMobileOpen} />
                     )}
                     {activePath === "/document-editor" && (
                         <DocumentEditor
+                            docName={currentDocName}
+                            setActivePath={setActivePath}
+                            returnPath={returnPath}
+                        />
+                    )}
+                    {activePath === "/inventory-document-editor" && (
+                        <InventoryDocumentEditor
                             docName={currentDocName}
                             setActivePath={setActivePath}
                             returnPath={returnPath}

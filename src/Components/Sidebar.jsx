@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { FiFolder, FiUsers, FiShare2, FiChevronLeft, FiChevronRight, FiLogOut, FiActivity, FiAlertTriangle, FiX } from "react-icons/fi";
+import { useState } from "react";
+import { FiFolder, FiUsers, FiShare2, FiChevronLeft, FiChevronRight, FiChevronDown, FiLogOut, FiActivity, FiAlertTriangle, FiX, FiBox } from "react-icons/fi";
 import { PiPaperPlaneTiltBold } from "react-icons/pi";
 import { LuFileSpreadsheet } from "react-icons/lu";
 import apiClient from "../api/apiClient";
@@ -10,22 +10,48 @@ const navItems = [
     { name: "Users", icon: FiUsers, path: "/users" },
     { name: "Messages", icon: PiPaperPlaneTiltBold, path: "/messages" },
     { name: "Audit Logs", icon: FiActivity, path: "/audit" },
+    { 
+        name: "Inventory", 
+        icon: FiBox, 
+        path: "/inventory",
+        subItems: [
+            { name: "Inventory files", path: "/inventory/files" },
+            { name: "RT Billing", path: "/inventory/retail-billing" },
+            { name: "WH Billing", path: "/inventory/wholesale-billing" },
+            { name: "Transaction History", path: "/inventory/transaction-history" },
+            { name: "Downloads", path: "/downloads/transactions" },
+            { name: "Ledger", path: "/inventory/ledger" }
+        ]
+    },
 ];
 
-export default function Sidebar({ isCollapsed, toggleCollapse, mobileOpen, setMobileOpen, activePath, setActivePath }) {
-    const [user, setUser] = useState(null);
-    const [showLogoutPrompt, setShowLogoutPrompt] = useState(false);
 
-    useEffect(() => {
-        const storedUser = localStorage.getItem('user');
-        if (storedUser) {
-            try {
-                setUser(JSON.parse(storedUser));
-            } catch (e) {
-                console.error("Failed to parse user from local storage");
-            }
+
+export default function Sidebar({ isCollapsed, toggleCollapse, mobileOpen, setMobileOpen, activePath, setActivePath }) {
+    const [user] = useState(() => {
+        try {
+            const storedUser = localStorage.getItem("user");
+            return storedUser ? JSON.parse(storedUser) : null;
+        } catch {
+            console.error("Failed to parse user from local storage");
+            return null;
         }
-    }, []);
+    });
+    const [showLogoutPrompt, setShowLogoutPrompt] = useState(false);
+    const [inventoryExpanded, setInventoryExpanded] = useState(() => {
+        return activePath.startsWith("/inventory");
+    });
+
+    const handleItemClick = (item) => {
+        if (item.subItems) {
+            setInventoryExpanded(prev => !prev);
+            if (isCollapsed) {
+                toggleCollapse();
+            }
+        } else {
+            setActivePath(item.path);
+        }
+    };
 
     const handleLogout = () => {
         setShowLogoutPrompt(true);
@@ -37,7 +63,7 @@ export default function Sidebar({ isCollapsed, toggleCollapse, mobileOpen, setMo
             if (refreshToken) {
                 await apiClient.post('/user/logout', { refreshToken });
             }
-        } catch (_) { /* ignore — clear storage regardless */ }
+        } catch { /* ignore — clear storage regardless */ }
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
         localStorage.removeItem('user');
@@ -89,34 +115,81 @@ export default function Sidebar({ isCollapsed, toggleCollapse, mobileOpen, setMo
                         </div>
                     </div>
 
-                    {/* Nav */}
                     <nav className="flex-1 px-4 space-y-2">
                         {navItems
                             .filter(item => {
-                                if ((item.name === "Users" || item.name === "Audit Logs") && user?.role !== 'admin' && user?.role !== 'superadmin') {
+                                if ((item.name === "Users" || item.name === "Audit Logs" || item.name === "Inventory") && user?.role !== 'admin' && user?.role !== 'superadmin') {
                                     return false;
                                 }
                                 return true;
                             })
                             .map((item) => {
-                            const isActive = activePath === item.path;
+                            const isExactActive = activePath === item.path;
+                            const isSubActive = item.subItems && item.subItems.some(sub => activePath === sub.path);
+                            const isActive = isExactActive || isSubActive;
+                            const hasSubItems = !!item.subItems;
+                            const isExpanded = item.name === "Inventory" ? inventoryExpanded : false;
+                            
                             return (
-                                <button
-                                    key={item.name}
-                                    onClick={() => setActivePath(item.path)}
-                                    title={isCollapsed ? item.name : ""}
-                                    className={`w-full flex items-center p-3 rounded-lg transition-all duration-200 group
-                                        ${isActive
-                                            ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/30"
-                                            : "text-gray-400 hover:bg-white/5 hover:text-white"}
-                                        ${isCollapsed ? "justify-center px-2" : "gap-3"}
-                                    `}
-                                >
-                                    <item.icon size={20} className={`shrink-0 ${isActive ? "text-white" : "group-hover:text-white"}`} />
-                                    <span className={`font-medium whitespace-nowrap transition-all duration-300 ${isCollapsed ? "w-0 opacity-0 hidden" : "w-auto opacity-100"}`}>
-                                        {item.name}
-                                    </span>
-                                </button>
+                                <div key={item.name} className="space-y-1">
+                                    <button
+                                        onClick={() => handleItemClick(item)}
+                                        title={isCollapsed ? item.name : ""}
+                                        className={`w-full flex items-center justify-between p-3 rounded-lg transition-all duration-200 group cursor-pointer
+                                            ${isExactActive
+                                                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/30"
+                                                : isSubActive
+                                                    ? "bg-white/5 text-indigo-400 border border-white/5"
+                                                    : "text-gray-400 hover:bg-white/5 hover:text-white"}
+                                            ${isCollapsed ? "justify-center px-2" : "gap-3"}
+                                        `}
+                                    >
+                                        <div className={`flex items-center ${isCollapsed ? "justify-center" : "gap-3"}`}>
+                                            <item.icon size={20} className={`shrink-0 ${isActive ? "text-indigo-400" : "group-hover:text-white"}`} />
+                                            <span className={`font-medium whitespace-nowrap transition-all duration-300 ${isCollapsed ? "w-0 opacity-0 hidden" : "w-auto opacity-100"}`}>
+                                                {item.name}
+                                            </span>
+                                        </div>
+                                        {!isCollapsed && hasSubItems && (
+                                            <span className="text-gray-400 group-hover:text-white transition-colors">
+                                                {isExpanded ? <FiChevronDown size={16} /> : <FiChevronRight size={16} />}
+                                            </span>
+                                        )}
+                                    </button>
+                                    
+                                    {hasSubItems && isExpanded && !isCollapsed && (
+                                        <div className="relative pl-5 ml-6 py-1 space-y-1.5 animate-in slide-in-from-top-2 duration-200">
+                                            {/* Vertical line indicator */}
+                                            <div className="absolute left-0 top-0 bottom-0 w-[1.5px] bg-white/10 rounded-full" />
+                                            
+                                            {item.subItems.map((subItem) => {
+                                                const isSubItemActive = activePath === subItem.path;
+                                                return (                                                     <button
+                                                        key={subItem.name}
+                                                        onClick={() => setActivePath(subItem.path)}
+                                                        className={`w-full flex items-center gap-3 py-2 px-3 rounded-lg text-xs transition-all duration-200 cursor-pointer group/sub relative
+                                                            ${isSubItemActive
+                                                                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-900/30 font-semibold"
+                                                                : "text-gray-400 hover:text-white hover:bg-white/5"}
+                                                        `}
+                                                    >
+                                                        {/* Dot connector */}
+                                                        <span className={`w-1.5 h-1.5 rounded-full transition-all duration-300 shrink-0
+                                                            ${isSubItemActive 
+                                                                ? "bg-white ring-4 ring-white/20 scale-110" 
+                                                                : "bg-gray-600 group-hover/sub:bg-white"}
+                                                         `} />
+                                                        
+                                                        {/* Text with slight offset translation */}
+                                                        <span className="whitespace-nowrap transition-transform duration-200 group-hover/sub:translate-x-0.5">
+                                                            {subItem.name}
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
                             );
                         })}
                     </nav>

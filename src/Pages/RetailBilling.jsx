@@ -1,0 +1,251 @@
+import React, { useState } from 'react';
+import { FiMenu, FiPlus, FiFileText, FiEdit2, FiTrash2, FiEye, FiDownload } from 'react-icons/fi';
+import AddRetailPartyModal from '../Components/AddRetailPartyModal';
+import PharmaInvoiceModal from '../Components/PharmaInvoiceModal';
+
+export default function RetailBilling({ setMobileOpen, setActivePath }) {
+    const [isAddPartyModalOpen, setIsAddPartyModalOpen] = useState(false);
+    const [editingParty, setEditingParty] = useState(null);
+    const [selectedInvoice, setSelectedInvoice] = useState(null);
+    
+    // Mock data for parties/customers
+    const [retailParties, setRetailParties] = useState([
+        { id: 1, name: 'John Doe (Walk-in)', contact: '+1 (555) 111-2233', email: 'johndoe@email.com', address: '12 Maple St, NY' },
+        { id: 2, name: 'City Health Clinic', contact: '+1 (555) 222-3344', email: 'clinic@cityhealth.org', address: '45 Health Ave, CA' },
+        { id: 3, name: 'General Hospital Dispensary', contact: '+1 (555) 333-4455', email: 'dispensary@genhosp.com', address: '88 Hospital Rd, TX' },
+        { id: 4, name: 'Smith Care Center', contact: '+1 (555) 444-5566', email: 'info@smithcare.com', address: '200 Care Blvd, FL' },
+        { id: 5, name: 'Greenwood Pharmacy', contact: '+1 (555) 555-6677', email: 'contact@greenwoodpharma.com', address: '15 Greenwood Way, WA' },
+        { id: 6, name: 'Sunrise Medico', contact: '+1 (555) 666-7788', email: 'orders@sunrisemedico.com', address: '77 Sunrise Ct, IL' },
+    ]);
+
+    const handleAddPartySave = (newPartyData) => {
+        if (editingParty) {
+            setRetailParties(retailParties.map(p => p.id === editingParty.id ? { ...p, ...newPartyData } : p));
+        } else {
+            const newParty = {
+                id: retailParties.length + 1,
+                ...newPartyData
+            };
+            setRetailParties([newParty, ...retailParties]);
+        }
+        setIsAddPartyModalOpen(false);
+        setEditingParty(null);
+    };
+
+    const handleDeleteParty = (id) => {
+        setRetailParties(retailParties.filter(p => p.id !== id));
+    };
+
+    const [recentRetailInvoices, setRecentRetailInvoices] = useState([
+        { id: 201, invoiceNo: 'INV-RET-2026-001', date: '2026-06-15', partyName: 'John Doe (Walk-in)', amount: '₹1,250.00', paymentMethod: 'UPI', paymentStatus: 'Paid' },
+        { id: 202, invoiceNo: 'INV-RET-2026-002', date: '2026-06-16', partyName: 'City Health Clinic', amount: '₹4,500.00', paymentMethod: 'Cash', paymentStatus: 'Partially Paid', pendingAmount: '₹1,500.00' },
+        { id: 203, invoiceNo: 'INV-RET-2026-003', date: '2026-06-17', partyName: 'General Hospital Dispensary', amount: '₹8,900.00', paymentMethod: 'Combined', paymentStatus: 'Paid' },
+        { id: 204, invoiceNo: 'INV-RET-2026-004', date: '2026-06-17', partyName: 'Smith Care Center', amount: '₹2,300.00', paymentMethod: 'UPI', paymentStatus: 'Unpaid' },
+        { id: 205, invoiceNo: 'INV-RET-2026-005', date: '2026-06-18', partyName: 'Greenwood Pharmacy', amount: '₹5,600.00', paymentMethod: 'UPI', paymentStatus: 'Paid' },
+        { id: 206, invoiceNo: 'INV-RET-2026-006', date: '2026-06-18', partyName: 'Sunrise Medico', amount: '₹3,100.00', paymentMethod: 'Cash', paymentStatus: 'Partially Paid', pendingAmount: '₹1,100.00' },
+    ]);
+
+    return (
+        <div className="flex-1 flex flex-col h-screen bg-gray-50">
+            <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-4 sticky top-0 z-20">
+                <button
+                    onClick={() => setMobileOpen(true)}
+                    className="p-2 -ml-2 rounded-lg text-gray-500 hover:bg-gray-100 lg:hidden"
+                >
+                    <FiMenu size={24} />
+                </button>
+                <div className="flex-1 min-w-0">
+                    <h1 className="text-xl font-semibold text-gray-900 truncate">
+                        Retail Billing
+                    </h1>
+                </div>
+            </header>
+            <main className="flex-1 overflow-auto p-6">
+                <div className="max-w-6xl mx-auto space-y-6">
+                    {/* Action Bar */}
+                    <div className="flex justify-end gap-3">
+                        <button
+                            className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 text-sm font-medium rounded-md hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 transition-all shadow-sm"
+                            onClick={() => {
+                                if (setActivePath) setActivePath('/inventory/retail-invoices/generate');
+                            }}
+                        >
+                            <FiFileText size={16} />
+                            Generate Bill/Invoice
+                        </button>
+                        <button
+                            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white border border-indigo-600 text-sm font-medium rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 transition-all shadow-sm"
+                            onClick={() => setIsAddPartyModalOpen(true)}
+                        >
+                            <FiPlus size={16} />
+                            Add New Customer
+                        </button>
+                    </div>
+
+                    {/* Party List Section */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50/50 flex justify-between items-center">
+                            <h2 className="text-lg font-medium text-gray-900">Retail Customers / Parties</h2>
+                            <div className="text-sm text-gray-500">{retailParties.length} total</div>
+                        </div>
+                        
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse min-w-[800px]">
+                                <thead>
+                                    <tr className="bg-gray-50 border-b border-gray-200 text-xs uppercase tracking-wider text-gray-500 font-semibold">
+                                        <th className="px-6 py-3">Customer Name</th>
+                                        <th className="px-6 py-3">Address</th>
+                                        <th className="px-6 py-3">Contact</th>
+                                        <th className="px-6 py-3">Email</th>
+                                        <th className="px-6 py-3 text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200 text-sm">
+                                    {retailParties.slice(0, 5).map((party) => (
+                                        <tr key={party.id} className="hover:bg-gray-50 transition-colors">
+                                            <td className="px-6 py-4 font-medium text-gray-900">{party.name}</td>
+                                            <td className="px-6 py-4 text-gray-600 max-w-[200px] truncate" title={party.address}>{party.address || <span className="text-gray-400 italic">N/A</span>}</td>
+                                            <td className="px-6 py-4 text-gray-600">{party.contact}</td>
+                                            <td className="px-6 py-4 text-gray-600">{party.email || <span className="text-gray-400 italic">N/A</span>}</td>
+                                            <td className="px-6 py-4 text-right space-x-2">
+                                                <button 
+                                                    className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors inline-flex" 
+                                                    title="Edit"
+                                                    onClick={() => {
+                                                        setEditingParty(party);
+                                                        setIsAddPartyModalOpen(true);
+                                                    }}
+                                                >
+                                                    <FiEdit2 size={16} />
+                                                </button>
+                                                <button onClick={() => handleDeleteParty(party.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors inline-flex" title="Delete">
+                                                    <FiTrash2 size={16} />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {retailParties.length === 0 && (
+                                        <tr>
+                                            <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
+                                                No customers found. Add a new customer to get started.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                        {retailParties.length > 5 && (
+                            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-center">
+                                <button 
+                                    onClick={() => setActivePath && setActivePath('/inventory/retail-parties')}
+                                    className="text-indigo-600 hover:text-indigo-800 font-medium text-sm transition-colors"
+                                >
+                                    View All Customers
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Recent Invoices Section */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50/50 flex justify-between items-center">
+                            <h2 className="text-lg font-medium text-gray-900">Recent Retail Invoices</h2>
+                        </div>
+                        
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse min-w-[800px]">
+                                <thead>
+                                    <tr className="bg-gray-50 border-b border-gray-200 text-xs uppercase tracking-wider text-gray-500 font-semibold">
+                                        <th className="px-6 py-3">Invoice No.</th>
+                                        <th className="px-6 py-3">Date</th>
+                                        <th className="px-6 py-3">Customer Name</th>
+                                        <th className="px-6 py-3 text-right">Amount</th>
+                                        <th className="px-6 py-3">Payment Method</th>
+                                        <th className="px-6 py-3">Status</th>
+                                        <th className="px-6 py-3 text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200 text-sm">
+                                    {recentRetailInvoices.slice(0, 5).map((invoice) => {
+                                        return (
+                                        <tr key={invoice.id} className="hover:bg-gray-50 transition-colors">
+                                            <td className="px-6 py-4 font-medium text-indigo-600">{invoice.invoiceNo}</td>
+                                            <td className="px-6 py-4 text-gray-600">{invoice.date}</td>
+                                            <td className="px-6 py-4 text-gray-900">{invoice.partyName}</td>
+                                            <td className="px-6 py-4 text-right">
+                                                <div className="font-medium text-gray-900">{invoice.amount}</div>
+                                                {invoice.paymentStatus === 'Partially Paid' && invoice.pendingAmount && (
+                                                    <div className="text-xs text-red-500 font-semibold mt-0.5">Pending: {invoice.pendingAmount}</div>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                                                    invoice.paymentMethod === 'Cash' ? 'bg-emerald-100 text-emerald-700' :
+                                                    invoice.paymentMethod === 'Bank Transfer' ? 'bg-indigo-100 text-indigo-700' :
+                                                    invoice.paymentMethod === 'Combined' ? 'bg-blue-100 text-blue-700' :
+                                                    'bg-purple-100 text-purple-700'
+                                                }`}>
+                                                    {invoice.paymentMethod}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                                                    invoice.paymentStatus === 'Paid' ? 'bg-green-100 text-green-700' :
+                                                    invoice.paymentStatus === 'Unpaid' ? 'bg-red-100 text-red-700' :
+                                                    'bg-yellow-100 text-yellow-700'
+                                                }`}>
+                                                    {invoice.paymentStatus}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 text-right whitespace-nowrap">
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <button onClick={() => setSelectedInvoice(invoice)} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors flex items-center justify-center" title="View Invoice">
+                                                        <FiEye size={16} />
+                                                    </button>
+                                                    <button className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors flex items-center justify-center" title="Edit Invoice">
+                                                        <FiEdit2 size={16} />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        );
+                                    })}
+                                    {recentRetailInvoices.length === 0 && (
+                                        <tr>
+                                            <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
+                                                No recent retail invoices found.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                        {recentRetailInvoices.length > 5 && (
+                            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-center">
+                                <button 
+                                    onClick={() => setActivePath && setActivePath('/inventory/retail-invoices')}
+                                    className="text-indigo-600 hover:text-indigo-800 font-medium text-sm transition-colors"
+                                >
+                                    View All Invoices
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                </div>
+            </main>
+
+            <AddRetailPartyModal 
+                isOpen={isAddPartyModalOpen} 
+                onClose={() => { setIsAddPartyModalOpen(false); setEditingParty(null); }} 
+                onSave={handleAddPartySave}
+                initialData={editingParty}
+            />
+            <PharmaInvoiceModal 
+                isOpen={!!selectedInvoice} 
+                onClose={() => setSelectedInvoice(null)} 
+                invoice={selectedInvoice} 
+            />
+        </div>
+    );
+}
