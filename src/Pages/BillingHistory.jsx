@@ -1,36 +1,65 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { FiMenu, FiSearch, FiEye, FiDownload, FiTrash2, FiFileText, FiTrendingUp, FiBox, FiShoppingBag, FiFilter } from 'react-icons/fi';
 import PharmaInvoiceModal from '../Components/PharmaInvoiceModal';
+import { invInvoicesApi } from '../api/inventoryApiClient';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-export default function BillingHistory({ setMobileOpen, setActivePath }) {
+export default function BillingHistory({ setMobileOpen }) {
     const [selectedInvoice, setSelectedInvoice] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterType, setFilterType] = useState('ALL'); // 'ALL', 'WHOLESALE', 'RETAIL'
     const [chAppliedIds, setChAppliedIds] = useState([]);
+    const [invoices, setInvoices] = useState([]);
+
+    const fetchInvoices = async () => {
+        try {
+            const res = await invInvoicesApi.list();
+            const normalized = (res.data.data || []).map(inv => ({
+                id: inv.id,
+                invoiceNo: inv.invoiceNo,
+                date: inv.invoiceDate,
+                partyName: inv.partyName,
+                amount: Number(inv.grandTotal) || 0,
+                paymentMethod: inv.paymentMethod,
+                type: inv.type === 'wholesale' ? 'Wholesale' : 'Retail',
+                status: inv.paymentStatus,
+                pendingAmount: Number(inv.pendingAmount) || 0
+            }));
+            setInvoices(normalized);
+        } catch (error) {
+            console.error("Failed to load combined invoices:", error);
+        }
+    };
+
+    useEffect(() => {
+        let active = true;
+        (async () => {
+            try {
+                const res = await invInvoicesApi.list();
+                if (!active) return;
+                const normalized = (res.data.data || []).map(inv => ({
+                    id: inv.id,
+                    invoiceNo: inv.invoiceNo,
+                    date: inv.invoiceDate,
+                    partyName: inv.partyName,
+                    amount: Number(inv.grandTotal) || 0,
+                    paymentMethod: inv.paymentMethod,
+                    type: inv.type === 'wholesale' ? 'Wholesale' : 'Retail',
+                    status: inv.paymentStatus,
+                    pendingAmount: Number(inv.pendingAmount) || 0
+                }));
+                setInvoices(normalized);
+            } catch (error) {
+                console.error("Failed to load combined invoices:", error);
+            }
+        })();
+        return () => { active = false; };
+    }, []);
 
     const toggleCh = (id) => {
         setChAppliedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
     };
-
-    // Combined mock history of wholesale and retail bills
-    const [invoices, setInvoices] = useState([
-        { id: 101, invoiceNo: 'INV-2026-001', date: '2026-06-15', partyName: 'Acme Wholesale Corp', amount: 12500.00, paymentMethod: 'UPI', type: 'Wholesale', status: 'Paid' },
-        { id: 102, invoiceNo: 'INV-2026-002', date: '2026-06-16', partyName: 'Global Traders Inc.', amount: 34000.00, paymentMethod: 'Cash', type: 'Wholesale', status: 'Unpaid' },
-        { id: 201, invoiceNo: 'INV-RET-2026-001', date: '2026-06-15', partyName: 'John Doe (Walk-in)', amount: 1250.00, paymentMethod: 'UPI', type: 'Retail', status: 'Paid' },
-        { id: 103, invoiceNo: 'INV-2026-003', date: '2026-06-17', partyName: 'Metro Foods', amount: 8900.00, paymentMethod: 'Cash', type: 'Wholesale', status: 'Paid' },
-        { id: 202, invoiceNo: 'INV-RET-2026-002', date: '2026-06-16', partyName: 'City Health Clinic', amount: 4500.00, paymentMethod: 'Cash', type: 'Retail', status: 'Partially Paid', pendingAmount: 1500.00 },
-        { id: 104, invoiceNo: 'INV-2026-004', date: '2026-06-17', partyName: 'Alpha Supplies', amount: 4500.00, paymentMethod: 'UPI', type: 'Wholesale', status: 'Paid' },
-        { id: 203, invoiceNo: 'INV-RET-2026-003', date: '2026-06-17', partyName: 'General Hospital Dispensary', amount: 8900.00, paymentMethod: 'Combined', type: 'Retail', status: 'Paid' },
-        { id: 105, invoiceNo: 'INV-2026-005', date: '2026-06-18', partyName: 'Regional Distributors', amount: 15200.00, paymentMethod: 'UPI', type: 'Wholesale', status: 'Unpaid' },
-        { id: 204, invoiceNo: 'INV-RET-2026-004', date: '2026-06-17', partyName: 'Smith Care Center', amount: 2300.00, paymentMethod: 'UPI', type: 'Retail', status: 'Paid' },
-        { id: 106, invoiceNo: 'INV-2026-006', date: '2026-06-18', partyName: 'Prime Vendors', amount: 22100.00, paymentMethod: 'Cash', type: 'Wholesale', status: 'Paid' },
-        { id: 205, invoiceNo: 'INV-RET-2026-005', date: '2026-06-18', partyName: 'Greenwood Pharmacy', amount: 5600.00, paymentMethod: 'UPI', type: 'Retail', status: 'Paid' },
-        { id: 107, invoiceNo: 'INV-2026-007', date: '2026-06-19', partyName: 'Acme Wholesale Corp', amount: 6400.00, paymentMethod: 'UPI', type: 'Wholesale', status: 'Paid' },
-        { id: 206, invoiceNo: 'INV-RET-2026-006', date: '2026-06-18', partyName: 'Sunrise Medico', amount: 3100.00, paymentMethod: 'Cash', type: 'Retail', status: 'Paid' },
-        { id: 108, invoiceNo: 'INV-2026-008', date: '2026-06-19', partyName: 'Metro Foods', amount: 11000.00, paymentMethod: 'Cash', type: 'Wholesale', status: 'Paid' },
-    ]);
 
     const stats = useMemo(() => {
         const activeInvoices = invoices.filter(inv => !chAppliedIds.includes(inv.id));
@@ -56,9 +85,9 @@ export default function BillingHistory({ setMobileOpen, setActivePath }) {
     const filteredInvoices = useMemo(() => {
         return invoices.filter(inv => {
             const matchesSearch = 
-                inv.invoiceNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                inv.partyName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                inv.paymentMethod.toLowerCase().includes(searchQuery.toLowerCase());
+                (inv.invoiceNo || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                (inv.partyName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                (inv.paymentMethod || '').toLowerCase().includes(searchQuery.toLowerCase());
             
             if (!matchesSearch) return false;
 
@@ -68,8 +97,15 @@ export default function BillingHistory({ setMobileOpen, setActivePath }) {
         });
     }, [invoices, searchQuery, filterType]);
 
-    const handleDeleteInvoice = (id) => {
-        setInvoices(invoices.filter(inv => inv.id !== id));
+    const handleDeleteInvoice = async (id) => {
+        if (!window.confirm("Are you sure you want to delete this invoice? Stock will be restored.")) return;
+        try {
+            await invInvoicesApi.delete(id);
+            fetchInvoices();
+        } catch (error) {
+            console.error("Failed to delete invoice:", error);
+            alert("Failed to delete invoice: " + (error.response?.data?.message || error.message));
+        }
     };
 
     const formatCurrency = (val) => {
@@ -355,6 +391,13 @@ export default function BillingHistory({ setMobileOpen, setActivePath }) {
                                                         title="View Tax Invoice"
                                                     >
                                                         <FiEye size={17} />
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => handleDeleteInvoice(inv.id)} 
+                                                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center justify-center" 
+                                                        title="Delete Invoice & Restore Stock"
+                                                    >
+                                                        <FiTrash2 size={17} />
                                                     </button>
                                                     <button 
                                                         onClick={() => toggleCh(inv.id)} 

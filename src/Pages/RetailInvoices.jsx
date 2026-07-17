@@ -1,20 +1,40 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FiMenu, FiArrowLeft, FiEye, FiEdit2, FiDownload, FiTrash2, FiFileText } from 'react-icons/fi';
 import PharmaInvoiceModal from '../Components/PharmaInvoiceModal';
+import { invInvoicesApi } from '../api/inventoryApiClient';
 
 export default function RetailInvoices({ setMobileOpen, setActivePath }) {
     const [selectedInvoice, setSelectedInvoice] = useState(null);
-    // Mock data for retail invoices
-    const [allInvoices, setAllInvoices] = useState([
-        { id: 201, invoiceNo: 'INV-RET-2026-001', date: '2026-06-15', partyName: 'John Doe (Walk-in)', amount: '₹1,250.00', paymentMethod: 'UPI', paymentStatus: 'Paid' },
-        { id: 202, invoiceNo: 'INV-RET-2026-002', date: '2026-06-16', partyName: 'City Health Clinic', amount: '₹4,500.00', paymentMethod: 'Cash', paymentStatus: 'Partially Paid', pendingAmount: '₹1,500.00' },
-        { id: 203, invoiceNo: 'INV-RET-2026-003', date: '2026-06-17', partyName: 'General Hospital Dispensary', amount: '₹8,900.00', paymentMethod: 'Combined', paymentStatus: 'Paid' },
-        { id: 204, invoiceNo: 'INV-RET-2026-004', date: '2026-06-17', partyName: 'Smith Care Center', amount: '₹2,300.00', paymentMethod: 'UPI', paymentStatus: 'Unpaid' },
-        { id: 205, invoiceNo: 'INV-RET-2026-005', date: '2026-06-18', partyName: 'Greenwood Pharmacy', amount: '₹5,600.00', paymentMethod: 'UPI', paymentStatus: 'Paid' },
-        { id: 206, invoiceNo: 'INV-RET-2026-006', date: '2026-06-18', partyName: 'Sunrise Medico', amount: '₹3,100.00', paymentMethod: 'Cash', paymentStatus: 'Partially Paid', pendingAmount: '₹1,100.00' },
-        { id: 207, invoiceNo: 'INV-RET-2026-007', date: '2026-06-19', partyName: 'John Doe (Walk-in)', amount: '₹850.00', paymentMethod: 'UPI', paymentStatus: 'Paid' },
-        { id: 208, invoiceNo: 'INV-RET-2026-008', date: '2026-06-19', partyName: 'City Health Clinic', amount: '₹6,200.00', paymentMethod: 'Cash', paymentStatus: 'Unpaid' },
-    ]);
+    const [allInvoices, setAllInvoices] = useState([]);
+
+    useEffect(() => {
+        fetchInvoices();
+    }, []);
+
+    const fetchInvoices = async () => {
+        try {
+            const res = await invInvoicesApi.list('retail');
+            setAllInvoices(res.data.data || []);
+        } catch (error) {
+            console.error("Failed to load retail invoices:", error);
+        }
+    };
+
+    const handleDeleteInvoice = async (id) => {
+        if (!window.confirm("Are you sure you want to delete this invoice? Stock will be restored.")) return;
+        try {
+            await invInvoicesApi.delete(id);
+            fetchInvoices();
+        } catch (error) {
+            console.error("Failed to delete invoice:", error);
+            alert("Failed to delete invoice: " + (error.response?.data?.message || error.message));
+        }
+    };
+
+    const formatCurrency = (val) => {
+        const num = Number(val) || 0;
+        return `₹${num.toFixed(2)}`;
+    };
 
     return (
         <div className="flex-1 flex flex-col h-screen bg-gray-50">
@@ -74,12 +94,12 @@ export default function RetailInvoices({ setMobileOpen, setActivePath }) {
                                         return (
                                         <tr key={invoice.id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-4 font-medium text-indigo-600">{invoice.invoiceNo}</td>
-                                            <td className="px-6 py-4 text-gray-600">{invoice.date}</td>
+                                            <td className="px-6 py-4 text-gray-600">{invoice.invoiceDate}</td>
                                             <td className="px-6 py-4 text-gray-900">{invoice.partyName}</td>
                                             <td className="px-6 py-4">
-                                                <div className="font-medium text-gray-900">{invoice.amount}</div>
-                                                {invoice.paymentStatus === 'Partially Paid' && invoice.pendingAmount && (
-                                                    <div className="text-xs text-red-500 font-semibold mt-0.5">Pending: {invoice.pendingAmount}</div>
+                                                <div className="font-medium text-gray-900">{formatCurrency(invoice.grandTotal)}</div>
+                                                {invoice.paymentStatus === 'Partially Paid' && invoice.pendingAmount > 0 && (
+                                                    <div className="text-xs text-red-500 font-semibold mt-0.5">Pending: {formatCurrency(invoice.pendingAmount)}</div>
                                                 )}
                                             </td>
                                             <td className="px-6 py-4">
@@ -106,8 +126,12 @@ export default function RetailInvoices({ setMobileOpen, setActivePath }) {
                                                     <button onClick={() => setSelectedInvoice(invoice)} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors flex items-center justify-center" title="View Invoice">
                                                         <FiEye size={16} />
                                                     </button>
-                                                    <button className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors flex items-center justify-center" title="Edit Invoice">
-                                                        <FiEdit2 size={16} />
+                                                    <button 
+                                                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors flex items-center justify-center" 
+                                                        onClick={() => handleDeleteInvoice(invoice.id)}
+                                                        title="Delete Invoice"
+                                                    >
+                                                        <FiTrash2 size={16} />
                                                     </button>
                                                 </div>
                                             </td>
@@ -116,7 +140,7 @@ export default function RetailInvoices({ setMobileOpen, setActivePath }) {
                                     })}
                                     {allInvoices.length === 0 && (
                                         <tr>
-                                            <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
+                                            <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
                                                 No retail invoices found.
                                             </td>
                                         </tr>

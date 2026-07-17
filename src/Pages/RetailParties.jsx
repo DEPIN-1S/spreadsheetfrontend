@@ -1,20 +1,48 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FiMenu, FiPlus, FiEdit2, FiTrash2, FiArrowLeft } from 'react-icons/fi';
 import AddRetailPartyModal from '../Components/AddRetailPartyModal';
+import { invPartiesApi } from '../api/inventoryApiClient';
 
 export default function RetailParties({ setMobileOpen, setActivePath }) {
     const [isAddPartyModalOpen, setIsAddPartyModalOpen] = useState(false);
     const [editingParty, setEditingParty] = useState(null);
-    
-    // Mock data for retail parties/customers
-    const [allRetailParties, setAllRetailParties] = useState([
-        { id: 1, name: 'John Doe (Walk-in)', contact: '+1 (555) 111-2233', email: 'johndoe@email.com', address: '12 Maple St, NY' },
-        { id: 2, name: 'City Health Clinic', contact: '+1 (555) 222-3344', email: 'clinic@cityhealth.org', address: '45 Health Ave, CA' },
-        { id: 3, name: 'General Hospital Dispensary', contact: '+1 (555) 333-4455', email: 'dispensary@genhosp.com', address: '88 Hospital Rd, TX' },
-        { id: 4, name: 'Smith Care Center', contact: '+1 (555) 444-5566', email: 'info@smithcare.com', address: '200 Care Blvd, FL' },
-        { id: 5, name: 'Greenwood Pharmacy', contact: '+1 (555) 555-6677', email: 'contact@greenwoodpharma.com', address: '15 Greenwood Way, WA' },
-        { id: 6, name: 'Sunrise Medico', contact: '+1 (555) 666-7788', email: 'orders@sunrisemedico.com', address: '77 Sunrise Ct, IL' },
-    ]);
+    const [allRetailParties, setAllRetailParties] = useState([]);
+
+    useEffect(() => {
+        fetchParties();
+    }, []);
+
+    const fetchParties = async () => {
+        try {
+            const res = await invPartiesApi.list('retail');
+            setAllRetailParties(res.data.data || []);
+        } catch (error) {
+            console.error("Failed to load retail parties:", error);
+        }
+    };
+
+    const handleSaveParty = async (formData) => {
+        try {
+            if (editingParty) {
+                await invPartiesApi.update('retail', editingParty.id, formData);
+            } else {
+                await invPartiesApi.create('retail', formData);
+            }
+            fetchParties();
+        } catch (error) {
+            console.error("Failed to save retail party:", error);
+        }
+    };
+
+    const handleDeleteParty = async (id) => {
+        if (!window.confirm("Are you sure you want to delete this customer?")) return;
+        try {
+            await invPartiesApi.delete('retail', id);
+            fetchParties();
+        } catch (error) {
+            console.error("Failed to delete retail party:", error);
+        }
+    };
 
     return (
         <div className="flex-1 flex flex-col h-screen bg-gray-50">
@@ -85,7 +113,11 @@ export default function RetailParties({ setMobileOpen, setActivePath }) {
                                                 >
                                                     <FiEdit2 size={16} />
                                                 </button>
-                                                <button className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors inline-flex" title="Delete">
+                                                <button 
+                                                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors inline-flex" 
+                                                    onClick={() => handleDeleteParty(party.id)}
+                                                    title="Delete"
+                                                >
                                                     <FiTrash2 size={16} />
                                                 </button>
                                             </td>
@@ -111,6 +143,7 @@ export default function RetailParties({ setMobileOpen, setActivePath }) {
                     setIsAddPartyModalOpen(false);
                     setEditingParty(null);
                 }} 
+                onSave={handleSaveParty}
                 initialData={editingParty}
             />
         </div>

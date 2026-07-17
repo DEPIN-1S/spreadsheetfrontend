@@ -2,34 +2,19 @@ import React, { useState } from 'react';
 import { FiMenu, FiDownload, FiCalendar } from 'react-icons/fi';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-
-// Dummy data generator for demonstration
-const generateDummyTransactions = (count) => {
-    const types = ['Retail', 'Wholesale'];
-    const methods = ['UPI', 'Cash', 'Combined'];
-    const parties = ['Walk-in Customer', 'City Health Clinic', 'Acme Wholesale Corp', 'Metro Foods'];
-    
-    return Array.from({ length: count }).map((_, i) => ({
-        id: i + 1,
-        invoiceNo: `INV-2026-${String(i+1).padStart(3, '0')}`,
-        date: new Date(Date.now() - Math.floor(Math.random() * 30 * 24 * 60 * 60 * 1000)).toISOString().split('T')[0],
-        partyName: parties[Math.floor(Math.random() * parties.length)],
-        amount: Math.floor(Math.random() * 50000) + 500,
-        paymentMethod: methods[Math.floor(Math.random() * methods.length)],
-        type: types[Math.floor(Math.random() * types.length)]
-    }));
-};
+import { invInvoicesApi } from '../api/inventoryApiClient';
 
 export default function Downloads({ setMobileOpen }) {
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
     const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+    const [isLoading, setIsLoading] = useState(false);
 
     const downloadPDF = (title, data) => {
         const doc = new jsPDF();
         
         doc.setFontSize(16);
         doc.setFont('helvetica', 'bold');
-        doc.text("COMPANY NAME", 14, 18);
+        doc.text("DATSHEETS ENTERPRISE DESK", 14, 18);
         
         doc.setFontSize(12);
         doc.setFont('helvetica', 'normal');
@@ -41,15 +26,16 @@ export default function Downloads({ setMobileOpen }) {
 
         let totalAmount = 0;
         const tableRows = data.map((inv, index) => {
-            totalAmount += inv.amount;
+            const amount = Number(inv.grandTotal) || Number(inv.amount) || 0;
+            totalAmount += amount;
             return [
                 index + 1,
-                inv.invoiceNo,
-                inv.date,
-                inv.partyName,
-                inv.type,
-                inv.paymentMethod,
-                `Rs ${inv.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+                inv.invoiceNo || `INV-${inv.id}`,
+                inv.invoiceDate || inv.date || '',
+                inv.partyName || 'Walk-in Customer',
+                inv.type === 'wholesale' || inv.type === 'Wholesale' ? 'Wholesale' : 'Retail',
+                inv.paymentMethod || 'Cash',
+                `Rs ${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
             ];
         });
 
@@ -69,30 +55,62 @@ export default function Downloads({ setMobileOpen }) {
         doc.setFontSize(10);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0);
-        doc.text(`Total Transaction Amount: Rs ${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, 14, finalY + 10);
+        doc.text(`Total Transaction Amount: Rs ${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 14, finalY + 10);
         
         const fileName = `${title.replace(/\s+/g, '_').toLowerCase()}.pdf`;
         doc.save(fileName);
     };
 
-    const handleDownloadDaily = (e) => {
+    const handleDownloadDaily = async (e) => {
         e.preventDefault();
         if (!selectedDate) {
             alert('Please select a date');
             return;
         }
-        const data = generateDummyTransactions(15);
-        downloadPDF(`Daily Transaction Report - ${selectedDate}`, data);
+        setIsLoading(true);
+        try {
+            const res = await invInvoicesApi.list();
+            const allInvoices = res.data.data || [];
+            const filtered = allInvoices.filter(inv => inv.invoiceDate === selectedDate);
+
+            if (filtered.length === 0) {
+                alert(`No transactions found for the selected date (${selectedDate}).`);
+                return;
+            }
+
+            downloadPDF(`Daily Transaction Report - ${selectedDate}`, filtered);
+        } catch (error) {
+            console.error("Failed to fetch daily transactions:", error);
+            alert("Failed to fetch transaction data: " + (error.response?.data?.message || error.message));
+        } finally {
+            setIsLoading(false);
+        }
     };
 
-    const handleDownloadMonthly = (e) => {
+    const handleDownloadMonthly = async (e) => {
         e.preventDefault();
         if (!selectedMonth) {
             alert('Please select a month');
             return;
         }
-        const data = generateDummyTransactions(45);
-        downloadPDF(`Monthly Transaction Report - ${selectedMonth}`, data);
+        setIsLoading(true);
+        try {
+            const res = await invInvoicesApi.list();
+            const allInvoices = res.data.data || [];
+            const filtered = allInvoices.filter(inv => (inv.invoiceDate || '').startsWith(selectedMonth));
+
+            if (filtered.length === 0) {
+                alert(`No transactions found for the selected month (${selectedMonth}).`);
+                return;
+            }
+
+            downloadPDF(`Monthly Transaction Report - ${selectedMonth}`, filtered);
+        } catch (error) {
+            console.error("Failed to fetch monthly transactions:", error);
+            alert("Failed to fetch transaction data: " + (error.response?.data?.message || error.message));
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -144,10 +162,11 @@ export default function Downloads({ setMobileOpen }) {
                                     </div>
                                     <button
                                         type="submit"
-                                        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-500/20 transition-all"
+                                        disabled={isLoading}
+                                        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-500/20 transition-all disabled:opacity-50"
                                     >
                                         <FiDownload size={18} />
-                                        Download Daily PDF
+                                        {isLoading ? 'Fetching Data...' : 'Download Daily PDF'}
                                     </button>
                                 </form>
                             </div>
@@ -178,10 +197,11 @@ export default function Downloads({ setMobileOpen }) {
                                     </div>
                                     <button
                                         type="submit"
-                                        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 focus:ring-4 focus:ring-emerald-500/20 transition-all"
+                                        disabled={isLoading}
+                                        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 focus:ring-4 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
                                     >
                                         <FiDownload size={18} />
-                                        Download Monthly PDF
+                                        {isLoading ? 'Fetching Data...' : 'Download Monthly PDF'}
                                     </button>
                                 </form>
                             </div>

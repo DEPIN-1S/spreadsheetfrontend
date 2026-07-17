@@ -1,20 +1,40 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FiMenu, FiArrowLeft, FiEye, FiEdit2, FiDownload, FiTrash2, FiFileText } from 'react-icons/fi';
 import PharmaInvoiceModal from '../Components/PharmaInvoiceModal';
+import { invInvoicesApi } from '../api/inventoryApiClient';
 
 export default function WholesaleInvoices({ setMobileOpen, setActivePath }) {
     const [selectedInvoice, setSelectedInvoice] = useState(null);
-    // Mock data for all invoices
-    const [allInvoices, setAllInvoices] = useState([
-        { id: 101, invoiceNo: 'INV-2026-001', date: '2026-06-15', partyName: 'Acme Wholesale Corp', amount: '₹12,500.00', paymentMethod: 'UPI', paymentStatus: 'Paid' },
-        { id: 102, invoiceNo: 'INV-2026-002', date: '2026-06-16', partyName: 'Global Traders Inc.', amount: '₹34,000.00', paymentMethod: 'Cash', paymentStatus: 'Partially Paid', pendingAmount: '₹14,000.00' },
-        { id: 103, invoiceNo: 'INV-2026-003', date: '2026-06-17', partyName: 'Metro Foods', amount: '₹8,900.00', paymentMethod: 'Cash', paymentStatus: 'Unpaid' },
-        { id: 104, invoiceNo: 'INV-2026-004', date: '2026-06-17', partyName: 'Alpha Supplies', amount: '₹4,500.00', paymentMethod: 'UPI', paymentStatus: 'Paid' },
-        { id: 105, invoiceNo: 'INV-2026-005', date: '2026-06-18', partyName: 'Regional Distributors', amount: '₹15,200.00', paymentMethod: 'UPI', paymentStatus: 'Partially Paid', pendingAmount: '₹5,200.00' },
-        { id: 106, invoiceNo: 'INV-2026-006', date: '2026-06-18', partyName: 'Prime Vendors', amount: '₹22,100.00', paymentMethod: 'Cash', paymentStatus: 'Paid' },
-        { id: 107, invoiceNo: 'INV-2026-007', date: '2026-06-19', partyName: 'Acme Wholesale Corp', amount: '₹6,400.00', paymentMethod: 'UPI', paymentStatus: 'Unpaid' },
-        { id: 108, invoiceNo: 'INV-2026-008', date: '2026-06-19', partyName: 'Metro Foods', amount: '₹11,000.00', paymentMethod: 'Cash', paymentStatus: 'Paid' },
-    ]);
+    const [allInvoices, setAllInvoices] = useState([]);
+
+    useEffect(() => {
+        fetchInvoices();
+    }, []);
+
+    const fetchInvoices = async () => {
+        try {
+            const res = await invInvoicesApi.list('wholesale');
+            setAllInvoices(res.data.data || []);
+        } catch (error) {
+            console.error("Failed to load wholesale invoices:", error);
+        }
+    };
+
+    const handleDeleteInvoice = async (id) => {
+        if (!window.confirm("Are you sure you want to delete this invoice? Stock will be restored.")) return;
+        try {
+            await invInvoicesApi.delete(id);
+            fetchInvoices();
+        } catch (error) {
+            console.error("Failed to delete invoice:", error);
+            alert("Failed to delete invoice: " + (error.response?.data?.message || error.message));
+        }
+    };
+
+    const formatCurrency = (val) => {
+        const num = Number(val) || 0;
+        return `₹${num.toFixed(2)}`;
+    };
 
     return (
         <div className="flex-1 flex flex-col h-screen bg-gray-50">
@@ -74,12 +94,12 @@ export default function WholesaleInvoices({ setMobileOpen, setActivePath }) {
                                         return (
                                         <tr key={invoice.id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-4 font-medium text-indigo-600">{invoice.invoiceNo}</td>
-                                            <td className="px-6 py-4 text-gray-600">{invoice.date}</td>
+                                            <td className="px-6 py-4 text-gray-600">{invoice.invoiceDate}</td>
                                             <td className="px-6 py-4 text-gray-900">{invoice.partyName}</td>
                                             <td className="px-6 py-4">
-                                                <div className="font-medium text-gray-900">{invoice.amount}</div>
-                                                {invoice.paymentStatus === 'Partially Paid' && invoice.pendingAmount && (
-                                                    <div className="text-xs text-red-500 font-semibold mt-0.5">Pending: {invoice.pendingAmount}</div>
+                                                <div className="font-medium text-gray-900">{formatCurrency(invoice.grandTotal)}</div>
+                                                {invoice.paymentStatus === 'Partially Paid' && invoice.pendingAmount > 0 && (
+                                                    <div className="text-xs text-red-500 font-semibold mt-0.5">Pending: {formatCurrency(invoice.pendingAmount)}</div>
                                                 )}
                                             </td>
                                             <td className="px-6 py-4">
@@ -106,8 +126,12 @@ export default function WholesaleInvoices({ setMobileOpen, setActivePath }) {
                                                     <button onClick={() => setSelectedInvoice(invoice)} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors flex items-center justify-center" title="View Invoice">
                                                         <FiEye size={16} />
                                                     </button>
-                                                    <button className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors flex items-center justify-center" title="Edit Invoice">
-                                                        <FiEdit2 size={16} />
+                                                    <button 
+                                                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors flex items-center justify-center" 
+                                                        onClick={() => handleDeleteInvoice(invoice.id)}
+                                                        title="Delete Invoice"
+                                                    >
+                                                        <FiTrash2 size={16} />
                                                     </button>
                                                 </div>
                                             </td>
@@ -116,7 +140,7 @@ export default function WholesaleInvoices({ setMobileOpen, setActivePath }) {
                                     })}
                                     {allInvoices.length === 0 && (
                                         <tr>
-                                            <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
+                                            <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
                                                 No invoices found.
                                             </td>
                                         </tr>

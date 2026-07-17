@@ -1,19 +1,48 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FiMenu, FiPlus, FiEdit2, FiTrash2, FiArrowLeft } from 'react-icons/fi';
 import AddWholesalePartyModal from '../Components/AddWholesalePartyModal';
+import { invPartiesApi } from '../api/inventoryApiClient';
 
 export default function WholesaleParties({ setMobileOpen, setActivePath }) {
     const [isAddPartyModalOpen, setIsAddPartyModalOpen] = useState(false);
     const [editingParty, setEditingParty] = useState(null);
-    // Mock data for parties (ideally from a global store or API)
-    const [allWholesaleParties, setAllWholesaleParties] = useState([
-        { id: 1, name: 'Acme Wholesale Corp', contact: '+1 (555) 123-4567', email: 'orders@acmewholesale.com', registrationNo: 'REG-100234', address: '123 Business Rd, NY' },
-        { id: 2, name: 'Global Traders Inc.', contact: '+1 (555) 987-6543', email: 'billing@globaltraders.net', registrationNo: 'REG-554433', address: '45 Trade Ave, CA' },
-        { id: 3, name: 'Regional Distributors', contact: '+1 (555) 456-7890', email: 'supply@regionaldist.com', registrationNo: 'REG-998877', address: '78 Supply St, TX' },
-        { id: 4, name: 'Metro Foods', contact: '+1 (555) 333-2222', email: 'hello@metrofoods.com', registrationNo: 'REG-112233', address: '99 Metro Way, WA' },
-        { id: 5, name: 'Prime Vendors', contact: '+1 (555) 444-5555', email: 'sales@primevendors.com', registrationNo: 'REG-445566', address: '200 Prime Blvd, FL' },
-        { id: 6, name: 'Alpha Supplies', contact: '+1 (555) 666-7777', email: 'contact@alphasupplies.com', registrationNo: 'REG-778899', address: '10 Alpha Ct, IL' },
-    ]);
+    const [allWholesaleParties, setAllWholesaleParties] = useState([]);
+
+    useEffect(() => {
+        fetchParties();
+    }, []);
+
+    const fetchParties = async () => {
+        try {
+            const res = await invPartiesApi.list('wholesale');
+            setAllWholesaleParties(res.data.data || []);
+        } catch (error) {
+            console.error("Failed to load wholesale parties:", error);
+        }
+    };
+
+    const handleSaveParty = async (formData) => {
+        try {
+            if (editingParty) {
+                await invPartiesApi.update('wholesale', editingParty.id, formData);
+            } else {
+                await invPartiesApi.create('wholesale', formData);
+            }
+            fetchParties();
+        } catch (error) {
+            console.error("Failed to save wholesale party:", error);
+        }
+    };
+
+    const handleDeleteParty = async (id) => {
+        if (!window.confirm("Are you sure you want to delete this party?")) return;
+        try {
+            await invPartiesApi.delete('wholesale', id);
+            fetchParties();
+        } catch (error) {
+            console.error("Failed to delete wholesale party:", error);
+        }
+    };
 
     return (
         <div className="flex-1 flex flex-col h-screen bg-gray-50">
@@ -82,10 +111,15 @@ export default function WholesaleParties({ setMobileOpen, setActivePath }) {
                                                         setEditingParty(party);
                                                         setIsAddPartyModalOpen(true);
                                                     }}
+                                                    title="Edit"
                                                 >
                                                     <FiEdit2 size={16} />
                                                 </button>
-                                                <button className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors inline-flex">
+                                                <button 
+                                                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors inline-flex"
+                                                    onClick={() => handleDeleteParty(party.id)}
+                                                    title="Delete"
+                                                >
                                                     <FiTrash2 size={16} />
                                                 </button>
                                             </td>
@@ -111,6 +145,7 @@ export default function WholesaleParties({ setMobileOpen, setActivePath }) {
                     setIsAddPartyModalOpen(false);
                     setEditingParty(null);
                 }} 
+                onSave={handleSaveParty}
                 initialData={editingParty}
             />
         </div>

@@ -1,49 +1,72 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FiMenu, FiPlus, FiFileText, FiEdit2, FiTrash2, FiEye, FiDownload } from 'react-icons/fi';
 import AddRetailPartyModal from '../Components/AddRetailPartyModal';
 import PharmaInvoiceModal from '../Components/PharmaInvoiceModal';
+import { invPartiesApi, invInvoicesApi } from '../api/inventoryApiClient';
 
 export default function RetailBilling({ setMobileOpen, setActivePath }) {
     const [isAddPartyModalOpen, setIsAddPartyModalOpen] = useState(false);
     const [editingParty, setEditingParty] = useState(null);
     const [selectedInvoice, setSelectedInvoice] = useState(null);
-    
-    // Mock data for parties/customers
-    const [retailParties, setRetailParties] = useState([
-        { id: 1, name: 'John Doe (Walk-in)', contact: '+1 (555) 111-2233', email: 'johndoe@email.com', address: '12 Maple St, NY' },
-        { id: 2, name: 'City Health Clinic', contact: '+1 (555) 222-3344', email: 'clinic@cityhealth.org', address: '45 Health Ave, CA' },
-        { id: 3, name: 'General Hospital Dispensary', contact: '+1 (555) 333-4455', email: 'dispensary@genhosp.com', address: '88 Hospital Rd, TX' },
-        { id: 4, name: 'Smith Care Center', contact: '+1 (555) 444-5566', email: 'info@smithcare.com', address: '200 Care Blvd, FL' },
-        { id: 5, name: 'Greenwood Pharmacy', contact: '+1 (555) 555-6677', email: 'contact@greenwoodpharma.com', address: '15 Greenwood Way, WA' },
-        { id: 6, name: 'Sunrise Medico', contact: '+1 (555) 666-7788', email: 'orders@sunrisemedico.com', address: '77 Sunrise Ct, IL' },
-    ]);
+    const [retailParties, setRetailParties] = useState([]);
+    const [recentRetailInvoices, setRecentRetailInvoices] = useState([]);
 
-    const handleAddPartySave = (newPartyData) => {
-        if (editingParty) {
-            setRetailParties(retailParties.map(p => p.id === editingParty.id ? { ...p, ...newPartyData } : p));
-        } else {
-            const newParty = {
-                id: retailParties.length + 1,
-                ...newPartyData
-            };
-            setRetailParties([newParty, ...retailParties]);
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const fetchData = async () => {
+        try {
+            const partiesRes = await invPartiesApi.list('retail');
+            setRetailParties(partiesRes.data.data || []);
+
+            const invoicesRes = await invInvoicesApi.list('retail');
+            setRecentRetailInvoices(invoicesRes.data.data || []);
+        } catch (error) {
+            console.error("Failed to load retail billing data:", error);
         }
-        setIsAddPartyModalOpen(false);
-        setEditingParty(null);
     };
 
-    const handleDeleteParty = (id) => {
-        setRetailParties(retailParties.filter(p => p.id !== id));
+    const handleAddPartySave = async (newPartyData) => {
+        try {
+            if (editingParty) {
+                await invPartiesApi.update('retail', editingParty.id, newPartyData);
+            } else {
+                await invPartiesApi.create('retail', newPartyData);
+            }
+            setIsAddPartyModalOpen(false);
+            setEditingParty(null);
+            fetchData();
+        } catch (error) {
+            console.error("Failed to save retail party:", error);
+        }
     };
 
-    const [recentRetailInvoices, setRecentRetailInvoices] = useState([
-        { id: 201, invoiceNo: 'INV-RET-2026-001', date: '2026-06-15', partyName: 'John Doe (Walk-in)', amount: '₹1,250.00', paymentMethod: 'UPI', paymentStatus: 'Paid' },
-        { id: 202, invoiceNo: 'INV-RET-2026-002', date: '2026-06-16', partyName: 'City Health Clinic', amount: '₹4,500.00', paymentMethod: 'Cash', paymentStatus: 'Partially Paid', pendingAmount: '₹1,500.00' },
-        { id: 203, invoiceNo: 'INV-RET-2026-003', date: '2026-06-17', partyName: 'General Hospital Dispensary', amount: '₹8,900.00', paymentMethod: 'Combined', paymentStatus: 'Paid' },
-        { id: 204, invoiceNo: 'INV-RET-2026-004', date: '2026-06-17', partyName: 'Smith Care Center', amount: '₹2,300.00', paymentMethod: 'UPI', paymentStatus: 'Unpaid' },
-        { id: 205, invoiceNo: 'INV-RET-2026-005', date: '2026-06-18', partyName: 'Greenwood Pharmacy', amount: '₹5,600.00', paymentMethod: 'UPI', paymentStatus: 'Paid' },
-        { id: 206, invoiceNo: 'INV-RET-2026-006', date: '2026-06-18', partyName: 'Sunrise Medico', amount: '₹3,100.00', paymentMethod: 'Cash', paymentStatus: 'Partially Paid', pendingAmount: '₹1,100.00' },
-    ]);
+    const handleDeleteParty = async (id) => {
+        if (!window.confirm("Are you sure you want to delete this customer?")) return;
+        try {
+            await invPartiesApi.delete('retail', id);
+            fetchData();
+        } catch (error) {
+            console.error("Failed to delete retail party:", error);
+        }
+    };
+
+    const handleDeleteInvoice = async (id) => {
+        if (!window.confirm("Are you sure you want to delete this invoice? Stock will be restored.")) return;
+        try {
+            await invInvoicesApi.delete(id);
+            fetchData();
+        } catch (error) {
+            console.error("Failed to delete invoice:", error);
+            alert("Failed to delete invoice: " + (error.response?.data?.message || error.message));
+        }
+    };
+
+    const formatCurrency = (val) => {
+        const num = Number(val) || 0;
+        return `₹${num.toFixed(2)}`;
+    };
 
     return (
         <div className="flex-1 flex flex-col h-screen bg-gray-50">
@@ -170,12 +193,12 @@ export default function RetailBilling({ setMobileOpen, setActivePath }) {
                                         return (
                                         <tr key={invoice.id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-4 font-medium text-indigo-600">{invoice.invoiceNo}</td>
-                                            <td className="px-6 py-4 text-gray-600">{invoice.date}</td>
+                                            <td className="px-6 py-4 text-gray-600">{invoice.invoiceDate}</td>
                                             <td className="px-6 py-4 text-gray-900">{invoice.partyName}</td>
                                             <td className="px-6 py-4 text-right">
-                                                <div className="font-medium text-gray-900">{invoice.amount}</div>
-                                                {invoice.paymentStatus === 'Partially Paid' && invoice.pendingAmount && (
-                                                    <div className="text-xs text-red-500 font-semibold mt-0.5">Pending: {invoice.pendingAmount}</div>
+                                                <div className="font-medium text-gray-900">{formatCurrency(invoice.grandTotal)}</div>
+                                                {invoice.paymentStatus === 'Partially Paid' && invoice.pendingAmount > 0 && (
+                                                    <div className="text-xs text-red-500 font-semibold mt-0.5">Pending: {formatCurrency(invoice.pendingAmount)}</div>
                                                 )}
                                             </td>
                                             <td className="px-6 py-4">
@@ -198,15 +221,29 @@ export default function RetailBilling({ setMobileOpen, setActivePath }) {
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4 text-right whitespace-nowrap">
-                                                <div className="flex items-center justify-end gap-2">
-                                                    <button onClick={() => setSelectedInvoice(invoice)} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors flex items-center justify-center" title="View Invoice">
-                                                        <FiEye size={16} />
-                                                    </button>
-                                                    <button className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors flex items-center justify-center" title="Edit Invoice">
-                                                        <FiEdit2 size={16} />
-                                                    </button>
-                                                </div>
-                                            </td>
+                                                 <div className="flex items-center justify-end gap-2">
+                                                     <button onClick={() => setSelectedInvoice(invoice)} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors flex items-center justify-center" title="View Invoice">
+                                                         <FiEye size={16} />
+                                                     </button>
+                                                     <button 
+                                                         onClick={() => {
+                                                             localStorage.setItem('edit_invoice_id', invoice.id);
+                                                             if (setActivePath) setActivePath('/inventory/retail-invoices/generate');
+                                                         }}
+                                                         className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors flex items-center justify-center" 
+                                                         title="Edit Invoice"
+                                                     >
+                                                         <FiEdit2 size={16} />
+                                                     </button>
+                                                     <button 
+                                                         onClick={() => handleDeleteInvoice(invoice.id)} 
+                                                         className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors flex items-center justify-center" 
+                                                         title="Delete Invoice"
+                                                     >
+                                                         <FiTrash2 size={16} />
+                                                     </button>
+                                                 </div>
+                                             </td>
                                         </tr>
                                         );
                                     })}

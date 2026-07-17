@@ -6,6 +6,7 @@ import {
 } from "react-icons/fi";
 import { BsFileEarmarkSpreadsheet } from "react-icons/bs";
 import Swal from "sweetalert2";
+import { invFoldersApi, invSheetsApi } from "../api/inventoryApiClient";
 
 export default function RetailInventory({ setMobileOpen, setActivePath, setCurrentDocName, setReturnPath }) {
     const [path, setPath] = useState([{ id: null, title: "Inventory files" }]);
@@ -36,40 +37,35 @@ export default function RetailInventory({ setMobileOpen, setActivePath, setCurre
     const [newFolderName, setNewFolderName] = useState("");
     const [newDocName, setNewDocName] = useState("");
 
-    // Mock Folders State
-    const initialFolders = [
-        { id: 1, title: "Electronics Stock", date: "23 May 2026", parentId: null },
-        { id: 2, title: "Rx Pharma Items", date: "25 May 2026", parentId: null },
-        { id: 3, title: "Legacy Archives", date: "01 Jun 2026", parentId: null }
-    ];
-
-    // Mock Inventory Sheets (linked to parent folders)
-    const initialFiles = [
-        { id: "mock-inventory-101", name: "Warehouse A Stocklist", sku: "INV-SKU-101", parentId: null, date: "23 May 2026" },
-        { id: "mock-inventory-102", name: "Electronics Inventory Q2", sku: "INV-SKU-102", parentId: 1, date: "25 May 2026" },
-        { id: "mock-inventory-103", name: "Rx Pharma Items Main", sku: "INV-SKU-103", parentId: 2, date: "28 May 2026" },
-        { id: "mock-inventory-104", name: "Legacy Archive 2025", sku: "INV-SKU-104", parentId: 3, date: "30 May 2026" }
-    ];
-
-    const [folders, setFolders] = useState(() => {
-        const saved = localStorage.getItem("mock_inventory_folders");
-        if (saved) return JSON.parse(saved);
-        return initialFolders;
-    });
-
-    const [retailItems, setRetailItems] = useState(() => {
-        const saved = localStorage.getItem("mock_inventory_files");
-        if (saved) return JSON.parse(saved);
-        return initialFiles;
-    });
+    const [folders, setFolders] = useState([]);
+    const [retailItems, setRetailItems] = useState([]);
+    const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
-        localStorage.setItem("mock_inventory_folders", JSON.stringify(folders));
-    }, [folders]);
+        loadData();
+    }, [currentFolderId]);
 
-    useEffect(() => {
-        localStorage.setItem("mock_inventory_files", JSON.stringify(retailItems));
-    }, [retailItems]);
+    const loadData = async () => {
+        setIsLoading(true);
+        try {
+            const folderRes = await invFoldersApi.list(currentFolderId || undefined);
+            setFolders(folderRes.data.data || []);
+
+            const sheetRes = await invSheetsApi.list(currentFolderId || undefined);
+            setRetailItems(sheetRes.data.data || []);
+        } catch (error) {
+            console.error("Failed to load inventory:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const formatDate = (dateStr) => {
+        if (!dateStr) return "";
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return dateStr;
+        return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    };
 
     // Close sort dropdown on outside click
     useEffect(() => {
@@ -96,104 +92,86 @@ export default function RetailInventory({ setMobileOpen, setActivePath, setCurre
     };
 
     // Create folder
-    const handleCreateFolder = (e) => {
+    const handleCreateFolder = async (e) => {
         e.preventDefault();
         if (!newFolderName.trim()) return;
 
-        const newId = folders.length > 0 ? Math.max(...folders.map(f => f.id)) + 1 : 1;
-        const today = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-        
-        const folderToAdd = {
-            id: newId,
-            title: newFolderName,
-            date: today,
-            parentId: currentFolderId
-        };
+        try {
+            await invFoldersApi.create({
+                title: newFolderName.trim(),
+                parentId: currentFolderId
+            });
+            setNewFolderName("");
+            setIsFolderModalOpen(false);
+            loadData();
 
-        setFolders([...folders, folderToAdd]);
-        setNewFolderName("");
-        setIsFolderModalOpen(false);
-
-        Swal.fire({
-            icon: "success",
-            title: "Folder Created",
-            text: "Successfully created folder in inventory.",
-            timer: 1500,
-            showConfirmButton: false,
-            customClass: { popup: "rounded-2xl" }
-        });
+            Swal.fire({
+                icon: "success",
+                title: "Folder Created",
+                text: "Successfully created folder in inventory.",
+                timer: 1500,
+                showConfirmButton: false,
+                customClass: { popup: "rounded-2xl" }
+            });
+        } catch (error) {
+            console.error("Failed to create folder:", error);
+        }
     };
 
     // Create document SKU
-    const handleAddProductSubmit = (e) => {
+    const handleAddProductSubmit = async (e) => {
         e.preventDefault();
         if (!newDocName.trim()) return;
 
-        const newId = `mock-inventory-${Date.now()}`;
-        const today = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-        
-        const productToAdd = {
-            id: newId,
-            name: newDocName,
-            sku: `INV-SKU-${Math.floor(1000 + Math.random() * 9000)}`,
-            parentId: currentFolderId,
-            date: today
-        };
+        try {
+            const sku = `INV-SKU-${Math.floor(1000 + Math.random() * 9000)}`;
+            await invSheetsApi.create({
+                name: newDocName.trim(),
+                sku,
+                folderId: currentFolderId
+            });
+            setIsProductModalOpen(false);
+            setNewDocName("");
+            loadData();
 
-        setRetailItems([productToAdd, ...retailItems]);
-        setIsProductModalOpen(false);
-        setNewDocName("");
-
-        Swal.fire({
-            icon: "success",
-            title: "Document Created",
-            text: "Successfully created new inventory document.",
-            timer: 1500,
-            showConfirmButton: false,
-            customClass: { popup: "rounded-2xl" }
-        });
+            Swal.fire({
+                icon: "success",
+                title: "Document Created",
+                text: "Successfully created new inventory document.",
+                timer: 1500,
+                showConfirmButton: false,
+                customClass: { popup: "rounded-2xl" }
+            });
+        } catch (error) {
+            console.error("Failed to create document:", error);
+        }
     };
 
     const handleDeleteFolder = (id) => {
         Swal.fire({
             title: "Delete Folder?",
-            text: "Are you sure you want to delete this folder and its sub-items? This action cannot be undone.",
+            text: "Are you sure you want to delete this folder? This action cannot be undone.",
             icon: "warning",
             showCancelButton: true,
             confirmButtonColor: "#ef4444",
             confirmButtonText: "Yes, delete",
             customClass: { popup: "rounded-2xl" }
-        }).then((result) => {
+        }).then(async (result) => {
             if (result.isConfirmed) {
-                // Recursive descendents finder
-                const getDescendentIds = (folderId) => {
-                    const children = folders.filter(f => f.parentId === folderId);
-                    let descIds = children.map(c => c.id);
-                    children.forEach(child => {
-                        descIds = [...descIds, ...getDescendentIds(child.id)];
+                try {
+                    await invFoldersApi.delete(id);
+                    loadData();
+                    Swal.fire({
+                        icon: "success",
+                        title: "Deleted",
+                        text: "Folder removed.",
+                        timer: 1500,
+                        showConfirmButton: false,
+                        customClass: { popup: "rounded-2xl" }
                     });
-                    return descIds;
-                };
-
-                const foldersToDelete = [id, ...getDescendentIds(id)];
-
-                setFolders(prev => prev.filter(f => !foldersToDelete.includes(f.id)));
-                setRetailItems(prev => prev.filter(p => !foldersToDelete.includes(p.parentId) && p.parentId !== id));
-
-                // Clean up localstorage sheet data for deleted mock files
-                const filesToDelete = retailItems.filter(p => foldersToDelete.includes(p.parentId) || p.parentId === id);
-                filesToDelete.forEach(file => {
-                    localStorage.removeItem(`sheet_data_${file.id}`);
-                });
-
-                Swal.fire({
-                    icon: "success",
-                    title: "Deleted",
-                    text: "Folder and contents removed.",
-                    timer: 1500,
-                    showConfirmButton: false,
-                    customClass: { popup: "rounded-2xl" }
-                });
+                } catch (error) {
+                    console.error("Failed to delete folder:", error);
+                }
             }
         });
     };
@@ -207,18 +185,22 @@ export default function RetailInventory({ setMobileOpen, setActivePath, setCurre
             confirmButtonColor: "#ef4444",
             confirmButtonText: "Yes, delete",
             customClass: { popup: "rounded-2xl" }
-        }).then((result) => {
+        }).then(async (result) => {
             if (result.isConfirmed) {
-                setRetailItems(prev => prev.filter(p => p.id !== id));
-                localStorage.removeItem(`sheet_data_${id}`);
-                Swal.fire({
-                    icon: "success",
-                    title: "Deleted",
-                    text: "Document removed.",
-                    timer: 1500,
-                    showConfirmButton: false,
-                    customClass: { popup: "rounded-2xl" }
-                });
+                try {
+                    await invSheetsApi.delete(id);
+                    loadData();
+                    Swal.fire({
+                        icon: "success",
+                        title: "Deleted",
+                        text: "Document removed.",
+                        timer: 1500,
+                        showConfirmButton: false,
+                        customClass: { popup: "rounded-2xl" }
+                    });
+                } catch (error) {
+                    console.error("Failed to delete sheet:", error);
+                }
             }
         });
     };
@@ -231,28 +213,32 @@ export default function RetailInventory({ setMobileOpen, setActivePath, setCurre
         setIsRenameModalOpen(true);
     };
 
-    const handleRenameItem = () => {
+    const handleRenameItem = async () => {
         if (!renameItemName.trim() || activeItemId === null) return;
 
-        if (activeItemType === "folder") {
-            setFolders(prev => prev.map(f => f.id === activeItemId ? { ...f, title: renameItemName } : f));
-        } else {
-            setRetailItems(prev => prev.map(f => f.id === activeItemId ? { ...f, name: renameItemName } : f));
+        try {
+            if (activeItemType === "folder") {
+                await invFoldersApi.update(activeItemId, { title: renameItemName.trim() });
+            } else {
+                await invSheetsApi.update(activeItemId, { name: renameItemName.trim() });
+            }
+            setIsRenameModalOpen(false);
+            setActiveItemId(null);
+            setActiveItemType(null);
+            setRenameItemName("");
+            loadData();
+
+            Swal.fire({
+                icon: "success",
+                title: "Renamed",
+                text: "Successfully renamed item.",
+                timer: 1500,
+                showConfirmButton: false,
+                customClass: { popup: "rounded-2xl" }
+            });
+        } catch (error) {
+            console.error("Failed to rename item:", error);
         }
-
-        setIsRenameModalOpen(false);
-        setActiveItemId(null);
-        setActiveItemType(null);
-        setRenameItemName("");
-
-        Swal.fire({
-            icon: "success",
-            title: "Renamed",
-            text: "Successfully renamed item.",
-            timer: 1500,
-            showConfirmButton: false,
-            customClass: { popup: "rounded-2xl" }
-        });
     };
 
     // Move Triggers
@@ -263,30 +249,33 @@ export default function RetailInventory({ setMobileOpen, setActivePath, setCurre
         setIsMoveModalOpen(true);
     };
 
-    const handleMoveItem = () => {
+    const handleMoveItem = async () => {
         if (activeItemId === null) return;
 
-        if (activeItemType === "folder" && activeItemId === moveDestinationId) return;
+        try {
+            if (activeItemType === "folder") {
+                if (activeItemId === moveDestinationId) return;
+                await invFoldersApi.update(activeItemId, { parentId: moveDestinationId });
+            } else {
+                await invSheetsApi.update(activeItemId, { folderId: moveDestinationId });
+            }
+            setIsMoveModalOpen(false);
+            setActiveItemId(null);
+            setActiveItemType(null);
+            setMoveDestinationId(null);
+            loadData();
 
-        if (activeItemType === "folder") {
-            setFolders(prev => prev.map(f => f.id === activeItemId ? { ...f, parentId: moveDestinationId } : f));
-        } else {
-            setRetailItems(prev => prev.map(f => f.id === activeItemId ? { ...f, parentId: moveDestinationId } : f));
+            Swal.fire({
+                icon: "success",
+                title: "Moved",
+                text: "Successfully moved item.",
+                timer: 1500,
+                showConfirmButton: false,
+                customClass: { popup: "rounded-2xl" }
+            });
+        } catch (error) {
+            console.error("Failed to move item:", error);
         }
-
-        setIsMoveModalOpen(false);
-        setActiveItemId(null);
-        setActiveItemType(null);
-        setMoveDestinationId(null);
-
-        Swal.fire({
-            icon: "success",
-            title: "Moved",
-            text: "Successfully moved item.",
-            timer: 1500,
-            showConfirmButton: false,
-            customClass: { popup: "rounded-2xl" }
-        });
     };
 
     // Duplicate Triggers
@@ -413,7 +402,7 @@ export default function RetailInventory({ setMobileOpen, setActivePath, setCurre
     });
 
     const filteredFiles = retailItems.filter(f => {
-        const matchesParent = f.parentId === currentFolderId;
+        const matchesParent = f.parentId === currentFolderId || f.folderId === currentFolderId;
         const matchesSearch = f.name.toLowerCase().includes(searchQuery.toLowerCase());
         return searchQuery ? matchesSearch : matchesParent;
     });

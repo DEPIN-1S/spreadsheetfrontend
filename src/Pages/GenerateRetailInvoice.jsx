@@ -1,18 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FiMenu, FiArrowLeft, FiPlus, FiTrash2, FiPrinter, FiCheckCircle, FiSearch } from 'react-icons/fi';
 import AddRetailPartyModal from '../Components/AddRetailPartyModal';
 import SelectMedicineModal from '../Components/SelectMedicineModal';
 import PharmaInvoiceModal from '../Components/PharmaInvoiceModal';
+import { invPartiesApi, invInvoicesApi } from '../api/inventoryApiClient';
 
 export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) {
-    const [parties, setParties] = useState([
-        { id: 1, name: 'John Doe (Walk-in)', contact: '+1 (555) 111-2233', email: 'johndoe@email.com', address: '12 Maple St, NY' },
-        { id: 2, name: 'City Health Clinic', contact: '+1 (555) 222-3344', email: 'clinic@cityhealth.org', address: '45 Health Ave, CA' },
-        { id: 3, name: 'General Hospital Dispensary', contact: '+1 (555) 333-4455', email: 'dispensary@genhosp.com', address: '88 Hospital Rd, TX' },
-        { id: 4, name: 'Smith Care Center', contact: '+1 (555) 444-5566', email: 'info@smithcare.com', address: '200 Care Blvd, FL' },
-        { id: 5, name: 'Greenwood Pharmacy', contact: '+1 (555) 555-6677', email: 'contact@greenwoodpharma.com', address: '15 Greenwood Way, WA' },
-    ]);
-
+    const [parties, setParties] = useState([]);
+    const [editInvoiceId, setEditInvoiceId] = useState(null);
     const [selectedPartyId, setSelectedPartyId] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -21,34 +16,91 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
     const [isSuccess, setIsSuccess] = useState(false);
 
     // Invoice details state
-    const [invoiceNo] = useState('INV-RET-2026-009');
-    const [invoiceDate, setInvoiceDate] = useState('2026-06-28');
+    const [invoiceNo, setInvoiceNo] = useState('INV-RET-PENDING');
+    const [invoiceDate, setInvoiceDate] = useState(() => {
+        const today = new Date();
+        return today.toISOString().split('T')[0];
+    });
     const [paymentMethod, setPaymentMethod] = useState('Cash');
     const [paymentStatus, setPaymentStatus] = useState('Paid');
     const [combinedUpiAmount, setCombinedUpiAmount] = useState('');
     const [combinedCashAmount, setCombinedCashAmount] = useState('');
     const [partialAmount, setPartialAmount] = useState('');
 
-
     // Line items state
     const [items, setItems] = useState([
-        { id: 1, description: 'Dolo 650mg Tablet (Strip of 15)', batch: 'DL2026A', qty: 2, price: 30.50 },
-        { id: 2, description: 'Limcee Vitamin C 500mg (Strip of 15)', batch: 'LM9900C', qty: 1, price: 40.00 }
+        { id: 1, description: '', batch: '', qty: 0, price: 0, invCcRowId: null }
     ]);
+
+    useEffect(() => {
+        fetchParties();
+
+        const checkEditMode = async () => {
+            const editId = localStorage.getItem('edit_invoice_id');
+            if (editId) {
+                setEditInvoiceId(editId);
+                try {
+                    const res = await invInvoicesApi.get(editId);
+                    const inv = res.data.data;
+                    if (inv) {
+                        setSelectedPartyId(inv.partyId || '');
+                        setInvoiceDate(inv.invoiceDate);
+                        setPaymentMethod(inv.paymentMethod || 'Cash');
+                        setPaymentStatus(inv.paymentStatus || 'Paid');
+                        if (inv.combinedUpiAmount) setCombinedUpiAmount(String(inv.combinedUpiAmount));
+                        if (inv.combinedCashAmount) setCombinedCashAmount(String(inv.combinedCashAmount));
+                        if (inv.paymentStatus === 'Partially Paid') {
+                            setPartialAmount(String(parseFloat(inv.grandTotal || 0) - parseFloat(inv.pendingAmount || 0)));
+                        }
+                        if (inv.items && inv.items.length > 0) {
+                            setItems(inv.items.map((item, idx) => ({
+                                id: idx + 1,
+                                description: item.description || '',
+                                batch: item.batch || '',
+                                qty: parseFloat(item.qty || 0),
+                                price: parseFloat(item.price || 0),
+                                invCcRowId: item.invCcRowId || null
+                            })));
+                        }
+                    }
+                } catch (error) {
+                    console.error("Failed to load invoice for editing:", error);
+                }
+            }
+        };
+        checkEditMode();
+
+        return () => {
+            localStorage.removeItem('edit_invoice_id');
+        };
+    }, []);
+
+    const fetchParties = async () => {
+        try {
+            const res = await invPartiesApi.list('retail');
+            setParties(res.data.data || []);
+        } catch (error) {
+            console.error("Failed to load retail parties:", error);
+        }
+    };
 
     // Filter parties based on search input
     const filteredParties = parties.filter(party => 
-        party.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        party.contact.includes(searchQuery)
+        (party.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (party.contact || '').includes(searchQuery)
     );
 
-    const selectedParty = parties.find(p => p.id === Number(selectedPartyId));
+    const selectedParty = parties.find(p => String(p.id) === String(selectedPartyId));
 
-    const handleAddPartySave = (newPartyData) => {
-        const newId = parties.length > 0 ? Math.max(...parties.map(p => p.id)) + 1 : 1;
-        const partyObj = { id: newId, ...newPartyData };
-        setParties([...parties, partyObj]);
-        setSelectedPartyId(newId);
+    const handleAddPartySave = async (newPartyData) => {
+        try {
+            const res = await invPartiesApi.create('retail', newPartyData);
+            const created = res.data.data;
+            setParties([...parties, created]);
+            setSelectedPartyId(created.id);
+        } catch (error) {
+            console.error("Failed to add party:", error);
+        }
     };
 
     const handleAddItem = () => {
@@ -63,10 +115,10 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
             ));
         } else {
             if (items.length === 1 && items[0].description.trim() === '' && items[0].price === 0) {
-                setItems([{ id: items[0].id, description: medicine.name, batch: medicine.batch, qty: 1, price: medicine.price }]);
+                setItems([{ id: items[0].id, description: medicine.name, batch: medicine.batch, qty: 1, price: medicine.price, invCcRowId: medicine.ccRowId }]);
             } else {
                 const newId = items.length > 0 ? Math.max(...items.map(i => i.id)) + 1 : 1;
-                setItems([...items, { id: newId, description: medicine.name, batch: medicine.batch, qty: 1, price: medicine.price }]);
+                setItems([...items, { id: newId, description: medicine.name, batch: medicine.batch, qty: 1, price: medicine.price, invCcRowId: medicine.ccRowId }]);
             }
         }
     };
@@ -91,18 +143,57 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
     const taxAmount = subtotal * 0.05; // 5% GST estimate
     const grandTotal = subtotal + taxAmount;
 
-    const handleGenerateInvoice = (e) => {
+    const handleGenerateInvoice = async (e) => {
         e.preventDefault();
         if (!selectedPartyId) {
             alert('Please select a customer / party first.');
             return;
         }
-        setIsSuccess(true);
-        setTimeout(() => {
-            if (setActivePath) {
-                setActivePath('/inventory/retail-invoices');
+
+        const validItems = items.filter(i => i.description && i.description.trim() !== '');
+        if (validItems.length === 0) {
+            alert('Please add at least one item.');
+            return;
+        }
+
+        const pendingAmt = paymentStatus === 'Paid' ? 0 : (paymentStatus === 'Partially Paid' ? (grandTotal - (Number(partialAmount) || 0)) : grandTotal);
+
+        const payload = {
+            type: 'retail',
+            partyId: selectedPartyId,
+            partyType: 'retail',
+            partyName: selectedParty?.name || '',
+            invoiceDate,
+            items: validItems,
+            subtotal,
+            taxAmount,
+            grandTotal,
+            paymentMethod,
+            paymentStatus,
+            pendingAmount: pendingAmt,
+            combinedUpiAmount: Number(combinedUpiAmount) || 0,
+            combinedCashAmount: Number(combinedCashAmount) || 0,
+            notes: ''
+        };
+
+        try {
+            let res;
+            if (editInvoiceId) {
+                res = await invInvoicesApi.update(editInvoiceId, payload);
+            } else {
+                res = await invInvoicesApi.create(payload);
             }
-        }, 1800);
+            setInvoiceNo(res.data.invoiceNo || (editInvoiceId ? 'INV-RET-UPDATED' : 'INV-RET-GENERATED'));
+            setIsSuccess(true);
+            setTimeout(() => {
+                if (setActivePath) {
+                    setActivePath('/inventory/retail-invoices');
+                }
+            }, 1800);
+        } catch (error) {
+            console.error("Failed to save retail invoice:", error);
+            alert("Failed to save invoice: " + (error.response?.data?.message || error.message));
+        }
     };
 
     return (
@@ -126,9 +217,11 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                         </button>
                         <div>
                             <h1 className="text-xl font-bold text-gray-900 tracking-tight">
-                                Generate Retail Bill / Invoice
+                                {editInvoiceId ? 'Edit Retail Bill / Invoice' : 'Generate Retail Bill / Invoice'}
                             </h1>
-                            <p className="text-xs text-gray-500">Create a new retail invoice for your walk-in customers or clinics</p>
+                            <p className="text-xs text-gray-500">
+                                {editInvoiceId ? 'Update details and quantities of the retail invoice' : 'Create a new retail invoice for your walk-in customers or clinics'}
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -143,7 +236,9 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                         <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl p-4 flex items-center gap-3 animate-fade-in shadow-sm">
                             <FiCheckCircle className="text-emerald-600 shrink-0" size={24} />
                             <div>
-                                <h4 className="font-semibold text-sm">Retail Invoice Generated Successfully!</h4>
+                                <h4 className="font-semibold text-sm">
+                                    {editInvoiceId ? 'Retail Invoice Updated Successfully!' : 'Retail Invoice Generated Successfully!'}
+                                </h4>
                                 <p className="text-xs text-emerald-700 mt-0.5">Redirecting to retail invoices directory...</p>
                             </div>
                         </div>
@@ -433,7 +528,7 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                             className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-md text-sm font-semibold hover:bg-indigo-700 shadow-sm transition-all focus:ring-4 focus:ring-indigo-500/30"
                         >
                             <FiCheckCircle size={16} />
-                            Generate & Save Invoice
+                            {editInvoiceId ? 'Update & Save Invoice' : 'Generate & Save Invoice'}
                         </button>
                     </div>
                 </form>

@@ -1,18 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FiMenu, FiArrowLeft, FiPlus, FiTrash2, FiPrinter, FiCheckCircle, FiSearch } from 'react-icons/fi';
 import AddWholesalePartyModal from '../Components/AddWholesalePartyModal';
 import SelectMedicineModal from '../Components/SelectMedicineModal';
 import PharmaInvoiceModal from '../Components/PharmaInvoiceModal';
+import { invPartiesApi, invInvoicesApi } from '../api/inventoryApiClient';
 
 export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath }) {
-    const [parties, setParties] = useState([
-        { id: 1, name: 'Acme Wholesale Corp', contact: '+1 (555) 123-4567', email: 'billing@acmewholesale.com', registrationNo: 'REG-998877', address: '123 Market Street, NY' },
-        { id: 2, name: 'Global Traders Inc.', contact: '+1 (555) 987-6543', email: 'accounts@globaltraders.com', registrationNo: 'REG-445566', address: '456 Export Blvd, CA' },
-        { id: 3, name: 'Metro Foods', contact: '+1 (555) 234-5678', email: 'orders@metrofoods.com', registrationNo: 'REG-112233', address: '789 City Ave, TX' },
-        { id: 4, name: 'Regional Distributors', contact: '+1 (555) 876-5432', email: 'info@regionaldist.com', registrationNo: 'REG-334455', address: '321 Warehouse Rd, FL' },
-        { id: 5, name: 'Prime Vendors', contact: '+1 (555) 345-6789', email: 'support@primevendors.com', registrationNo: 'REG-556677', address: '654 Logistics Pkwy, WA' },
-    ]);
-
+    const [parties, setParties] = useState([]);
+    const [editInvoiceId, setEditInvoiceId] = useState(null);
     const [selectedPartyId, setSelectedPartyId] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -21,35 +16,92 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
     const [isSuccess, setIsSuccess] = useState(false);
 
     // Invoice details state
-    const [invoiceNo] = useState('INV-2026-009');
-    const [invoiceDate, setInvoiceDate] = useState('2026-06-28');
+    const [invoiceNo, setInvoiceNo] = useState('INV-WH-PENDING');
+    const [invoiceDate, setInvoiceDate] = useState(() => {
+        const today = new Date();
+        return today.toISOString().split('T')[0];
+    });
     const [paymentMethod, setPaymentMethod] = useState('UPI');
     const [paymentStatus, setPaymentStatus] = useState('Paid');
     const [combinedUpiAmount, setCombinedUpiAmount] = useState('');
     const [combinedCashAmount, setCombinedCashAmount] = useState('');
     const [partialAmount, setPartialAmount] = useState('');
 
-
     // Line items state
     const [items, setItems] = useState([
-        { id: 1, description: 'Dolo 650mg Tablet (Strip of 15)', batch: 'DL2026A', qty: 20, price: 30.50 },
-        { id: 2, description: 'Azithromycin 500mg Tablet (Strip of 5)', batch: 'AZ9981B', qty: 5, price: 115.00 }
+        { id: 1, description: '', batch: '', qty: 0, price: 0, invCcRowId: null }
     ]);
+
+    useEffect(() => {
+        fetchParties();
+
+        const checkEditMode = async () => {
+            const editId = localStorage.getItem('edit_invoice_id');
+            if (editId) {
+                setEditInvoiceId(editId);
+                try {
+                    const res = await invInvoicesApi.get(editId);
+                    const inv = res.data.data;
+                    if (inv) {
+                        setSelectedPartyId(inv.partyId || '');
+                        setInvoiceDate(inv.invoiceDate);
+                        setPaymentMethod(inv.paymentMethod || 'UPI');
+                        setPaymentStatus(inv.paymentStatus || 'Paid');
+                        if (inv.combinedUpiAmount) setCombinedUpiAmount(String(inv.combinedUpiAmount));
+                        if (inv.combinedCashAmount) setCombinedCashAmount(String(inv.combinedCashAmount));
+                        if (inv.paymentStatus === 'Partially Paid') {
+                            setPartialAmount(String(parseFloat(inv.grandTotal || 0) - parseFloat(inv.pendingAmount || 0)));
+                        }
+                        if (inv.items && inv.items.length > 0) {
+                            setItems(inv.items.map((item, idx) => ({
+                                id: idx + 1,
+                                description: item.description || '',
+                                batch: item.batch || '',
+                                qty: parseFloat(item.qty || 0),
+                                price: parseFloat(item.price || 0),
+                                invCcRowId: item.invCcRowId || null
+                            })));
+                        }
+                    }
+                } catch (error) {
+                    console.error("Failed to load invoice for editing:", error);
+                }
+            }
+        };
+        checkEditMode();
+
+        return () => {
+            localStorage.removeItem('edit_invoice_id');
+        };
+    }, []);
+
+    const fetchParties = async () => {
+        try {
+            const res = await invPartiesApi.list('wholesale');
+            setParties(res.data.data || []);
+        } catch (error) {
+            console.error("Failed to load wholesale parties:", error);
+        }
+    };
 
     // Filter parties based on search input
     const filteredParties = parties.filter(party => 
-        party.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        party.contact.includes(searchQuery) ||
+        (party.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (party.contact || '').includes(searchQuery) ||
         (party.registrationNo && party.registrationNo.toLowerCase().includes(searchQuery.toLowerCase()))
     );
 
-    const selectedParty = parties.find(p => p.id === Number(selectedPartyId));
+    const selectedParty = parties.find(p => String(p.id) === String(selectedPartyId));
 
-    const handleAddPartySave = (newPartyData) => {
-        const newId = parties.length > 0 ? Math.max(...parties.map(p => p.id)) + 1 : 1;
-        const partyObj = { id: newId, ...newPartyData };
-        setParties([...parties, partyObj]);
-        setSelectedPartyId(newId);
+    const handleAddPartySave = async (newPartyData) => {
+        try {
+            const res = await invPartiesApi.create('wholesale', newPartyData);
+            const created = res.data.data;
+            setParties([...parties, created]);
+            setSelectedPartyId(created.id);
+        } catch (error) {
+            console.error("Failed to add wholesale party:", error);
+        }
     };
 
     const handleAddItem = () => {
@@ -64,10 +116,10 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
             ));
         } else {
             if (items.length === 1 && items[0].description.trim() === '' && items[0].price === 0) {
-                setItems([{ id: items[0].id, description: medicine.name, batch: medicine.batch, qty: 1, price: medicine.price }]);
+                setItems([{ id: items[0].id, description: medicine.name, batch: medicine.batch, qty: 1, price: medicine.price, invCcRowId: medicine.ccRowId }]);
             } else {
                 const newId = items.length > 0 ? Math.max(...items.map(i => i.id)) + 1 : 1;
-                setItems([...items, { id: newId, description: medicine.name, batch: medicine.batch, qty: 1, price: medicine.price }]);
+                setItems([...items, { id: newId, description: medicine.name, batch: medicine.batch, qty: 1, price: medicine.price, invCcRowId: medicine.ccRowId }]);
             }
         }
     };
@@ -92,18 +144,57 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
     const taxAmount = subtotal * 0.05; // 5% GST estimate
     const grandTotal = subtotal + taxAmount;
 
-    const handleGenerateInvoice = (e) => {
+    const handleGenerateInvoice = async (e) => {
         e.preventDefault();
         if (!selectedPartyId) {
             alert('Please select a wholesale party first.');
             return;
         }
-        setIsSuccess(true);
-        setTimeout(() => {
-            if (setActivePath) {
-                setActivePath('/inventory/wholesale-invoices');
+
+        const validItems = items.filter(i => i.description && i.description.trim() !== '');
+        if (validItems.length === 0) {
+            alert('Please add at least one item.');
+            return;
+        }
+
+        const pendingAmt = paymentStatus === 'Paid' ? 0 : (paymentStatus === 'Partially Paid' ? (grandTotal - (Number(partialAmount) || 0)) : grandTotal);
+
+        const payload = {
+            type: 'wholesale',
+            partyId: selectedPartyId,
+            partyType: 'wholesale',
+            partyName: selectedParty?.name || '',
+            invoiceDate,
+            items: validItems,
+            subtotal,
+            taxAmount,
+            grandTotal,
+            paymentMethod,
+            paymentStatus,
+            pendingAmount: pendingAmt,
+            combinedUpiAmount: Number(combinedUpiAmount) || 0,
+            combinedCashAmount: Number(combinedCashAmount) || 0,
+            notes: ''
+        };
+
+        try {
+            let res;
+            if (editInvoiceId) {
+                res = await invInvoicesApi.update(editInvoiceId, payload);
+            } else {
+                res = await invInvoicesApi.create(payload);
             }
-        }, 1800);
+            setInvoiceNo(res.data.invoiceNo || (editInvoiceId ? 'INV-WH-UPDATED' : 'INV-WH-GENERATED'));
+            setIsSuccess(true);
+            setTimeout(() => {
+                if (setActivePath) {
+                    setActivePath('/inventory/wholesale-invoices');
+                }
+            }, 1800);
+        } catch (error) {
+            console.error("Failed to save wholesale invoice:", error);
+            alert("Failed to save invoice: " + (error.response?.data?.message || error.message));
+        }
     };
 
     return (
@@ -127,9 +218,11 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
                         </button>
                         <div>
                             <h1 className="text-xl font-bold text-gray-900 tracking-tight">
-                                Generate Bill / Invoice
+                                {editInvoiceId ? 'Edit Wholesale Bill / Invoice' : 'Generate Wholesale Bill / Invoice'}
                             </h1>
-                            <p className="text-xs text-gray-500">Create a new wholesale invoice for your clients</p>
+                            <p className="text-xs text-gray-500">
+                                {editInvoiceId ? 'Update details and quantities of the wholesale invoice' : 'Create a new wholesale invoice for your clients'}
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -144,7 +237,9 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
                         <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl p-4 flex items-center gap-3 animate-fade-in shadow-sm">
                             <FiCheckCircle className="text-emerald-600 shrink-0" size={24} />
                             <div>
-                                <h4 className="font-semibold text-sm">Invoice Generated Successfully!</h4>
+                                <h4 className="font-semibold text-sm">
+                                    {editInvoiceId ? 'Wholesale Invoice Updated Successfully!' : 'Wholesale Invoice Generated Successfully!'}
+                                </h4>
                                 <p className="text-xs text-emerald-700 mt-0.5">Redirecting to invoices directory...</p>
                             </div>
                         </div>
@@ -439,7 +534,7 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
                             className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-md text-sm font-semibold hover:bg-indigo-700 shadow-sm transition-all focus:ring-4 focus:ring-indigo-500/30"
                         >
                             <FiCheckCircle size={16} />
-                            Generate & Save Invoice
+                            {editInvoiceId ? 'Update & Save Invoice' : 'Generate & Save Invoice'}
                         </button>
                     </div>
                 </form>

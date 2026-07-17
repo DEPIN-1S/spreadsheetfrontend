@@ -1,55 +1,72 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FiMenu, FiBookOpen, FiSearch } from 'react-icons/fi';
+import { invLedgerApi } from '../api/inventoryApiClient';
 
 export default function Ledger({ setMobileOpen, setActivePath }) {
-    // Mock data for ledger entries
-    const [ledgerEntries, setLedgerEntries] = useState([
-        { id: 1, type: 'Wholesale', customerName: 'Acme Wholesale Corp', phone: '9876543210', invoiceNo: 'INV-2026-001', date: '2026-06-15', pendingAmount: 12500.00, status: 'Pending' },
-        { id: 2, type: 'Retail', customerName: 'John Doe (Walk-in)', phone: '9876543211', invoiceNo: 'INV-RET-2026-001', date: '2026-06-15', pendingAmount: 1250.00, status: 'Pending' },
-        { id: 3, type: 'Wholesale', customerName: 'Global Traders Inc.', phone: '9876543212', invoiceNo: 'INV-2026-002', date: '2026-06-16', pendingAmount: 14000.00, status: 'Settled' },
-        { id: 4, type: 'Retail', customerName: 'City Health Clinic', phone: '9876543213', invoiceNo: 'INV-RET-2026-002', date: '2026-06-16', pendingAmount: 1500.00, status: 'Pending' },
-        { id: 5, type: 'Wholesale', customerName: 'Metro Foods', phone: '9876543214', invoiceNo: 'INV-2026-003', date: '2026-06-17', pendingAmount: 8900.00, status: 'Pending' },
-        { id: 6, type: 'Retail', customerName: 'General Hospital Dispensary', phone: '9876543215', invoiceNo: 'INV-RET-2026-003', date: '2026-06-17', pendingAmount: 2300.00, status: 'Settled' },
-    ]);
-
+    const [ledgerEntries, setLedgerEntries] = useState([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterType, setFilterType] = useState('ALL');
-
-    const filteredEntries = ledgerEntries.filter(entry => {
-        const matchesSearch = entry.customerName.toLowerCase().includes(searchQuery.toLowerCase()) || entry.phone.includes(searchQuery);
-        const matchesType = filterType === 'ALL' || (filterType === 'WH' && entry.type === 'Wholesale') || (filterType === 'RT' && entry.type === 'Retail');
-        return matchesSearch && matchesType;
-    });
-
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedEntry, setSelectedEntry] = useState(null);
     const [newPendingAmount, setNewPendingAmount] = useState('');
 
-    const handleStatusChange = (id, newStatus) => {
+    useEffect(() => {
+        fetchLedger();
+    }, []);
+
+    const fetchLedger = async () => {
+        try {
+            const res = await invLedgerApi.list();
+            setLedgerEntries(res.data.data || []);
+        } catch (error) {
+            console.error("Failed to load ledger:", error);
+        }
+    };
+
+    const filteredEntries = ledgerEntries.filter(entry => {
+        const nameMatch = (entry.customerName || '').toLowerCase().includes(searchQuery.toLowerCase());
+        const phoneMatch = (entry.phone || '').includes(searchQuery);
+        const matchesSearch = nameMatch || phoneMatch;
+        const matchesType = filterType === 'ALL' || (filterType === 'WH' && entry.type === 'Wholesale') || (filterType === 'RT' && entry.type === 'Retail');
+        return matchesSearch && matchesType;
+    });
+
+    const handleStatusChange = async (id, newStatus) => {
+        const entry = ledgerEntries.find(e => e.id === id);
+        if (!entry) return;
+
         if (newStatus === 'Partially Paid') {
-            const entry = ledgerEntries.find(e => e.id === id);
             setSelectedEntry(entry);
             setNewPendingAmount(entry.pendingAmount.toString());
             setIsModalOpen(true);
         } else if (newStatus === 'Settled') {
-            setLedgerEntries(entries => entries.map(e => 
-                e.id === id ? { ...e, status: newStatus, pendingAmount: 0 } : e
-            ));
+            try {
+                await invLedgerApi.update(id, { status: newStatus, pendingAmount: 0 });
+                fetchLedger();
+            } catch (error) {
+                console.error("Failed to update status:", error);
+            }
         } else {
-            setLedgerEntries(entries => entries.map(e => 
-                e.id === id ? { ...e, status: newStatus } : e
-            ));
+            try {
+                await invLedgerApi.update(id, { status: newStatus });
+                fetchLedger();
+            } catch (error) {
+                console.error("Failed to update status:", error);
+            }
         }
     };
 
-    const handleSavePartialPayment = () => {
+    const handleSavePartialPayment = async () => {
         const amt = Number(newPendingAmount);
         if (!isNaN(amt) && amt >= 0) {
-            setLedgerEntries(entries => entries.map(e => 
-                e.id === selectedEntry.id ? { ...e, status: 'Partially Paid', pendingAmount: amt } : e
-            ));
-            setIsModalOpen(false);
-            setSelectedEntry(null);
+            try {
+                await invLedgerApi.update(selectedEntry.id, { status: 'Partially Paid', pendingAmount: amt });
+                setIsModalOpen(false);
+                setSelectedEntry(null);
+                fetchLedger();
+            } catch (error) {
+                console.error("Failed to save partial payment:", error);
+            }
         } else {
             alert("Please enter a valid positive number.");
         }

@@ -3,6 +3,7 @@ import { FiFolder, FiUsers, FiShare2, FiChevronLeft, FiChevronRight, FiChevronDo
 import { PiPaperPlaneTiltBold } from "react-icons/pi";
 import { LuFileSpreadsheet } from "react-icons/lu";
 import apiClient from "../api/apiClient";
+import NotificationBell from "./NotificationBell";
 
 const navItems = [
     { name: "My Files", icon: FiFolder, path: "/my-files" },
@@ -196,6 +197,9 @@ export default function Sidebar({ isCollapsed, toggleCollapse, mobileOpen, setMo
 
                     {/* Footer */}
                     <div className="p-4 border-t border-white/5 space-y-2">
+                        {user && (user.role === 'admin' || user.role === 'superadmin') && (
+                            <NotificationBell isCollapsed={isCollapsed} />
+                        )}
                         <button
                             onClick={toggleCollapse}
                             className={`hidden lg:flex w-full items-center p-3 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white transition-all

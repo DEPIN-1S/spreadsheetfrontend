@@ -13,6 +13,7 @@ import { BsPaintBucket, BsSortAlphaDown, BsSortAlphaDownAlt, BsFilter, BsWhatsap
 import { BiStrikethrough, BiArrowToLeft, BiArrowToRight } from "react-icons/bi";
 import { TbMathFunction } from "react-icons/tb";
 import apiClient from "../api/apiClient";
+import { invMastersApi, invSheetsApi } from "../api/inventoryApiClient";
 import { getMediaUrl } from "../utils/media";
 import { formatCurrency, parseCurrencyInput, SUPPORTED_CURRENCIES, getCurrencySymbol } from "../utils/currencyUtils";
 import ShareModal from "../Components/ShareModal";
@@ -40,19 +41,19 @@ const defaultCCTemplate = [
 
 const defaultColumns = [
     { id: "col-product-image", name: "Product Image", type: "multi_image", width: 220, orderIndex: 0 },
-    { id: "col-product-name", name: "Product name", type: "text", width: 220, orderIndex: 1 },
+    { id: "col-product-name", name: "Product name", type: "text", width: 280, orderIndex: 1 },
     { id: "col-composition", name: "Composition", type: "text", width: 220, orderIndex: 2 },
-    { id: "col-company-name", name: "Company Name", type: "text", width: 220, orderIndex: 3 },
-    { id: "col-manufacturer", name: "Manufacturer", type: "text", width: 220, orderIndex: 4 },
-    { id: "col-hsn-code", name: "Hsn code", type: "text", width: 220, orderIndex: 5 },
     { 
         id: "col-retail-inventory", 
         name: "Inventory", 
         type: "number", 
         width: 220, 
-        orderIndex: 6,
+        orderIndex: 3,
         options: JSON.stringify({ isDetailedViewEnabled: true, ccTemplateColumns: defaultCCTemplate })
-    }
+    },
+    { id: "col-company-name", name: "Company Name", type: "text", width: 220, orderIndex: 4 },
+    { id: "col-manufacturer", name: "Manufacturer", type: "text", width: 220, orderIndex: 5 },
+    { id: "col-hsn-code", name: "Hsn code", type: "text", width: 220, orderIndex: 6 }
 ];
 
 const defaultRows = Array.from({ length: 5 }).map((_, idx) => ({
@@ -69,9 +70,9 @@ const defaultRows = Array.from({ length: 5 }).map((_, idx) => ({
     ]
 }));
 
-export default function InventoryDocumentEditor({ docName, setActivePath, returnPath, isNested = false }) {
+export default function InventoryDocumentEditor({ docName, parentSheetId, setActivePath, returnPath, isNested = false }) {
     const saveMockDataLocally = (updatedCols, updatedRows) => {
-        localStorage.setItem(`sheet_data_${docName}`, JSON.stringify({ columns: updatedCols, rows: updatedRows }));
+        // No-op or keep for backwards compat
     };
     const [sheetData, setSheetData] = useState(null);
     const [accessError, setAccessError] = useState(false);
@@ -99,37 +100,76 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
     const [ccManufacturer, setCcManufacturer] = useState('');
     const [ccCompanyName, setCcCompanyName] = useState('');
     const [ccQuantity, setCcQuantity] = useState('');
+    const [nestedProductName, setNestedProductName] = useState('');
 
     const [addingMetaField, setAddingMetaField] = useState(null);
     const [addMetaValue, setAddMetaValue] = useState("");
-    const [metaOptions, setMetaOptions] = useState(() => {
-        const stored = localStorage.getItem('meta_options_global');
-        if (stored) {
-            try { return JSON.parse(stored); } catch { return { gst: [], category: [], division: [], manufacturer: [], companyName: [], quantity: [] }; }
-        }
-        return { gst: [], category: [], division: [], manufacturer: [], companyName: [], quantity: [] };
+    const [metaOptions, setMetaOptions] = useState({
+        gst: [],
+        category: [],
+        division: [],
+        manufacturer: [],
+        companyName: [],
+        quantity: []
     });
 
-    const handleAddMetaSubmit = () => {
+    const loadMetaOptions = useCallback(async () => {
+        try {
+            const fieldMapping = {
+                gst: "gst",
+                category: "categories",
+                division: "divisions",
+                manufacturer: "manufacturers",
+                companyName: "companies",
+                quantity: "quantity-units"
+            };
+            const updated = {};
+            for (const [field, type] of Object.entries(fieldMapping)) {
+                const res = await invMastersApi.list(type);
+                const list = res.data.data || [];
+                const valField = type === "gst" ? "value" : "name";
+                updated[field] = list.map(item => item[valField]);
+            }
+            setMetaOptions(updated);
+        } catch (error) {
+            console.error("Failed to load meta options:", error);
+        }
+    }, []);
+
+    useEffect(() => {
+        loadMetaOptions();
+    }, [loadMetaOptions]);
+
+    const handleAddMetaSubmit = async () => {
         if (!addMetaValue.trim() || !addingMetaField) {
             setAddingMetaField(null);
             setAddMetaValue("");
             return;
         }
-        
+
         const newValue = addMetaValue.trim();
-        const updatedOptions = {
-            ...metaOptions,
-            [addingMetaField]: [...(metaOptions[addingMetaField] || []), newValue]
+        const fieldMapping = {
+            gst: "gst",
+            category: "categories",
+            division: "divisions",
+            manufacturer: "manufacturers",
+            companyName: "companies",
+            quantity: "quantity-units"
         };
-        
-        setMetaOptions(updatedOptions);
-        localStorage.setItem('meta_options_global', JSON.stringify(updatedOptions));
-        
-        handleCCMetaChange(addingMetaField, newValue);
-        
-        setAddingMetaField(null);
-        setAddMetaValue("");
+        const type = fieldMapping[addingMetaField];
+
+        try {
+            if (type) {
+                await invMastersApi.create(type, { value: newValue });
+                await loadMetaOptions();
+                await handleCCMetaChange(addingMetaField, newValue);
+            }
+        } catch (error) {
+            console.error("Failed to add meta field option:", error);
+        } finally {
+            setAddingMetaField(null);
+            setAddMetaValue("");
+        }
     };
 
     const [newColumnBgColor, setNewColumnBgColor] = useState(null);
@@ -272,252 +312,116 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
         return () => clearTimeout(timer);
     }, [searchQuery]);
 
-    // Fetch sheet data from localStorage
+    // Fetch sheet data from API
     const fetchSheetData = useCallback(async () => {
         if (!docName) return;
 
         setIsLoading(true);
         setAccessError(false);
         try {
-            const savedData = localStorage.getItem(`sheet_data_${docName}`);
-            let parsed = null;
-            if (savedData) {
+            if (isNested) {
+                // Nested sub-spreadsheet (batches / CC View)
+                const cols = defaultCCTemplate;
+                const ccRowsRes = await invSheetsApi.listCcRows(parentSheetId, docName);
+
                 try {
-                    parsed = JSON.parse(savedData);
-                } catch (e) {
-                    console.error("Failed to parse saved sheet data", e);
+                    const parentRes = await invSheetsApi.get(parentSheetId);
+                    const parentSheet = parentRes.data.data;
+                    const parentRow = (parentSheet?.rows || []).find(r => r.id === docName);
+                    if (parentRow) {
+                        const nameCell = parentRow.cells?.find(c => c.columnId === "col-product-name");
+                        setNestedProductName(nameCell?.computedValue || nameCell?.rawValue || "");
+                    }
+                } catch (err) {
+                    console.error("Error fetching parent product name:", err);
                 }
-            }
+                
+                // Align cells order to defaultCCTemplate
+                const rws = (ccRowsRes.data.data || []).map(ccRow => {
+                    const cellMap = new Map((ccRow.cells || []).map(c => [c.columnId, c]));
+                    const ccCells = cols.map(col => {
+                        const existing = cellMap.get(col.id);
+                        return existing ? {
+                            columnId: col.id,
+                            rawValue: existing.rawValue || "",
+                            computedValue: existing.computedValue || ""
+                        } : {
+                            columnId: col.id,
+                            rawValue: "",
+                            computedValue: ""
+                        };
+                    });
+                    return {
+                        id: ccRow.id,
+                        orderIndex: ccRow.orderIndex,
+                        cells: ccCells
+                    };
+                });
 
-            let cols = parsed?.columns;
-            let rws = parsed?.rows;
+                setColumns(cols);
+                setRows(rws);
 
-            if (!cols || !rws) {
-                cols = defaultColumns;
-                rws = defaultRows;
-                localStorage.setItem(`sheet_data_${docName}`, JSON.stringify({ columns: cols, rows: rws }));
+                // Load CC master options
+                const ccMetaRes = await invSheetsApi.getCcMeta(parentSheetId, docName);
+                const meta = ccMetaRes.data.data || {};
+                setCcCategory(meta.category || '');
+                setCcUnit(meta.quantity || '');
+                setCcGst(meta.gst || '');
+                setCcDivision(meta.division || '');
+                setCcManufacturer(meta.manufacturer || '');
+                setCcCompanyName(meta.companyName || '');
+                setCcQuantity(meta.quantity || '');
+
+                setSheetData({
+                    id: docName,
+                    name: "Sub-Spreadsheet View",
+                    userPermission: "admin",
+                    settings: {}
+                });
+
             } else {
-                // Migrate existing sheet configurations to match new layout constraints:
-                // 1. Remove wholesale inventory column
-                cols = cols.filter(c => c.id !== 'col-wholesale-inventory' && c.id !== 'col-gst-status');
-
-                // 2. Rename Retail Inventory to Inventory and ensure it gets latest template columns
-                // Also remove Category column as requested
-                cols = cols.filter(c => c.id !== 'col-product-category' && c.name?.toLowerCase() !== 'category').map(c => {
-                    if (c.id === 'col-retail-inventory') {
-                        return {
-                            ...c,
-                            name: "Inventory",
-                            options: JSON.stringify({ isDetailedViewEnabled: true, ccTemplateColumns: defaultCCTemplate })
+                // Main spreadsheet
+                const res = await invSheetsApi.get(docName);
+                const sheet = res.data.data;
+                const cols = defaultColumns;
+                const rws = (sheet?.rows || []).map(row => {
+                    const cellMap = new Map((row.cells || []).map(c => [c.columnId, c]));
+                    const mainCells = cols.map(col => {
+                        const existing = cellMap.get(col.id);
+                        return existing ? {
+                            columnId: col.id,
+                            rawValue: existing.rawValue || "",
+                            computedValue: existing.computedValue || ""
+                        } : {
+                            columnId: col.id,
+                            rawValue: "",
+                            computedValue: ""
                         };
-                    }
-                    return c;
-                });
-
-                // 3. Ensure orderIndex positioning: Product Image first, Product name second, Inventory third
-                // Also force Product Image column type to 'multi_image'
-                cols.forEach(c => {
-                    if (c.id === 'col-product-image') {
-                        c.orderIndex = 0;
-                        c.type = 'multi_image';
-                    } else if (c.id === 'col-product-name') {
-                        c.orderIndex = 1;
-                        c.type = 'text';
-                    } else if (c.id === 'col-retail-inventory') {
-                        c.orderIndex = 2;
-                    }
-                });
-
-                // Sort columns by orderIndex to render correctly
-                cols.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
-
-                // 4. Clean up Wholesale, GST, and Category cells and ensure Product Image cells are initialized to valid JSON array
-                rws = rws.map(row => {
-                    if (row.cells) {
-                        let hasProductImageCell = false;
-
-                        const newCells = row.cells.map(cell => {
-                            if (cell.columnId === 'col-product-image') {
-                                hasProductImageCell = true;
-                                let validJson = false;
-                                try {
-                                    if (cell.rawValue) {
-                                        JSON.parse(cell.rawValue);
-                                        validJson = true;
-                                    }
-                                } catch (e) {}
-                                if (!validJson) {
-                                    return { ...cell, rawValue: "[]", computedValue: "[]" };
-                                }
-                            }
-                            return cell;
-                        }).filter(cell => cell.columnId !== 'col-wholesale-inventory' && cell.columnId !== 'col-gst-status' && cell.columnId !== 'col-product-category' && !cols.every(c => c.id !== cell.columnId));
-
-                        if (!hasProductImageCell) {
-                            newCells.push({
-                                columnId: 'col-product-image',
-                                rawValue: '[]',
-                                computedValue: '[]'
-                            });
-                        }
-
-                        // Sort cells according to new column order
-                        newCells.sort((a, b) => {
-                            const colA = cols.find(c => c.id === a.columnId);
-                            const colB = cols.find(c => c.id === b.columnId);
-                            return (colA?.orderIndex ?? 0) - (colB?.orderIndex ?? 0);
-                        });
-
-                        return {
-                            ...row,
-                            cells: newCells
-                        };
-                    }
-                    return row;
-                });
-
-                // Save migrated format back to localStorage
-                localStorage.setItem(`sheet_data_${docName}`, JSON.stringify({ columns: cols, rows: rws }));
-            }
-
-            if (isNested) {
-                // If it contains old selling rate or profit columns, we migrate them
-                const hasSellingRate = cols.some(c => c.id === 'col-cc-selling-rate');
-                const hasOldProfit = cols.some(c => c.id === 'col-cc-profit');
-                if (hasSellingRate || hasOldProfit) {
-                    const newCols = [];
-                    cols.forEach(c => {
-                        if (c.id === 'col-cc-selling-rate') {
-                            newCols.push(
-                                { id: "col-cc-wholesale-selling-rate", name: "W Selling Rate", type: "number" },
-                                { id: "col-cc-retail-selling-rate", name: "R Selling Rate", type: "number" }
-                            );
-                        } else if (c.id === 'col-cc-profit') {
-                            newCols.push(
-                                { id: "col-cc-retail-profit", name: "R Profit", type: "number" },
-                                { id: "col-cc-wholesale-profit", name: "W Profit", type: "number" }
-                            );
-                        } else {
-                            newCols.push(c);
-                        }
                     });
-                    cols = newCols;
-
-                    rws = rws.map(row => {
-                        if (row.cells) {
-                            const newCells = [];
-                            row.cells.forEach(cell => {
-                                if (cell.columnId === 'col-cc-selling-rate') {
-                                    newCells.push(
-                                        { columnId: "col-cc-wholesale-selling-rate", rawValue: cell.rawValue || "", computedValue: cell.computedValue || "" },
-                                        { columnId: "col-cc-retail-selling-rate", rawValue: cell.rawValue || "", computedValue: cell.computedValue || "" }
-                                    );
-                                } else if (cell.columnId === 'col-cc-profit') {
-                                    newCells.push(
-                                        { columnId: "col-cc-retail-profit", rawValue: cell.rawValue || "", computedValue: cell.computedValue || "" },
-                                        { columnId: "col-cc-wholesale-profit", rawValue: cell.rawValue || "", computedValue: cell.computedValue || "" }
-                                    );
-                                } else {
-                                    newCells.push(cell);
-                                }
-                            });
-                            return { ...row, cells: newCells };
-                        }
-                        return row;
-                    });
-                }
-
-                // Also rename standard cc columns to new requested names and remove category if present
-                cols = cols.map(c => {
-                    if (c.id === 'col-cc-quantity-stock') return { ...c, name: "No" };
-                    if (c.id === 'col-cc-retail-selling-rate') return { ...c, name: "R Selling Rate" };
-                    if (c.id === 'col-cc-wholesale-selling-rate') return { ...c, name: "W Selling Rate" };
-                    if (c.id === 'col-cc-retail-profit') return { ...c, name: "R Profit" };
-                    if (c.id === 'col-cc-wholesale-profit') return { ...c, name: "W Profit" };
-                    if (c.id === 'col-cc-expiry-date') return { ...c, name: "Expiry Date" };
-                    return c;
-                }).filter(c => c.id !== 'col-product-category' && c.name?.toLowerCase() !== 'category');
-
-                // Re-order CC columns to match user requested order:
-                const ccOrder = [
-                    "col-cc-batch",
-                    "col-cc-quantity-stock",
-                    "col-cc-expiry-date",
-                    "col-cc-purchase-rate",
-                    "col-cc-retail-profit",
-                    "col-cc-retail-selling-rate",
-                    "col-cc-wholesale-profit",
-                    "col-cc-wholesale-selling-rate",
-                    "col-cc-discount",
-                    "col-cc-mrp",
-                    "col-cc-status",
-                    "col-cc-quantity-notified"
-                ];
-                cols.sort((a, b) => {
-                    const idxA = ccOrder.indexOf(a.id);
-                    const idxB = ccOrder.indexOf(b.id);
-                    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-                    if (idxA !== -1) return -1;
-                    if (idxB !== -1) return 1;
-                    return 0;
+                    return {
+                        id: row.id,
+                        orderIndex: row.orderIndex,
+                        cells: mainCells
+                    };
                 });
 
-                // Ensure all rows have cells for all columns and no removed category cells
-                rws = rws.map(row => {
-                    if (!row.cells) return row;
-                    const cellMap = new Map(row.cells.map(cell => [cell.columnId, cell]));
-                    const newCells = cols.map(col => {
-                        return cellMap.get(col.id) || { columnId: col.id, rawValue: "", computedValue: "" };
-                    });
-                    return { ...row, cells: newCells };
+                setColumns(cols);
+                setRows(rws);
+
+                setSheetData({
+                    id: docName,
+                    name: sheet?.name || "Inventory Spreadsheet",
+                    userPermission: "admin",
+                    settings: {}
                 });
-
-                // Save migrated format back to localStorage
-                localStorage.setItem(`sheet_data_${docName}`, JSON.stringify({ columns: cols, rows: rws }));
             }
-
-            setColumns(cols);
-            setRows(rws);
-
-            if (isNested) {
-                const ccMeta = JSON.parse(localStorage.getItem(`cc_meta_${docName}`) || "{}");
-                setCcCategory(ccMeta.category || '');
-                setCcUnit(ccMeta.unit || '');
-                setCcGst(ccMeta.gst || '');
-                setCcDivision(ccMeta.division || '');
-                setCcManufacturer(ccMeta.manufacturer || '');
-                setCcCompanyName(ccMeta.companyName || '');
-                setCcQuantity(ccMeta.quantity || '');
-            }
-
-            const savedMapping = JSON.parse(localStorage.getItem(`nested_mapping_${docName}`) || "{}");
-            setNestedSheetsMapping(savedMapping);
-
-            const savedFiles = JSON.parse(localStorage.getItem("mock_inventory_files") || "[]");
-            const currentFile = savedFiles.find(f => f.id === docName);
-            const docTitle = currentFile ? currentFile.name : "Inventory Spreadsheet";
-
-            const savedSettings = JSON.parse(localStorage.getItem(`sheet_settings_${docName}`) || "{}");
-            const savedSort = savedSettings.sortConfig;
-            setSortConfig(
-                savedSort && savedSort.colId
-                    ? savedSort
-                    : { colId: null, direction: 'asc' }
-            );
-
-            setSheetData({
-                id: docName,
-                name: docTitle,
-                userPermission: "admin",
-                settings: savedSettings
-            });
-
         } catch (error) {
             console.error("Error fetching sheet data:", error);
+            setAccessError(true);
         } finally {
             setIsLoading(false);
         }
-    }, [docName]);
+    }, [docName, isNested, parentSheetId]);
 
     const handleCCMetaChange = (field, value) => {
         if (!isNested) return;
@@ -910,8 +814,8 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
         return [...filteredRows].sort((a, b) => {
             const cellA = a.cells?.find(c => c.columnId === sortConfig.colId);
             const cellB = b.cells?.find(c => c.columnId === sortConfig.colId);
-            const rawA = cellA?.computedValue ?? cellA?.rawValue ?? '';
-            const rawB = cellB?.computedValue ?? cellB?.rawValue ?? '';
+            const rawA = cellA?.computedValue || cellA?.rawValue || '';
+            const rawB = cellB?.computedValue || cellB?.rawValue || '';
 
             // Empty values always go to the bottom regardless of direction
             const emptyA = rawA === '' || rawA === null || rawA === undefined;
@@ -979,7 +883,7 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
         const numericValues = rows
             .map(row => {
                 const cell = row.cells?.find(c => c.columnId === colId);
-                const v = cell?.computedValue ?? cell?.rawValue ?? '';
+                const v = cell?.computedValue || cell?.rawValue || '';
                 return parseFloat(v);
             })
             .filter(n => !isNaN(n));
@@ -1281,56 +1185,8 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
     };
 
     const handleOpenOrCreateDetails = async (row, col) => {
-        const mappingKey = `${row.id}_${col.id}`;
-        const existingId = nestedSheetsMapping[mappingKey];
-
-        if (existingId) {
-            setActiveNestedSheetId(existingId);
-            return;
-        }
-
-        // BUG #8: Prevent duplicate creation on double-click
-        if (isCreatingCC) return;
-        setIsCreatingCC(true);
-
-        // Auto-create sub-sheet locally for mockup
-        try {
-            const cell = row.cells?.find(c => c.columnId === col.id);
-            const cellValue = cell?.computedValue ?? cell?.rawValue;
-            const rowNo = (row.order !== undefined ? row.order + 1 : filteredRows.indexOf(row) + 1);
-            const defaultName = (cellValue && cellValue.toString().trim() !== "")
-                ? cellValue.toString().trim()
-                : `${col.name}-${rowNo}`;
-
-            const opts = parseOptions(col.options);
-            const hasTemplate = opts.ccTemplateColumns && Array.isArray(opts.ccTemplateColumns) && opts.ccTemplateColumns.length > 0;
-
-            const newDocId = `mock-cc-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-
-            const ccCols = hasTemplate ? opts.ccTemplateColumns : [{ id: "col-1", name: "Detail", type: "text", width: 220 }];
-            const ccRows = Array.from({ length: 5 }, (_, idx) => ({
-                id: `row-${idx}`,
-                order: idx,
-                cells: ccCols.map(c => ({ columnId: c.id, rawValue: "", computedValue: "" }))
-            }));
-
-            // Save new CC sheet data to local storage
-            localStorage.setItem(`sheet_data_${newDocId}`, JSON.stringify({ columns: ccCols, rows: ccRows }));
-
-            // Update mapping locally
-            setNestedSheetsMapping(prev => {
-                const updated = { ...prev, [mappingKey]: newDocId };
-                localStorage.setItem(`nested_mapping_${docName}`, JSON.stringify(updated));
-                return updated;
-            });
-
-            setActiveNestedSheetId(newDocId);
-            fetchSheetData();
-        } catch (e) {
-            console.error("Error auto-creating nested sheet", e);
-            Swal.fire({ icon: 'error', title: 'Error', text: 'Failed to initialize C.C. Please try again.', customClass: { popup: 'rounded-2xl' } });
-        } finally {
-            setIsCreatingCC(false);
+        if (row && row.id) {
+            setActiveNestedSheetId(row.id);
         }
     };
 
@@ -1341,7 +1197,7 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
             try {
                 // Create sub-sheet
                 const cell = row.cells?.find(c => c.columnId === colId);
-                const cellValue = cell?.computedValue ?? cell?.rawValue;
+                const cellValue = cell?.computedValue || cell?.rawValue;
                 const rowNo = (row.order !== undefined ? row.order + 1 : filteredRows.indexOf(row) + 1);
                 const col = columns.find(c => c.id === colId);
                 const defaultName = (cellValue && cellValue.toString().trim() !== "")
@@ -1470,8 +1326,8 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
             const sorted = [...currentRows].sort((a, b) => {
                 const cellA = a.cells?.find(c => c.columnId === colId);
                 const cellB = b.cells?.find(c => c.columnId === colId);
-                const valA = cellA?.computedValue ?? cellA?.rawValue ?? '';
-                const valB = cellB?.computedValue ?? cellB?.rawValue ?? '';
+                const valA = cellA?.computedValue || cellA?.rawValue || '';
+                const valB = cellB?.computedValue || cellB?.rawValue || '';
 
                 // Date comparison for date columns
                 const colDef = columns.find(c => c.id === colId);
@@ -1776,11 +1632,71 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                 computedValue: finalValue
                             });
                         }
+
+                        // Auto-calculation for CC sub-spreadsheet
+                        if (isNested) {
+                            const getVal = (colId) => {
+                                const c = newCells.find(cell => cell.columnId === colId);
+                                return c ? parseFloat(c.rawValue || 0) : 0;
+                            };
+                            const getValStr = (colId) => {
+                                const c = newCells.find(cell => cell.columnId === colId);
+                                return c ? c.rawValue : "";
+                            };
+                            const setVal = (colId, val) => {
+                                const idx = newCells.findIndex(cell => cell.columnId === colId);
+                                if (idx > -1) {
+                                    newCells[idx] = { ...newCells[idx], rawValue: String(val), computedValue: String(val) };
+                                } else {
+                                    newCells.push({ columnId: colId, rawValue: String(val), computedValue: String(val) });
+                                }
+                            };
+
+                            // R Profit = Purchase Rate + R Selling Rate
+                            if (['col-cc-purchase-rate', 'col-cc-retail-selling-rate'].includes(columnId)) {
+                                const pr = getVal('col-cc-purchase-rate');
+                                const rsl = getVal('col-cc-retail-selling-rate');
+                                setVal('col-cc-retail-profit', pr + rsl);
+                            }
+
+                            // W Profit = Purchase Rate + W Selling Rate
+                            if (['col-cc-purchase-rate', 'col-cc-wholesale-selling-rate'].includes(columnId)) {
+                                const pr = getVal('col-cc-purchase-rate');
+                                const wsl = getVal('col-cc-wholesale-selling-rate');
+                                setVal('col-cc-wholesale-profit', pr + wsl);
+                            }
+
+                            // Status = Stock Available / Low Stock / Out of Stock
+                            if (['col-cc-quantity-stock', 'col-cc-quantity-notified'].includes(columnId)) {
+                                const qty = getVal('col-cc-quantity-stock');
+                                const notifiedStr = getValStr('col-cc-quantity-notified');
+                                const notifiedQty = notifiedStr === "" ? 0 : parseFloat(notifiedStr);
+                                let status = "Stock Available";
+                                if (qty <= 0) {
+                                    status = "Out of Stock";
+                                } else if (qty < notifiedQty) {
+                                    status = "Low Stock";
+                                }
+                                setVal('col-cc-status', status);
+                            }
+                        }
+
                         return { ...row, cells: newCells };
                     }
                     return row;
                 });
-                saveMockDataLocally(columns, updated);
+
+                const targetRow = updated.find(r => r.id === rowId);
+                if (targetRow) {
+                    if (isNested) {
+                        invSheetsApi.updateCcCells(parentSheetId, docName, rowId, targetRow.cells)
+                            .catch(err => console.error("Failed to save CC cells:", err));
+                    } else {
+                        invSheetsApi.updateCells(docName, rowId, targetRow.cells)
+                            .catch(err => console.error("Failed to save cells:", err));
+                    }
+                }
+
                 return updated;
             });
 
@@ -1970,26 +1886,19 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
     // handleCellBlur has been removed; logic is now inside onBlur handlers for inputs
 
     const handleAddRow = async () => {
-        setRows(prev => {
-            const updated = [...prev];
-            const startOrder = updated.length;
-            for (let i = 0; i < 5; i++) {
-                const newRowId = `row-${Date.now()}-${i}-${Math.random()}`;
-                updated.push({
-                    id: newRowId,
-                    order: startOrder + i,
-                    cells: columns.map(c => ({
-                        columnId: c.id,
-                        rowId: newRowId,
-                        rawValue: '',
-                        computedValue: '',
-                        formattedValue: ''
-                    }))
-                });
+        setIsLoading(true);
+        try {
+            if (isNested) {
+                await invSheetsApi.addCcRow(parentSheetId, docName);
+            } else {
+                await invSheetsApi.addRow(docName);
             }
-            saveMockDataLocally(columns, updated);
-            return updated;
-        });
+            await fetchSheetData();
+        } catch (error) {
+            console.error("Failed to add row:", error);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     // const handleDownloadBackup = async () => {
@@ -2080,7 +1989,7 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                 });
                 if (sourceCol) {
                     const sourceCell = row.cells?.find(c => c.columnId === sourceCol.id);
-                    const val = sourceCell?.computedValue ?? sourceCell?.rawValue;
+                    const val = sourceCell?.computedValue || sourceCell?.rawValue;
                     if (val !== null && val !== undefined && val !== '') {
                         computedRowBg = sourceCol.bgColor;
                     }
@@ -2089,7 +1998,7 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
 
                 for (const col of colsToExport) {
                     const cell = row.cells?.find(c => c.columnId === col.id);
-                    let val = cell?.computedValue ?? cell?.rawValue ?? '';
+                    let val = cell?.computedValue || cell?.rawValue || '';
 
                     // Strip emojis because jsPDF standard fonts cannot render them and produce garbled text
                     if (typeof val === 'string') {
@@ -2364,7 +2273,9 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                     </button>
                                 )}
                             </div>
-                            <span className="text-[10px] text-gray-400 uppercase font-medium tracking-wider mb-2">Sub-Spreadsheet View</span>
+                            <span className="text-[10px] text-gray-400 uppercase font-medium tracking-wider mb-2">
+                                {nestedProductName ? `Product: ${nestedProductName}` : "Sub-Spreadsheet View"}
+                            </span>
                             
                             {/* Meta Inputs moved here below the name section */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3 w-full max-w-full pr-4">
@@ -2381,6 +2292,7 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                                         onChange={(newValue) => handleCCMetaChange('gst', newValue ? newValue.value : '')}
                                                         options={metaOptions.gst.map(opt => ({ label: opt, value: opt }))}
                                                         className="text-sm w-full"
+                                                        menuPortalTarget={document.body}
                                                         styles={{
                                                             control: (base) => ({
                                                                 ...base,
@@ -2388,7 +2300,8 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                                                 '&:hover': { borderColor: '#9ca3af' },
                                                                 minHeight: '38px',
                                                                 boxShadow: 'none'
-                                                            })
+                                                            }),
+                                                            menuPortal: (base) => ({ ...base, zIndex: 9999 })
                                                         }}
                                                     />
                                                 </div>
@@ -2408,6 +2321,7 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                                         onChange={(newValue) => handleCCMetaChange('category', newValue ? newValue.value : '')}
                                                         options={metaOptions.category.map(opt => ({ label: opt, value: opt }))}
                                                         className="text-sm w-full"
+                                                        menuPortalTarget={document.body}
                                                         styles={{
                                                             control: (base) => ({
                                                                 ...base,
@@ -2415,7 +2329,8 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                                                 '&:hover': { borderColor: '#9ca3af' },
                                                                 minHeight: '38px',
                                                                 boxShadow: 'none'
-                                                            })
+                                                            }),
+                                                            menuPortal: (base) => ({ ...base, zIndex: 9999 })
                                                         }}
                                                     />
                                                 </div>
@@ -2435,6 +2350,7 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                                         onChange={(newValue) => handleCCMetaChange('division', newValue ? newValue.value : '')}
                                                         options={metaOptions.division.map(opt => ({ label: opt, value: opt }))}
                                                         className="text-sm w-full"
+                                                        menuPortalTarget={document.body}
                                                         styles={{
                                                             control: (base) => ({
                                                                 ...base,
@@ -2442,7 +2358,8 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                                                 '&:hover': { borderColor: '#9ca3af' },
                                                                 minHeight: '38px',
                                                                 boxShadow: 'none'
-                                                            })
+                                                            }),
+                                                            menuPortal: (base) => ({ ...base, zIndex: 9999 })
                                                         }}
                                                     />
                                                 </div>
@@ -2462,6 +2379,7 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                                         onChange={(newValue) => handleCCMetaChange('manufacturer', newValue ? newValue.value : '')}
                                                         options={metaOptions.manufacturer.map(opt => ({ label: opt, value: opt }))}
                                                         className="text-sm w-full"
+                                                        menuPortalTarget={document.body}
                                                         styles={{
                                                             control: (base) => ({
                                                                 ...base,
@@ -2469,7 +2387,8 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                                                 '&:hover': { borderColor: '#9ca3af' },
                                                                 minHeight: '38px',
                                                                 boxShadow: 'none'
-                                                            })
+                                                            }),
+                                                            menuPortal: (base) => ({ ...base, zIndex: 9999 })
                                                         }}
                                                     />
                                                 </div>
@@ -2489,6 +2408,7 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                                         onChange={(newValue) => handleCCMetaChange('companyName', newValue ? newValue.value : '')}
                                                         options={metaOptions.companyName.map(opt => ({ label: opt, value: opt }))}
                                                         className="text-sm w-full"
+                                                        menuPortalTarget={document.body}
                                                         styles={{
                                                             control: (base) => ({
                                                                 ...base,
@@ -2496,7 +2416,8 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                                                 '&:hover': { borderColor: '#9ca3af' },
                                                                 minHeight: '38px',
                                                                 boxShadow: 'none'
-                                                            })
+                                                            }),
+                                                            menuPortal: (base) => ({ ...base, zIndex: 9999 })
                                                         }}
                                                     />
                                                 </div>
@@ -2516,6 +2437,7 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                                         onChange={(newValue) => handleCCMetaChange('quantity', newValue ? newValue.value : '')}
                                                         options={metaOptions.quantity.map(opt => ({ label: opt, value: opt }))}
                                                         className="text-sm w-full"
+                                                        menuPortalTarget={document.body}
                                                         styles={{
                                                             control: (base) => ({
                                                                 ...base,
@@ -2523,7 +2445,8 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                                                 '&:hover': { borderColor: '#9ca3af' },
                                                                 minHeight: '38px',
                                                                 boxShadow: 'none'
-                                                            })
+                                                            }),
+                                                            menuPortal: (base) => ({ ...base, zIndex: 9999 })
                                                         }}
                                                     />
                                                 </div>
@@ -2853,7 +2776,7 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                 });
                                 if (sourceCol) {
                                     const sourceCell = row.cells?.find(c => c.columnId === sourceCol.id);
-                                    const val = sourceCell?.computedValue ?? sourceCell?.rawValue;
+                                    const val = sourceCell?.computedValue || sourceCell?.rawValue;
                                     if (val !== null && val !== undefined && val !== '') {
                                         computedRowBg = sourceCol.bgColor;
                                     }
@@ -2871,15 +2794,16 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                             onClick={(e) => handleRowContextMenu(e, index)}
                                         >
                                             <span className="cursor-pointer">{index + 1}</span>
-                                        </td>
+                                         </td>
                                         {columns.map((col) => {
                                             const cell = row.cells?.find(c => c.columnId === col.id);
                                             const isFormula = col.type === 'formula';
                                             const val = isFormula
                                                 ? (cell?.computedValue ?? '')
-                                                : (cell?.computedValue ?? cell?.rawValue ?? '');
+                                                : (cell?.computedValue || cell?.rawValue || '');
 
                                             const isFocused = focusedCell?.rowId === row.id && focusedCell?.colId === col.id;
+                                            const isReadOnly = cell?.permission === 'view' || isFormula || (isNested && ['col-cc-retail-profit', 'col-cc-wholesale-profit', 'col-cc-status'].includes(col.id));
                                             let displayVal = val;
                                             
                                             // Determine if formula should be formatted as currency
@@ -3065,7 +2989,7 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                                              <select
                                                                  value={val || ''}
                                                                  onChange={(e) => handleCellChange(row.id, col.id, e.target.value)}
-                                                                 disabled={cell?.permission === 'view'}
+                                                                 disabled={isReadOnly}
                                                                  className="w-full pl-3 pr-8 py-1.5 outline-none bg-transparent text-[13px] text-gray-800 cursor-pointer appearance-none"
                                                              >
                                                                  <option value="">Select Category</option>
@@ -3090,8 +3014,8 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                                                         handleCellChange(row.id, col.id, e.target.value);
                                                                     }
                                                                 }}
-                                                                readOnly={cell?.permission === 'view'}
-                                                                className={`w-full pl-3 ${(nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-7' : 'pr-3'} py-1.5 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 ${cell?.permission === 'view' ? 'cursor-default' : 'cursor-text'} ${getCellFormattingClasses(cell, row, col)}`}
+                                                                readOnly={isReadOnly}
+                                                                className={`w-full pl-3 ${(nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-7' : 'pr-3'} py-1.5 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 ${isReadOnly ? 'cursor-default bg-gray-50/30' : 'cursor-text'} ${getCellFormattingClasses(cell, row, col)}`}
                                                             />
                                                         </div>
                                                     ) : col.type === 'time' ? (
@@ -3108,8 +3032,8 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                                                             handleCellChange(row.id, col.id, e.target.value);
                                                                         }
                                                                     }}
-                                                                    readOnly={cell?.permission === 'view'}
-                                                                    className={`w-full pl-3 pr-3 py-1.5 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 ${cell?.permission === 'view' ? 'cursor-default' : 'cursor-text'} ${getCellFormattingClasses(cell, row, col)}`}
+                                                                    readOnly={isReadOnly}
+                                                                    className={`w-full pl-3 pr-3 py-1.5 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 ${isReadOnly ? 'cursor-default bg-gray-50/30' : 'cursor-text'} ${getCellFormattingClasses(cell, row, col)}`}
                                                                 />
                                                             ) : (
                                                                 /* When not focused: show formatted time as text, click to edit */
@@ -3135,7 +3059,7 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                                     ) : (
                                                         <div className="grid w-full min-w-0 relative group/textcell">
                                                             {/* Ghost div to expand height */}
-                                                            <div className={`invisible pl-3 ${(nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-7' : 'pr-3'} py-2 text-[13px] whitespace-pre-wrap break-all w-full min-w-0 min-h-9 ${getCellFormattingClasses(cell, row, col, isFormula)}`}>
+                                                            <div className={`invisible pl-3 ${(nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-14' : 'pr-8'} py-2 text-[13px] whitespace-pre-wrap break-all w-full min-w-0 min-h-9 ${getCellFormattingClasses(cell, row, col, isFormula)}`}>
                                                                 {displayVal || ' '}
                                                             </div>
                                                             <textarea
@@ -3171,9 +3095,9 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                                                         e.currentTarget.blur();
                                                                     }
                                                                 }}
-                                                                readOnly={cell?.permission === 'view' || isFormula}
+                                                                readOnly={isReadOnly}
                                                                 rows={1}
-                                                                className={`absolute inset-0 w-full h-full min-w-0 pl-3 ${(nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-14' : 'pr-8'} py-2 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 resize-none overflow-hidden whitespace-pre-wrap break-all ${col.type === 'currency' && isFocused ? 'pl-8' : ''} ${cell?.permission === 'view' || isFormula ? 'cursor-default bg-gray-50/30' : 'cursor-text'} ${col.type === 'number' || col.type === 'currency' || isFormula ? 'text-right' : ''} ${getCellFormattingClasses(cell, row, col, isFormula)}`}
+                                                                className={`absolute inset-0 w-full h-full min-w-0 pl-3 ${(nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-14' : 'pr-8'} py-2 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 resize-none overflow-hidden whitespace-pre-wrap break-all ${col.type === 'currency' && isFocused ? 'pl-8' : ''} ${isReadOnly ? 'cursor-default bg-gray-50/30' : 'cursor-text'} ${col.type === 'number' || col.type === 'currency' || isFormula ? 'text-right' : ''} ${getCellFormattingClasses(cell, row, col, isFormula)}`}
                                                             />
 
                                                         </div>
@@ -4597,7 +4521,7 @@ export default function InventoryDocumentEditor({ docName, setActivePath, return
                                 <FiX className="w-6 h-6" />
                             </button>
                             {/* BUG #9: pass setActivePath and returnPath to nested editor */}
-                            <InventoryDocumentEditor docName={activeNestedSheetId} isNested={true} setActivePath={setActivePath} returnPath={returnPath} />
+                            <InventoryDocumentEditor docName={activeNestedSheetId} parentSheetId={docName} isNested={true} setActivePath={setActivePath} returnPath={returnPath} />
                         </div>
                     </div>
                 </div>

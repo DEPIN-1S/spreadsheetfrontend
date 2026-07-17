@@ -1,34 +1,58 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FiX, FiSearch, FiPlus, FiCheck, FiPackage } from 'react-icons/fi';
-
-const mockMedicines = [
-    { id: 1, name: 'Dolo 650mg Tablet (Strip of 15)', category: 'Antipyretic', stock: 450, price: 30.50, batch: 'DL2026A', expiry: '08/2028' },
-    { id: 2, name: 'Azithromycin 500mg Tablet (Strip of 5)', category: 'Antibiotic', stock: 180, price: 115.00, batch: 'AZ9981B', expiry: '11/2027' },
-    { id: 3, name: 'Pantoprazole 40mg Tablet (Strip of 15)', category: 'Antacid', stock: 320, price: 85.00, batch: 'PN4412C', expiry: '05/2028' },
-    { id: 4, name: 'Amoxicillin 500mg Capsule (Strip of 10)', category: 'Antibiotic', stock: 210, price: 95.00, batch: 'AM8871A', expiry: '02/2028' },
-    { id: 5, name: 'Cetirizine 10mg Tablet (Strip of 10)', category: 'Antihistamine', stock: 500, price: 22.00, batch: 'CT3321D', expiry: '12/2028' },
-    { id: 6, name: 'Metformin 500mg Tablet (Strip of 20)', category: 'Antidiabetic', stock: 600, price: 45.00, batch: 'MF1122E', expiry: '09/2027' },
-    { id: 7, name: 'Atorvastatin 10mg Tablet (Strip of 15)', category: 'Statin', stock: 280, price: 110.00, batch: 'AT5543A', expiry: '04/2028' },
-    { id: 8, name: 'Benadryl Cough Syrup (100ml Bottle)', category: 'Cough & Cold', stock: 150, price: 135.00, batch: 'BN7765B', expiry: '10/2027' },
-    { id: 9, name: 'Limcee Vitamin C 500mg (Strip of 15)', category: 'Supplement', stock: 400, price: 40.00, batch: 'LM9900C', expiry: '06/2029' },
-    { id: 10, name: 'Shelcal 500mg Tablet (Strip of 15)', category: 'Calcium Supplement', stock: 350, price: 120.00, batch: 'SH4432D', expiry: '03/2028' },
-    { id: 11, name: 'Montair LC Tablet (Strip of 10)', category: 'Antihistamine', stock: 240, price: 180.00, batch: 'ML8811A', expiry: '01/2028' },
-    { id: 12, name: 'Allegra 120mg Tablet (Strip of 10)', category: 'Antihistamine', stock: 190, price: 210.00, batch: 'AL2233B', expiry: '07/2028' },
-];
+import { invSheetsApi } from '../api/inventoryApiClient';
 
 export default function SelectMedicineModal({ isOpen, onClose, onSelect, existingItemNames = [], inventoryType = 'wholesale' }) {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
+    const [medicines, setMedicines] = useState([]);
+    const [isLoading, setIsLoading] = useState(false);
+
+    useEffect(() => {
+        if (isOpen) {
+            fetchMedicines();
+        }
+    }, [isOpen]);
+
+    const fetchMedicines = async () => {
+        setIsLoading(true);
+        try {
+            const res = await invSheetsApi.listAllBatches();
+            const fetched = res.data.data || [];
+            
+            // Map the API fields to the format expected by the modal
+            const mapped = fetched.map(item => ({
+                id: item.ccRowId,
+                name: item.name,
+                category: item.category,
+                batch: item.batch,
+                expiry: item.expiry,
+                stock: item.stock,
+                // Pick retailPrice or wholesalePrice depending on type
+                price: inventoryType === 'retail' ? item.retailPrice : item.wholesalePrice,
+                ccRowId: item.ccRowId
+            }));
+            
+            setMedicines(mapped);
+        } catch (error) {
+            console.error("Failed to load medicine stock:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     if (!isOpen) return null;
 
-    const categories = ['All', ...new Set(mockMedicines.map(m => m.category))];
+    const categories = ['All', ...new Set(medicines.map(m => m.category || 'General'))];
 
-    const filteredMedicines = mockMedicines.filter(med => {
-        const matchesSearch = med.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                              med.batch.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                              med.category.toLowerCase().includes(searchQuery.toLowerCase());
-        const matchesCategory = selectedCategory === 'All' || med.category === selectedCategory;
+    const filteredMedicines = medicines.filter(med => {
+        const nameVal = med.name || '';
+        const batchVal = med.batch || '';
+        const catVal = med.category || '';
+        const matchesSearch = nameVal.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                              batchVal.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                              catVal.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesCategory = selectedCategory === 'All' || (med.category || 'General') === selectedCategory;
         return matchesSearch && matchesCategory;
     });
 
@@ -44,7 +68,7 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                         </div>
                         <div>
                             <h2 className="text-lg font-semibold text-gray-900">Select Medicine Item</h2>
-                            <p className="text-xs text-gray-500">Search and pick from available {inventoryType} inventory</p>
+                            <p className="text-xs text-gray-500">Search and pick from live {inventoryType} stock batches</p>
                         </div>
                     </div>
                     <button 
@@ -104,60 +128,71 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200 text-sm">
-                                {filteredMedicines.map(med => {
-                                    const isAlreadyAdded = existingItemNames.includes(med.name);
-                                    return (
-                                        <tr key={med.id} className="hover:bg-indigo-50/30 transition-colors">
-                                            <td className="px-4 py-3 font-medium text-gray-900">{med.name}</td>
-                                            <td className="px-4 py-3">
-                                                <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
-                                                    {med.category}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <span className="px-2 py-1 bg-gray-100 text-gray-800 font-mono text-xs rounded border border-gray-200 inline-block">
-                                                    {med.batch}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3 text-xs text-gray-600 font-medium">
-                                                {med.expiry}
-                                            </td>
-                                            <td className="px-4 py-3 text-right font-medium text-emerald-600">
-                                                {med.stock} units
-                                            </td>
-                                            <td className="px-4 py-3 text-right font-bold text-gray-900">
-                                                ₹{med.price.toFixed(2)}
-                                            </td>
-                                            <td className="px-4 py-3 text-center">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        onSelect(med);
-                                                        onClose();
-                                                    }}
-                                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                                                        isAlreadyAdded
-                                                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
-                                                            : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
-                                                    }`}
-                                                >
-                                                    {isAlreadyAdded ? (
-                                                        <>
-                                                            <FiCheck size={14} />
-                                                            Added
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <FiPlus size={14} />
-                                                            Add
-                                                        </>
-                                                    )}
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                                {filteredMedicines.length === 0 && (
+                                {isLoading ? (
+                                    <tr>
+                                        <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
+                                            <div className="flex justify-center items-center gap-2">
+                                                <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                                                <span>Loading stock data...</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    filteredMedicines.map(med => {
+                                        const isAlreadyAdded = existingItemNames.includes(med.name);
+                                        return (
+                                            <tr key={med.id} className="hover:bg-indigo-50/30 transition-colors">
+                                                <td className="px-4 py-3 font-medium text-gray-900">{med.name}</td>
+                                                <td className="px-4 py-3">
+                                                    <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
+                                                        {med.category || 'General'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <span className="px-2 py-1 bg-gray-100 text-gray-800 font-mono text-xs rounded border border-gray-200 inline-block">
+                                                        {med.batch}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 text-xs text-gray-600 font-medium">
+                                                    {med.expiry}
+                                                </td>
+                                                <td className="px-4 py-3 text-right font-medium text-emerald-600">
+                                                    {med.stock} units
+                                                </td>
+                                                <td className="px-4 py-3 text-right font-bold text-gray-900">
+                                                    ₹{med.price.toFixed(2)}
+                                                </td>
+                                                <td className="px-4 py-3 text-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            onSelect(med);
+                                                            onClose();
+                                                        }}
+                                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                                                            isAlreadyAdded
+                                                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                                                                : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
+                                                        }`}
+                                                    >
+                                                        {isAlreadyAdded ? (
+                                                            <>
+                                                                <FiCheck size={14} />
+                                                                Added
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <FiPlus size={14} />
+                                                                Add
+                                                            </>
+                                                        )}
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })
+                                )}
+                                {!isLoading && filteredMedicines.length === 0 && (
                                     <tr>
                                         <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
                                             No medicines found matching "{searchQuery}".
@@ -171,7 +206,7 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
 
                 {/* Footer */}
                 <div className="px-6 py-3.5 border-t border-gray-200 bg-gray-50 flex justify-between items-center text-xs text-gray-500">
-                    <span>Showing {filteredMedicines.length} of {mockMedicines.length} items</span>
+                    <span>Showing {filteredMedicines.length} of {medicines.length} items</span>
                     <button
                         type="button"
                         onClick={onClose}

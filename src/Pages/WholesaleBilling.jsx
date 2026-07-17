@@ -1,48 +1,72 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FiMenu, FiPlus, FiFileText, FiEdit2, FiTrash2, FiEye, FiDownload } from 'react-icons/fi';
 import AddWholesalePartyModal from '../Components/AddWholesalePartyModal';
 import PharmaInvoiceModal from '../Components/PharmaInvoiceModal';
+import { invPartiesApi, invInvoicesApi } from '../api/inventoryApiClient';
 
 export default function WholesaleBilling({ setMobileOpen, setActivePath }) {
     const [isAddPartyModalOpen, setIsAddPartyModalOpen] = useState(false);
     const [editingParty, setEditingParty] = useState(null);
     const [selectedInvoice, setSelectedInvoice] = useState(null);
-    // Mock data for parties
-    const [wholesaleParties, setWholesaleParties] = useState([
-        { id: 1, name: 'Acme Wholesale Corp', contact: '+1 (555) 123-4567', email: 'orders@acmewholesale.com', registrationNo: 'REG-100234', address: '123 Business Rd, NY' },
-        { id: 2, name: 'Global Traders Inc.', contact: '+1 (555) 987-6543', email: 'billing@globaltraders.net', registrationNo: 'REG-554433', address: '45 Trade Ave, CA' },
-        { id: 3, name: 'Regional Distributors', contact: '+1 (555) 456-7890', email: 'supply@regionaldist.com', registrationNo: 'REG-998877', address: '78 Supply St, TX' },
-        { id: 4, name: 'Metro Foods', contact: '+1 (555) 333-2222', email: 'hello@metrofoods.com', registrationNo: 'REG-112233', address: '99 Metro Way, WA' },
-        { id: 5, name: 'Prime Vendors', contact: '+1 (555) 444-5555', email: 'sales@primevendors.com', registrationNo: 'REG-445566', address: '200 Prime Blvd, FL' },
-        { id: 6, name: 'Alpha Supplies', contact: '+1 (555) 666-7777', email: 'contact@alphasupplies.com', registrationNo: 'REG-778899', address: '10 Alpha Ct, IL' },
-    ]);
+    const [wholesaleParties, setWholesaleParties] = useState([]);
+    const [recentWholesaleInvoices, setRecentWholesaleInvoices] = useState([]);
 
-    const handleAddPartySave = (newPartyData) => {
-        if (editingParty) {
-            setWholesaleParties(wholesaleParties.map(p => p.id === editingParty.id ? { ...p, ...newPartyData } : p));
-        } else {
-            const newParty = {
-                id: wholesaleParties.length + 1,
-                ...newPartyData
-            };
-            setWholesaleParties([newParty, ...wholesaleParties]);
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const fetchData = async () => {
+        try {
+            const partiesRes = await invPartiesApi.list('wholesale');
+            setWholesaleParties(partiesRes.data.data || []);
+
+            const invoicesRes = await invInvoicesApi.list('wholesale');
+            setRecentWholesaleInvoices(invoicesRes.data.data || []);
+        } catch (error) {
+            console.error("Failed to load wholesale billing data:", error);
         }
-        setIsAddPartyModalOpen(false);
-        setEditingParty(null);
     };
 
-    const handleDeleteParty = (id) => {
-        setWholesaleParties(wholesaleParties.filter(p => p.id !== id));
+    const handleAddPartySave = async (newPartyData) => {
+        try {
+            if (editingParty) {
+                await invPartiesApi.update('wholesale', editingParty.id, newPartyData);
+            } else {
+                await invPartiesApi.create('wholesale', newPartyData);
+            }
+            setIsAddPartyModalOpen(false);
+            setEditingParty(null);
+            fetchData();
+        } catch (error) {
+            console.error("Failed to save wholesale party:", error);
+        }
     };
 
-    const [recentWholesaleInvoices, setRecentWholesaleInvoices] = useState([
-        { id: 101, invoiceNo: 'INV-2026-001', date: '2026-06-15', partyName: 'Acme Wholesale Corp', amount: '₹12,500.00', paymentMethod: 'UPI', paymentStatus: 'Paid' },
-        { id: 102, invoiceNo: 'INV-2026-002', date: '2026-06-16', partyName: 'Global Traders Inc.', amount: '₹34,000.00', paymentMethod: 'Cash', paymentStatus: 'Partially Paid', pendingAmount: '₹14,000.00' },
-        { id: 103, invoiceNo: 'INV-2026-003', date: '2026-06-17', partyName: 'Metro Foods', amount: '₹8,900.00', paymentMethod: 'Cash', paymentStatus: 'Unpaid' },
-        { id: 104, invoiceNo: 'INV-2026-004', date: '2026-06-17', partyName: 'Alpha Supplies', amount: '₹4,500.00', paymentMethod: 'UPI', paymentStatus: 'Paid' },
-        { id: 105, invoiceNo: 'INV-2026-005', date: '2026-06-18', partyName: 'Regional Distributors', amount: '₹15,200.00', paymentMethod: 'UPI', paymentStatus: 'Partially Paid', pendingAmount: '₹5,200.00' },
-        { id: 106, invoiceNo: 'INV-2026-006', date: '2026-06-18', partyName: 'Prime Vendors', amount: '₹22,100.00', paymentMethod: 'Cash', paymentStatus: 'Paid' },
-    ]);
+    const handleDeleteParty = async (id) => {
+        if (!window.confirm("Are you sure you want to delete this party?")) return;
+        try {
+            await invPartiesApi.delete('wholesale', id);
+            fetchData();
+        } catch (error) {
+            console.error("Failed to delete wholesale party:", error);
+        }
+    };
+
+    const handleDeleteInvoice = async (id) => {
+        if (!window.confirm("Are you sure you want to delete this invoice? Stock will be restored.")) return;
+        try {
+            await invInvoicesApi.delete(id);
+            fetchData();
+        } catch (error) {
+            console.error("Failed to delete invoice:", error);
+            alert("Failed to delete invoice: " + (error.response?.data?.message || error.message));
+        }
+    };
+
+    const formatCurrency = (val) => {
+        const num = Number(val) || 0;
+        return `₹${num.toFixed(2)}`;
+    };
 
     return (
         <div className="flex-1 flex flex-col h-screen bg-gray-50">
@@ -171,12 +195,12 @@ export default function WholesaleBilling({ setMobileOpen, setActivePath }) {
                                         return (
                                         <tr key={invoice.id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-4 font-medium text-indigo-600">{invoice.invoiceNo}</td>
-                                            <td className="px-6 py-4 text-gray-600">{invoice.date}</td>
+                                            <td className="px-6 py-4 text-gray-600">{invoice.invoiceDate}</td>
                                             <td className="px-6 py-4 text-gray-900">{invoice.partyName}</td>
                                             <td className="px-6 py-4 text-right">
-                                                <div className="font-medium text-gray-900">{invoice.amount}</div>
-                                                {invoice.paymentStatus === 'Partially Paid' && invoice.pendingAmount && (
-                                                    <div className="text-xs text-red-500 font-semibold mt-0.5">Pending: {invoice.pendingAmount}</div>
+                                                <div className="font-medium text-gray-900">{formatCurrency(invoice.grandTotal)}</div>
+                                                {invoice.paymentStatus === 'Partially Paid' && invoice.pendingAmount > 0 && (
+                                                    <div className="text-xs text-red-500 font-semibold mt-0.5">Pending: {formatCurrency(invoice.pendingAmount)}</div>
                                                 )}
                                             </td>
                                             <td className="px-6 py-4">
@@ -203,8 +227,22 @@ export default function WholesaleBilling({ setMobileOpen, setActivePath }) {
                                                     <button onClick={() => setSelectedInvoice(invoice)} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors flex items-center justify-center" title="View Invoice">
                                                         <FiEye size={16} />
                                                     </button>
-                                                    <button className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors flex items-center justify-center" title="Edit Invoice">
+                                                    <button 
+                                                        onClick={() => {
+                                                            localStorage.setItem('edit_invoice_id', invoice.id);
+                                                            if (setActivePath) setActivePath('/inventory/wholesale-invoices/generate');
+                                                        }}
+                                                        className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors flex items-center justify-center" 
+                                                        title="Edit Invoice"
+                                                    >
                                                         <FiEdit2 size={16} />
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => handleDeleteInvoice(invoice.id)} 
+                                                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors flex items-center justify-center" 
+                                                        title="Delete Invoice"
+                                                    >
+                                                        <FiTrash2 size={16} />
                                                     </button>
                                                 </div>
                                             </td>
