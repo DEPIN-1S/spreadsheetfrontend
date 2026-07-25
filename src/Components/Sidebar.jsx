@@ -119,16 +119,25 @@ export default function Sidebar({ isCollapsed, toggleCollapse, mobileOpen, setMo
                     <nav className="flex-1 px-4 space-y-2">
                         {navItems
                             .filter(item => {
-                                if ((item.name === "Users" || item.name === "Audit Logs" || item.name === "Inventory") && user?.role !== 'admin' && user?.role !== 'superadmin') {
+                                const isSuperOrAdmin = user?.role === 'admin' || user?.role === 'superadmin';
+                                if ((item.name === "Users" || item.name === "Audit Logs") && !isSuperOrAdmin) {
                                     return false;
                                 }
                                 return true;
                             })
                             .map((item) => {
+                            const isSuperOrAdmin = user?.role === 'admin' || user?.role === 'superadmin';
+                            const visibleSubItems = item.subItems ? item.subItems.filter(subItem => {
+                                if ((subItem.name === "Downloads" || subItem.name === "Ledger") && !isSuperOrAdmin) {
+                                    return false;
+                                }
+                                return true;
+                            }) : null;
+
                             const isExactActive = activePath === item.path;
-                            const isSubActive = item.subItems && item.subItems.some(sub => activePath === sub.path);
+                            const isSubActive = visibleSubItems && visibleSubItems.some(sub => activePath === sub.path);
                             const isActive = isExactActive || isSubActive;
-                            const hasSubItems = !!item.subItems;
+                            const hasSubItems = visibleSubItems && visibleSubItems.length > 0;
                             const isExpanded = item.name === "Inventory" ? inventoryExpanded : false;
                             
                             return (
@@ -163,9 +172,10 @@ export default function Sidebar({ isCollapsed, toggleCollapse, mobileOpen, setMo
                                             {/* Vertical line indicator */}
                                             <div className="absolute left-0 top-0 bottom-0 w-[1.5px] bg-white/10 rounded-full" />
                                             
-                                            {item.subItems.map((subItem) => {
+                                            {visibleSubItems.map((subItem) => {
                                                 const isSubItemActive = activePath === subItem.path;
-                                                return (                                                     <button
+                                                return (
+                                                    <button
                                                         key={subItem.name}
                                                         onClick={() => setActivePath(subItem.path)}
                                                         className={`w-full flex items-center gap-3 py-2 px-3 rounded-lg text-xs transition-all duration-200 cursor-pointer group/sub relative

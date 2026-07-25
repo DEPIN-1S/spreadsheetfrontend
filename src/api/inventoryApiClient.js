@@ -67,7 +67,8 @@ export const invSheetsApi = {
 
 export const invMastersApi = {
     list: (type) => inventoryApiClient.get(`/inv/masters/${type}`),
-    add: (type, value) => inventoryApiClient.post(`/inv/masters/${type}`, { value }),
+    add: (type, value) => inventoryApiClient.post(`/inv/masters/${type}`, typeof value === 'object' ? value : { value }),
+    create: (type, data) => inventoryApiClient.post(`/inv/masters/${type}`, typeof data === 'object' ? data : { value: data }),
     delete: (type, id) => inventoryApiClient.delete(`/inv/masters/${type}/${id}`)
 };
 

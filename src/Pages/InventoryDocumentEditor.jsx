@@ -24,36 +24,85 @@ import EmojiPicker from "emoji-picker-react";
 import Swal from "sweetalert2";
 import Select from "react-select";
 
+const CustomSelectOption = (props) => {
+    const { data, innerRef, innerProps, isFocused, isSelected } = props;
+    return (
+        <div
+            ref={innerRef}
+            {...innerProps}
+            className={`flex items-center justify-between px-3 py-2 text-sm cursor-pointer select-none ${
+                isSelected ? 'bg-blue-600 text-white font-medium' : isFocused ? 'bg-blue-50 text-gray-900' : 'text-gray-700 hover:bg-gray-100'
+            }`}
+        >
+            <span className="truncate pr-2">{data.label}</span>
+            {data.onDelete && (
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        data.onDelete(data.id, data.value);
+                    }}
+                    className={`p-1 rounded hover:bg-red-500 hover:text-white transition-colors shrink-0 ${
+                        isSelected ? 'text-white/80 hover:text-white' : 'text-gray-400 hover:text-red-600'
+                    }`}
+                    title="Delete Option"
+                >
+                    <FiTrash2 className="w-3.5 h-3.5" />
+                </button>
+            )}
+        </div>
+    );
+};
+
+const COLUMN_BORDER_CLASSES = [
+    "border-r-2 border-indigo-400/80",   // Col 0 - Indigo
+    "border-r-2 border-emerald-400/80",  // Col 1 - Emerald / Green
+    "border-r-2 border-amber-400/80",    // Col 2 - Amber / Yellow
+    "border-r-2 border-purple-400/80",   // Col 3 - Purple
+    "border-r-2 border-rose-400/80",     // Col 4 - Rose / Red
+    "border-r-2 border-teal-400/80",     // Col 5 - Teal
+    "border-r-2 border-sky-400/80",      // Col 6 - Sky Blue
+    "border-r-2 border-violet-400/80",   // Col 7 - Violet
+    "border-r-2 border-pink-400/80",     // Col 8 - Pink
+    "border-r-2 border-blue-400/80",     // Col 9 - Blue
+    "border-r-2 border-lime-400/80",     // Col 10 - Lime
+    "border-r-2 border-orange-400/80"    // Col 11 - Orange
+];
+
+const getColumnBorderClass = (idx) => {
+    return COLUMN_BORDER_CLASSES[idx % COLUMN_BORDER_CLASSES.length];
+};
+
 const defaultCCTemplate = [
     { id: "col-cc-batch", name: "Batch", type: "text" },
-    { id: "col-cc-quantity-stock", name: "No", type: "number" },
+    { id: "col-cc-quantity-stock", name: "Qty", type: "number" },
     { id: "col-cc-expiry-date", name: "Expiry Date", type: "date" },
     { id: "col-cc-purchase-rate", name: "Purchase Rate", type: "number" },
     { id: "col-cc-retail-profit", name: "R Profit", type: "number" },
     { id: "col-cc-retail-selling-rate", name: "R Selling Rate", type: "number" },
-    { id: "col-cc-wholesale-profit", name: "W Profit", type: "number" },
-    { id: "col-cc-wholesale-selling-rate", name: "W Selling Rate", type: "number" },
     { id: "col-cc-discount", name: "Discount", type: "number" },
     { id: "col-cc-mrp", name: "MRP", type: "number" },
     { id: "col-cc-status", name: "Status", type: "text" },
-    { id: "col-cc-quantity-notified", name: "Quantity to be Notified", type: "number" }
+    { id: "col-cc-quantity-notified", name: "Quantity to be Notified", type: "number" },
+    { id: "col-cc-wholesale-profit", name: "W Profit", type: "number" },
+    { id: "col-cc-wholesale-selling-rate", name: "W Selling Rate", type: "number" },
+    { id: "col-cc-wholesale-margin", name: "Margin", type: "number" }
 ];
 
 const defaultColumns = [
     { id: "col-product-image", name: "Product Image", type: "multi_image", width: 220, orderIndex: 0 },
     { id: "col-product-name", name: "Product name", type: "text", width: 280, orderIndex: 1 },
-    { id: "col-composition", name: "Composition", type: "text", width: 220, orderIndex: 2 },
     { 
         id: "col-retail-inventory", 
         name: "Inventory", 
         type: "number", 
         width: 220, 
-        orderIndex: 3,
+        orderIndex: 2,
         options: JSON.stringify({ isDetailedViewEnabled: true, ccTemplateColumns: defaultCCTemplate })
     },
-    { id: "col-company-name", name: "Company Name", type: "text", width: 220, orderIndex: 4 },
-    { id: "col-manufacturer", name: "Manufacturer", type: "text", width: 220, orderIndex: 5 },
-    { id: "col-hsn-code", name: "Hsn code", type: "text", width: 220, orderIndex: 6 }
+    { id: "col-composition", name: "Composition", type: "text", width: 220, orderIndex: 3 },
+    { id: "col-company-name", name: "Company Name", type: "text", width: 220, orderIndex: 4 }
 ];
 
 const defaultRows = Array.from({ length: 5 }).map((_, idx) => ({
@@ -62,11 +111,9 @@ const defaultRows = Array.from({ length: 5 }).map((_, idx) => ({
     cells: [
         { columnId: "col-sl-no", rawValue: `${idx + 1}`, computedValue: `${idx + 1}` },
         { columnId: "col-product-name", rawValue: "", computedValue: "" },
+        { columnId: "col-retail-inventory", rawValue: "", computedValue: "" },
         { columnId: "col-composition", rawValue: "", computedValue: "" },
-        { columnId: "col-company-name", rawValue: "", computedValue: "" },
-        { columnId: "col-manufacturer", rawValue: "", computedValue: "" },
-        { columnId: "col-hsn-code", rawValue: "", computedValue: "" },
-        { columnId: "col-retail-inventory", rawValue: "", computedValue: "" }
+        { columnId: "col-company-name", rawValue: "", computedValue: "" }
     ]
 }));
 
@@ -100,6 +147,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
     const [ccManufacturer, setCcManufacturer] = useState('');
     const [ccCompanyName, setCcCompanyName] = useState('');
     const [ccQuantity, setCcQuantity] = useState('');
+    const [ccHsnCode, setCcHsnCode] = useState('');
     const [nestedProductName, setNestedProductName] = useState('');
 
     const [addingMetaField, setAddingMetaField] = useState(null);
@@ -110,7 +158,8 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
         division: [],
         manufacturer: [],
         companyName: [],
-        quantity: []
+        quantity: [],
+        hsnCode: []
     });
 
     const loadMetaOptions = useCallback(async () => {
@@ -121,14 +170,15 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                 division: "divisions",
                 manufacturer: "manufacturers",
                 companyName: "companies",
-                quantity: "quantity-units"
+                quantity: "quantity-units",
+                hsnCode: "hsn-codes"
             };
             const updated = {};
             for (const [field, type] of Object.entries(fieldMapping)) {
                 const res = await invMastersApi.list(type);
                 const list = res.data.data || [];
                 const valField = type === "gst" ? "value" : "name";
-                updated[field] = list.map(item => item[valField]);
+                updated[field] = list.map(item => ({ id: item.id, value: item[valField] }));
             }
             setMetaOptions(updated);
         } catch (error) {
@@ -139,6 +189,50 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
     useEffect(() => {
         loadMetaOptions();
     }, [loadMetaOptions]);
+
+    const handleDeleteMetaOption = async (field, id, value) => {
+        const fieldMapping = {
+            gst: "gst",
+            category: "categories",
+            division: "divisions",
+            manufacturer: "manufacturers",
+            companyName: "companies",
+            quantity: "quantity-units",
+            hsnCode: "hsn-codes"
+        };
+        const type = fieldMapping[field];
+        if (!type) return;
+
+        const result = await Swal.fire({
+            title: "Delete Option?",
+            text: `Are you sure you want to delete "${value}" from options?`,
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonColor: "#ef4444",
+            cancelButtonColor: "#6b7280",
+            confirmButtonText: "Yes, delete it"
+        });
+
+        if (result.isConfirmed) {
+            try {
+                await invMastersApi.delete(type, id || value);
+                await loadMetaOptions();
+
+                if (field === 'gst' && ccGst === value) handleCCMetaChange('gst', '');
+                if (field === 'category' && ccCategory === value) handleCCMetaChange('category', '');
+                if (field === 'division' && ccDivision === value) handleCCMetaChange('division', '');
+                if (field === 'manufacturer' && ccManufacturer === value) handleCCMetaChange('manufacturer', '');
+                if (field === 'companyName' && ccCompanyName === value) handleCCMetaChange('companyName', '');
+                if (field === 'quantity' && ccQuantity === value) handleCCMetaChange('quantity', '');
+                if (field === 'hsnCode' && ccHsnCode === value) handleCCMetaChange('hsnCode', '');
+
+                Swal.fire("Deleted!", `"${value}" has been deleted.`, "success");
+            } catch (error) {
+                console.error("Failed to delete option:", error);
+                Swal.fire("Error", "Failed to delete option.", "error");
+            }
+        }
+    };
 
     const handleAddMetaSubmit = async () => {
         if (!addMetaValue.trim() || !addingMetaField) {
@@ -154,13 +248,14 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
             division: "divisions",
             manufacturer: "manufacturers",
             companyName: "companies",
-            quantity: "quantity-units"
+            quantity: "quantity-units",
+            hsnCode: "hsn-codes"
         };
         const type = fieldMapping[addingMetaField];
 
         try {
             if (type) {
-                await invMastersApi.create(type, { value: newValue });
+                await invMastersApi.add(type, newValue);
                 await loadMetaOptions();
                 await handleCCMetaChange(addingMetaField, newValue);
             }
@@ -192,12 +287,19 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
     const [commentToDeleteId, setCommentToDeleteId] = useState(null);
     const [showEnableRowModal, setShowEnableRowModal] = useState(false);
     const [rowToEnable, setRowToEnable] = useState(null);
+    const [activeQtyDropdown, setActiveQtyDropdown] = useState(null); // Quick Add Quantity dropdown
     const [nestedSheetsMapping, setNestedSheetsMapping] = useState({});
     const [activeNestedSheetId, setActiveNestedSheetId] = useState(null);
     const [isCreatingCC, setIsCreatingCC] = useState(false); // BUG #8: prevent double-click / show loading
     const { cellClipboard, setCellClipboard } = useClipboard();
     const [emojiPickerCell, setEmojiPickerCell] = useState(null); // { rowId, colId }
     const emojiTextareaRefs = useRef({});
+
+    useEffect(() => {
+        const handleClickOutside = () => setActiveQtyDropdown(null);
+        window.addEventListener('click', handleClickOutside);
+        return () => window.removeEventListener('click', handleClickOutside);
+    }, []);
 
     // Helper to safely parse column options
     const parseOptions = (options) => {
@@ -322,7 +424,13 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
             if (isNested) {
                 // Nested sub-spreadsheet (batches / CC View)
                 const cols = defaultCCTemplate;
-                const ccRowsRes = await invSheetsApi.listCcRows(parentSheetId, docName);
+                let ccRows = [];
+                try {
+                    const ccRowsRes = await invSheetsApi.listCcRows(parentSheetId, docName);
+                    ccRows = ccRowsRes.data.data || [];
+                } catch (err) {
+                    console.error("Error fetching ccRows:", err);
+                }
 
                 try {
                     const parentRes = await invSheetsApi.get(parentSheetId);
@@ -337,7 +445,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                 }
                 
                 // Align cells order to defaultCCTemplate
-                const rws = (ccRowsRes.data.data || []).map(ccRow => {
+                const rws = ccRows.map(ccRow => {
                     const cellMap = new Map((ccRow.cells || []).map(c => [c.columnId, c]));
                     const ccCells = cols.map(col => {
                         const existing = cellMap.get(col.id);
@@ -362,8 +470,14 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                 setRows(rws);
 
                 // Load CC master options
-                const ccMetaRes = await invSheetsApi.getCcMeta(parentSheetId, docName);
-                const meta = ccMetaRes.data.data || {};
+                let meta = {};
+                try {
+                    const ccMetaRes = await invSheetsApi.getCcMeta(parentSheetId, docName);
+                    meta = ccMetaRes.data.data || {};
+                } catch (err) {
+                    console.error("Error fetching ccMeta:", err);
+                }
+
                 setCcCategory(meta.category || '');
                 setCcUnit(meta.quantity || '');
                 setCcGst(meta.gst || '');
@@ -371,6 +485,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                 setCcManufacturer(meta.manufacturer || '');
                 setCcCompanyName(meta.companyName || '');
                 setCcQuantity(meta.quantity || '');
+                setCcHsnCode(meta.hsnCode || '');
 
                 setSheetData({
                     id: docName,
@@ -436,6 +551,11 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
         if (field === 'manufacturer') setCcManufacturer(value);
         if (field === 'companyName') setCcCompanyName(value);
         if (field === 'quantity') setCcQuantity(value);
+        if (field === 'hsnCode') setCcHsnCode(value);
+
+        if (parentSheetId && docName) {
+            invSheetsApi.updateCcMeta(docName, { [field]: value }).catch(err => console.error("Failed to update ccMeta:", err));
+        }
     };
 
     // Silent refresh — updates rows/columns without showing loading spinner
@@ -586,7 +706,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
     const fileInputRef = useRef(null);
 
     // Calculate Bar State: { [colId]: 'total' | 'average' | null }
-    const [columnCalcMode, setColumnCalcMode] = useState({});
+    const [columnCalcMode, setColumnCalcMode] = useState({ 'col-cc-quantity-stock': 'total' });
     const [activeCalcDropdown, setActiveCalcDropdown] = useState(null);
     const [focusedCell, setFocusedCell] = useState(null);
 
@@ -1652,18 +1772,48 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                 }
                             };
 
-                            // R Profit = Purchase Rate + R Selling Rate
+                            // R Profit % = ((R Selling Rate - Purchase Rate) / Purchase Rate) * 100
                             if (['col-cc-purchase-rate', 'col-cc-retail-selling-rate'].includes(columnId)) {
                                 const pr = getVal('col-cc-purchase-rate');
                                 const rsl = getVal('col-cc-retail-selling-rate');
-                                setVal('col-cc-retail-profit', pr + rsl);
+                                if (pr > 0) {
+                                    const profit = ((rsl - pr) / pr) * 100;
+                                    setVal('col-cc-retail-profit', profit.toFixed(2));
+                                } else {
+                                    setVal('col-cc-retail-profit', '0');
+                                }
                             }
 
-                            // W Profit = Purchase Rate + W Selling Rate
+                            // W Profit % = ((W Selling Rate - Purchase Rate) / Purchase Rate) * 100
                             if (['col-cc-purchase-rate', 'col-cc-wholesale-selling-rate'].includes(columnId)) {
                                 const pr = getVal('col-cc-purchase-rate');
                                 const wsl = getVal('col-cc-wholesale-selling-rate');
-                                setVal('col-cc-wholesale-profit', pr + wsl);
+                                if (pr > 0) {
+                                    const profit = ((wsl - pr) / pr) * 100;
+                                    setVal('col-cc-wholesale-profit', profit.toFixed(2));
+                                } else {
+                                    setVal('col-cc-wholesale-profit', '0');
+                                }
+                            }
+
+                            // Discount % = ((MRP - R Selling Rate) / MRP) * 100
+                            if (['col-cc-mrp', 'col-cc-retail-selling-rate'].includes(columnId)) {
+                                const mrp = getVal('col-cc-mrp');
+                                const rsl = getVal('col-cc-retail-selling-rate');
+                                if (mrp > 0) {
+                                    const disc = ((mrp - rsl) / mrp) * 100;
+                                    setVal('col-cc-discount', disc > 0 ? disc.toFixed(2) : '0');
+                                }
+                            }
+
+                            // Margin % = ((MRP - W Selling Rate) / MRP) * 100
+                            if (['col-cc-mrp', 'col-cc-wholesale-selling-rate'].includes(columnId)) {
+                                const mrp = getVal('col-cc-mrp');
+                                const wsl = getVal('col-cc-wholesale-selling-rate');
+                                if (mrp > 0) {
+                                    const margin = ((mrp - wsl) / mrp) * 100;
+                                    setVal('col-cc-wholesale-margin', margin > 0 ? margin.toFixed(2) : '0');
+                                }
                             }
 
                             // Status = Stock Available / Low Stock / Out of Stock
@@ -2256,8 +2406,8 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                         </div>
                         <div className="flex flex-col">
                             <div className="flex items-center gap-2 group">
-                                <h3 className="text-xl font-bold text-gray-800">
-                                    {sheetData?.name || "Row Detail Sub-Sheet"}
+                                <h3 className="text-xl font-bold text-gray-900 uppercase tracking-wide">
+                                    {nestedProductName || sheetData?.name || "Product Sub-Spreadsheet"}
                                 </h3>
                                 {(sheetData?.userPermission === 'admin' || sheetData?.userPermission === 'editor') && (
                                     <button
@@ -2273,8 +2423,8 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                     </button>
                                 )}
                             </div>
-                            <span className="text-[10px] text-gray-400 uppercase font-medium tracking-wider mb-2">
-                                {nestedProductName ? `Product: ${nestedProductName}` : "Sub-Spreadsheet View"}
+                            <span className="text-xs text-gray-500 font-medium tracking-wide mt-0.5 mb-2">
+                                Sub-Spreadsheet View
                             </span>
                             
                             {/* Meta Inputs moved here below the name section */}
@@ -2290,7 +2440,13 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                                         placeholder="Select GST..."
                                                         value={ccGst ? { label: ccGst, value: ccGst } : null}
                                                         onChange={(newValue) => handleCCMetaChange('gst', newValue ? newValue.value : '')}
-                                                        options={metaOptions.gst.map(opt => ({ label: opt, value: opt }))}
+                                                        options={(metaOptions.gst || []).map(opt => ({
+                                                            label: typeof opt === 'object' ? opt.value : opt,
+                                                            value: typeof opt === 'object' ? opt.value : opt,
+                                                            id: typeof opt === 'object' ? opt.id : null,
+                                                            onDelete: (id, val) => handleDeleteMetaOption('gst', id, val)
+                                                        }))}
+                                                        components={{ Option: CustomSelectOption }}
                                                         className="text-sm w-full"
                                                         menuPortalTarget={document.body}
                                                         styles={{
@@ -2319,7 +2475,13 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                                         placeholder="Select Category..."
                                                         value={ccCategory ? { label: ccCategory, value: ccCategory } : null}
                                                         onChange={(newValue) => handleCCMetaChange('category', newValue ? newValue.value : '')}
-                                                        options={metaOptions.category.map(opt => ({ label: opt, value: opt }))}
+                                                        options={(metaOptions.category || []).map(opt => ({
+                                                            label: typeof opt === 'object' ? opt.value : opt,
+                                                            value: typeof opt === 'object' ? opt.value : opt,
+                                                            id: typeof opt === 'object' ? opt.id : null,
+                                                            onDelete: (id, val) => handleDeleteMetaOption('category', id, val)
+                                                        }))}
+                                                        components={{ Option: CustomSelectOption }}
                                                         className="text-sm w-full"
                                                         menuPortalTarget={document.body}
                                                         styles={{
@@ -2348,7 +2510,13 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                                         placeholder="Select Division..."
                                                         value={ccDivision ? { label: ccDivision, value: ccDivision } : null}
                                                         onChange={(newValue) => handleCCMetaChange('division', newValue ? newValue.value : '')}
-                                                        options={metaOptions.division.map(opt => ({ label: opt, value: opt }))}
+                                                        options={(metaOptions.division || []).map(opt => ({
+                                                            label: typeof opt === 'object' ? opt.value : opt,
+                                                            value: typeof opt === 'object' ? opt.value : opt,
+                                                            id: typeof opt === 'object' ? opt.id : null,
+                                                            onDelete: (id, val) => handleDeleteMetaOption('division', id, val)
+                                                        }))}
+                                                        components={{ Option: CustomSelectOption }}
                                                         className="text-sm w-full"
                                                         menuPortalTarget={document.body}
                                                         styles={{
@@ -2377,7 +2545,13 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                                         placeholder="Select Manufacturer..."
                                                         value={ccManufacturer ? { label: ccManufacturer, value: ccManufacturer } : null}
                                                         onChange={(newValue) => handleCCMetaChange('manufacturer', newValue ? newValue.value : '')}
-                                                        options={metaOptions.manufacturer.map(opt => ({ label: opt, value: opt }))}
+                                                        options={(metaOptions.manufacturer || []).map(opt => ({
+                                                            label: typeof opt === 'object' ? opt.value : opt,
+                                                            value: typeof opt === 'object' ? opt.value : opt,
+                                                            id: typeof opt === 'object' ? opt.id : null,
+                                                            onDelete: (id, val) => handleDeleteMetaOption('manufacturer', id, val)
+                                                        }))}
+                                                        components={{ Option: CustomSelectOption }}
                                                         className="text-sm w-full"
                                                         menuPortalTarget={document.body}
                                                         styles={{
@@ -2406,7 +2580,13 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                                         placeholder="Select Company..."
                                                         value={ccCompanyName ? { label: ccCompanyName, value: ccCompanyName } : null}
                                                         onChange={(newValue) => handleCCMetaChange('companyName', newValue ? newValue.value : '')}
-                                                        options={metaOptions.companyName.map(opt => ({ label: opt, value: opt }))}
+                                                        options={(metaOptions.companyName || []).map(opt => ({
+                                                            label: typeof opt === 'object' ? opt.value : opt,
+                                                            value: typeof opt === 'object' ? opt.value : opt,
+                                                            id: typeof opt === 'object' ? opt.id : null,
+                                                            onDelete: (id, val) => handleDeleteMetaOption('companyName', id, val)
+                                                        }))}
+                                                        components={{ Option: CustomSelectOption }}
                                                         className="text-sm w-full"
                                                         menuPortalTarget={document.body}
                                                         styles={{
@@ -2435,7 +2615,13 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                                         placeholder="Select Quantity..."
                                                         value={ccQuantity ? { label: ccQuantity, value: ccQuantity } : null}
                                                         onChange={(newValue) => handleCCMetaChange('quantity', newValue ? newValue.value : '')}
-                                                        options={metaOptions.quantity.map(opt => ({ label: opt, value: opt }))}
+                                                        options={(metaOptions.quantity || []).map(opt => ({
+                                                            label: typeof opt === 'object' ? opt.value : opt,
+                                                            value: typeof opt === 'object' ? opt.value : opt,
+                                                            id: typeof opt === 'object' ? opt.id : null,
+                                                            onDelete: (id, val) => handleDeleteMetaOption('quantity', id, val)
+                                                        }))}
+                                                        components={{ Option: CustomSelectOption }}
                                                         className="text-sm w-full"
                                                         menuPortalTarget={document.body}
                                                         styles={{
@@ -2451,6 +2637,41 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                                     />
                                                 </div>
                                                 <button onClick={() => setAddingMetaField('quantity')} title="Add Quantity" className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors shrink-0">
+                                                    <FiPlus className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <label className="text-sm text-gray-600 font-medium w-24 shrink-0">HSN Code:</label>
+                                            <div className="flex flex-1 items-center gap-1">
+                                                <div className="flex-1 min-w-0">
+                                                    <Select
+                                                        isClearable
+                                                        placeholder="Select HSN Code..."
+                                                        value={ccHsnCode ? { label: ccHsnCode, value: ccHsnCode } : null}
+                                                        onChange={(newValue) => handleCCMetaChange('hsnCode', newValue ? newValue.value : '')}
+                                                        options={(metaOptions.hsnCode || []).map(opt => ({
+                                                            label: typeof opt === 'object' ? opt.value : opt,
+                                                            value: typeof opt === 'object' ? opt.value : opt,
+                                                            id: typeof opt === 'object' ? opt.id : null,
+                                                            onDelete: (id, val) => handleDeleteMetaOption('hsnCode', id, val)
+                                                        }))}
+                                                        components={{ Option: CustomSelectOption }}
+                                                        className="text-sm w-full"
+                                                        menuPortalTarget={document.body}
+                                                        styles={{
+                                                            control: (base) => ({
+                                                                ...base,
+                                                                borderColor: '#d1d5db',
+                                                                '&:hover': { borderColor: '#9ca3af' },
+                                                                minHeight: '38px',
+                                                                boxShadow: 'none'
+                                                            }),
+                                                            menuPortal: (base) => ({ ...base, zIndex: 9999 })
+                                                        }}
+                                                    />
+                                                </div>
+                                                <button onClick={() => setAddingMetaField('hsnCode')} title="Add HSN Code" className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors shrink-0">
                                                     <FiPlus className="w-4 h-4" />
                                                 </button>
                                             </div>
@@ -2674,11 +2895,11 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                 <table className="w-max text-left border-collapse bg-white table-fixed relative">
                     <thead>
                         <tr className="bg-white sticky top-0 z-20 shadow-[0_1px_0_#9ca3af]">
-                            <th className="w-12 min-w-12 border-b border-r border-gray-400 text-center py-2 text-gray-400 font-normal sticky left-0 bg-white z-30"></th>
-                            {columns.map(col => (
+                            <th className="w-12 min-w-12 border-b border-r-2 border-slate-300 text-center py-2 text-gray-400 font-normal sticky left-0 bg-white z-30"></th>
+                            {columns.map((col, colIdx) => (
                                 <th
                                     key={col.id}
-                                    className={`border-b border-r border-gray-400 py-2 px-3 text-xs font-bold transition-colors relative group select-none ${resizingCol === col.id ? 'bg-blue-50/20' : (!col.bgColor ? 'bg-white hover:bg-gray-50 text-gray-800' : 'text-gray-800')}`}
+                                    className={`border-b ${getColumnBorderClass(colIdx)} py-2 px-3 text-xs font-bold transition-colors relative group select-none ${resizingCol === col.id ? 'bg-blue-50/20' : (!col.bgColor ? 'bg-white hover:bg-gray-50 text-gray-800' : 'text-gray-800')}`}
                                     style={{ width: col.width || 220, minWidth: col.width || 220, backgroundColor: col.bgColor || undefined }}
                                 >
                                     {/* Resize handle */}
@@ -2708,7 +2929,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                     >
                                         <div className="flex items-center gap-2 overflow-hidden flex-1 lg:opacity-80 lg:group-hover:opacity-100 opacity-100 transition-opacity">
                                             {renderColumnIcon(col.type)}
-                                            <span className={`whitespace-pre-wrap break-all font-bold transition-colors ${col.permission !== 'view' ? 'group-hover:text-blue-600 cursor-pointer' : 'cursor-default'}`}>{col.name}</span>
+                                            <span className={`whitespace-pre-wrap break-all font-bold transition-colors ${col.permission !== 'view' ? 'group-hover:text-blue-600 cursor-pointer' : 'cursor-default'}`}>{(col.id === 'col-cc-quantity-stock' || (isNested && col.name === 'No')) ? 'Qty' : col.name}</span>
                                         </div>
                                         <div className="flex items-center gap-1 shrink-0">
                                             {col.permission !== 'view' && (
@@ -2789,13 +3010,13 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                         style={{ backgroundColor: computedRowBg || 'transparent' }}
                                     >
                                         <td
-                                            className={`relative border-b border-r border-gray-400 text-center py-2 text-[13px] text-gray-500 group-hover:bg-gray-100/50 transition-colors w-12 sticky left-0 z-10 min-w-12 font-medium ${!computedRowBg ? 'bg-gray-50/50' : ''} ${activeRowMenu?.rowIndex === index ? 'bg-blue-100' : ''}`}
+                                            className={`relative border-b border-r-2 border-slate-300 text-center py-2 text-[13px] text-gray-500 group-hover:bg-gray-100/50 transition-colors w-12 sticky left-0 z-10 min-w-12 font-medium ${!computedRowBg ? 'bg-gray-50/50' : ''} ${activeRowMenu?.rowIndex === index ? 'bg-blue-100' : ''}`}
                                             onContextMenu={(e) => handleRowContextMenu(e, index)}
                                             onClick={(e) => handleRowContextMenu(e, index)}
                                         >
                                             <span className="cursor-pointer">{index + 1}</span>
                                          </td>
-                                        {columns.map((col) => {
+                                        {columns.map((col, colIdx) => {
                                             const cell = row.cells?.find(c => c.columnId === col.id);
                                             const isFormula = col.type === 'formula';
                                             const val = isFormula
@@ -2826,10 +3047,30 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                             if ((col.type === 'currency' || isCurrencyFormula) && val !== '' && !isNaN(val)) {
                                                 displayVal = isFocused ? val : (col.type === 'currency' && cell?.formattedValue ? cell.formattedValue : formatCurrency(val, col.type === 'currency' ? col.currencyCode : formulaCurrencyCode));
                                             } else if (col.type === 'date' && val) {
-                                                const d = new Date(val + 'T00:00:00');
-                                                displayVal = isFocused
-                                                    ? val
-                                                    : (isNaN(d.getTime()) ? val : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }));
+                                                if (col.id === 'col-cc-expiry-date' || (isNested && col.name?.toLowerCase().includes('expiry'))) {
+                                                    const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+                                                    let mNum = null;
+                                                    let yNum = null;
+                                                    const parts = String(val).split('-');
+                                                    if (parts.length === 2) {
+                                                        if (parts[0].length === 4) { yNum = parts[0]; mNum = parseInt(parts[1], 10); }
+                                                        else { mNum = parseInt(parts[0], 10); yNum = parts[1]; }
+                                                    } else if (parts.length === 3) {
+                                                        if (parts[0].length === 4) { yNum = parts[0]; mNum = parseInt(parts[1], 10); }
+                                                        else { mNum = parseInt(parts[1], 10); yNum = parts[2]; }
+                                                    } else {
+                                                        const d = new Date(val);
+                                                        if (!isNaN(d.getTime())) { mNum = d.getMonth() + 1; yNum = d.getFullYear(); }
+                                                    }
+                                                    if (mNum >= 1 && mNum <= 12 && yNum) {
+                                                        displayVal = `${MONTH_NAMES[mNum - 1]} (${mNum}) ${yNum}`;
+                                                    }
+                                                } else {
+                                                    const d = new Date(val + 'T00:00:00');
+                                                    displayVal = isFocused
+                                                        ? val
+                                                        : (isNaN(d.getTime()) ? val : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }));
+                                                }
                                             } else if (col.type === 'time' && val) {
                                                 // Show formatted "H:MM AM/PM" when not focused
                                                 if (!isFocused) {
@@ -2848,7 +3089,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                             return (
                                                 <td
                                                     key={col.id}
-                                                    className={`border-b border-r border-gray-400 p-0 relative min-h-9 h-auto ${resizingCol === col.id ? 'bg-blue-50/10' : ''} ${activeCellMenu?.rowIndex === index && activeCellMenu?.colId === col.id ? 'ring-2 ring-blue-500 z-10 bg-blue-50/10' : ''}`}
+                                                    className={`border-b ${getColumnBorderClass(colIdx)} p-0 relative min-h-9 h-auto ${resizingCol === col.id ? 'bg-blue-50/10' : ''} ${activeCellMenu?.rowIndex === index && activeCellMenu?.colId === col.id ? 'ring-2 ring-blue-500 z-10 bg-blue-50/10' : ''}`}
                                                     style={{
                                                         width: col.width || 220,
                                                         minWidth: col.width || 220,
@@ -3001,31 +3242,171 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                                                  <FiChevronDown className="w-4 h-4" />
                                                              </div>
                                                          </div>
-                                                    ) : col.type === 'date' ? (
-                                                        <div className="min-h-9 flex items-center w-full relative">
-                                                            <input
-                                                                type="date"
-                                                                key={`date-${row.id}-${col.id}-${val}`}
-                                                                defaultValue={val || ''}
-                                                                onFocus={() => setFocusedCell({ rowId: row.id, colId: col.id })}
-                                                                onBlur={(e) => {
-                                                                    setFocusedCell(null);
-                                                                    if (e.target.value !== val) {
-                                                                        handleCellChange(row.id, col.id, e.target.value);
-                                                                    }
-                                                                }}
-                                                                readOnly={isReadOnly}
-                                                                className={`w-full pl-3 ${(nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-7' : 'pr-3'} py-1.5 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 ${isReadOnly ? 'cursor-default bg-gray-50/30' : 'cursor-text'} ${getCellFormattingClasses(cell, row, col)}`}
-                                                            />
-                                                        </div>
-                                                    ) : col.type === 'time' ? (
-                                                        <div className="min-h-9 flex items-center w-full relative">
-                                                            {isFocused ? (
-                                                                /* When focused: native time picker for editing */
+                                                     ) : (col.id === 'col-cc-quantity-stock' || (isNested && (col.name?.toLowerCase() === 'no' || col.name?.toLowerCase() === 'qty' || col.name?.toLowerCase() === 'quantity'))) ? (
+                                                         <div className="min-h-9 flex items-center justify-between w-full px-2 relative group/qty">
+                                                             <input
+                                                                 type="number"
+                                                                 min="0"
+                                                                 key={`qty-${row.id}-${col.id}-${val}`}
+                                                                 defaultValue={val || 0}
+                                                                 onFocus={() => setFocusedCell({ rowId: row.id, colId: col.id })}
+                                                                 onBlur={(e) => {
+                                                                     setFocusedCell(null);
+                                                                     const newNum = parseFloat(e.target.value);
+                                                                     if (!isNaN(newNum) && newNum !== parseFloat(val || 0)) {
+                                                                         handleCellChange(row.id, col.id, newNum);
+                                                                     }
+                                                                 }}
+                                                                 readOnly={isReadOnly}
+                                                                 className={`w-full text-right font-bold text-gray-800 bg-transparent outline-none focus:ring-1 focus:ring-blue-500 rounded px-1 text-[13px] ${isReadOnly ? 'cursor-default' : ''}`}
+                                                             />
+                                                             {!isReadOnly && (
+                                                                 <div className="relative shrink-0 ml-1">
+                                                                     <button
+                                                                         type="button"
+                                                                         onClick={(e) => {
+                                                                             e.stopPropagation();
+                                                                             setActiveQtyDropdown(activeQtyDropdown === `${row.id}_${col.id}` ? null : `${row.id}_${col.id}`);
+                                                                         }}
+                                                                         className="p-1 text-xs bg-blue-50 hover:bg-blue-100 text-blue-600 rounded flex items-center gap-0.5 border border-blue-200 transition-colors shadow-xs"
+                                                                         title="Quick Add Stock Dropdown (+ Qty)"
+                                                                     >
+                                                                         <FiPlus className="w-3 h-3" />
+                                                                         <FiChevronDown className="w-3 h-3" />
+                                                                     </button>
+
+                                                                     {activeQtyDropdown === `${row.id}_${col.id}` && (
+                                                                         <div
+                                                                             className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-xl shadow-xl p-3 w-48 text-left animate-fade-in"
+                                                                             onClick={(e) => e.stopPropagation()}
+                                                                         >
+                                                                             <div className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">
+                                                                                 Add Stock (+ Qty)
+                                                                             </div>
+
+                                                                             {/* Presets */}
+                                                                             <div className="grid grid-cols-3 gap-1.5 mb-2.5">
+                                                                                 {[1, 5, 10, 50, 100, 500].map(addNum => (
+                                                                                     <button
+                                                                                         key={addNum}
+                                                                                         type="button"
+                                                                                         onClick={() => {
+                                                                                             const currentVal = parseFloat(val || 0);
+                                                                                             handleCellChange(row.id, col.id, currentVal + addNum);
+                                                                                             setActiveQtyDropdown(null);
+                                                                                         }}
+                                                                                         className="py-1 px-1.5 bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-700 font-semibold text-xs rounded-md transition-colors text-center border border-blue-100"
+                                                                                     >
+                                                                                         +{addNum}
+                                                                                     </button>
+                                                                                 ))}
+                                                                             </div>
+
+                                                                             {/* Custom Add Amount Input */}
+                                                                             <div className="pt-2 border-t border-gray-100 flex items-center gap-1.5">
+                                                                                 <span className="text-xs font-bold text-gray-600">+</span>
+                                                                                 <input
+                                                                                     type="number"
+                                                                                     min="1"
+                                                                                     placeholder="Qty"
+                                                                                     id={`custom-qty-add-${row.id}`}
+                                                                                     className="w-full px-2 py-1 border border-gray-300 rounded text-xs outline-none focus:border-blue-500 font-medium"
+                                                                                     onKeyDown={(e) => {
+                                                                                         if (e.key === 'Enter') {
+                                                                                             const addVal = parseFloat(e.currentTarget.value);
+                                                                                             if (!isNaN(addVal) && addVal > 0) {
+                                                                                                 const currentVal = parseFloat(val || 0);
+                                                                                                 handleCellChange(row.id, col.id, currentVal + addVal);
+                                                                                                 setActiveQtyDropdown(null);
+                                                                                             }
+                                                                                         }
+                                                                                     }}
+                                                                                 />
+                                                                                 <button
+                                                                                     type="button"
+                                                                                     onClick={() => {
+                                                                                         const inputEl = document.getElementById(`custom-qty-add-${row.id}`);
+                                                                                         const addVal = parseFloat(inputEl?.value);
+                                                                                         if (!isNaN(addVal) && addVal > 0) {
+                                                                                             const currentVal = parseFloat(val || 0);
+                                                                                             handleCellChange(row.id, col.id, currentVal + addVal);
+                                                                                             setActiveQtyDropdown(null);
+                                                                                         }
+                                                                                     }}
+                                                                                     className="px-2 py-1 bg-indigo-600 text-white rounded text-xs font-semibold hover:bg-indigo-700 transition-colors shrink-0"
+                                                                                 >
+                                                                                     Add
+                                                                                 </button>
+                                                                             </div>
+                                                                         </div>
+                                                                     )}
+                                                                 </div>
+                                                             )}
+                                                         </div>
+                                                     ) : (col.id === 'col-cc-status' || (isNested && col.name?.toLowerCase().includes('status'))) ? (
+                                                         <div className="min-h-9 flex items-center px-3 w-full">
+                                                             {(() => {
+                                                                 const statusStr = String(displayVal || '').trim();
+                                                                 const lower = statusStr.toLowerCase();
+                                                                 if (lower === 'out of stock' || lower.includes('out') || lower.includes('empty')) {
+                                                                     return (
+                                                                         <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-red-100 text-red-700 border border-red-200 inline-flex items-center gap-1.5 shadow-xs">
+                                                                             <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
+                                                                             Out of Stock
+                                                                         </span>
+                                                                     );
+                                                                 } else if (lower === 'low stock' || lower.includes('low')) {
+                                                                     return (
+                                                                         <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-700 border border-amber-200 inline-flex items-center gap-1.5 shadow-xs">
+                                                                             <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                                                             Low Stock
+                                                                         </span>
+                                                                     );
+                                                                 } else if (lower === 'stock available' || lower.includes('available') || lower.includes('in stock')) {
+                                                                     return (
+                                                                         <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1.5 shadow-xs">
+                                                                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                                                             Stock Available
+                                                                         </span>
+                                                                     );
+                                                                 } else {
+                                                                     return (
+                                                                         <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-gray-100 text-gray-700 border border-gray-200 inline-flex items-center gap-1.5">
+                                                                             {displayVal || 'N/A'}
+                                                                         </span>
+                                                                     );
+                                                                 }
+                                                             })()}
+                                                         </div>
+                                                     ) : col.type === 'date' ? (
+                                                         <div className="min-h-9 flex items-center w-full relative">
+                                                             <input
+                                                                 type={(col.id === 'col-cc-expiry-date' || (isNested && col.name?.toLowerCase().includes('expiry'))) ? "month" : "date"}
+                                                                 key={`date-${row.id}-${col.id}-${val}`}
+                                                                 value={
+                                                                     (col.id === 'col-cc-expiry-date' || (isNested && col.name?.toLowerCase().includes('expiry')))
+                                                                         ? (val ? (val.split('-').length === 2 && val.split('-')[0].length === 4 ? val : (val.split('-')[0].length === 4 ? `${val.split('-')[0]}-${val.split('-')[1].padStart(2, '0')}` : `${val.split('-')[2]}-${val.split('-')[1].padStart(2, '0')}`)) : '')
+                                                                         : (val || '')
+                                                                 }
+                                                                 onChange={(e) => {
+                                                                     const newVal = e.target.value;
+                                                                     if (newVal !== val) {
+                                                                         handleCellChange(row.id, col.id, newVal);
+                                                                     }
+                                                                 }}
+                                                                 onFocus={() => setFocusedCell({ rowId: row.id, colId: col.id })}
+                                                                 onBlur={() => setFocusedCell(null)}
+                                                                 readOnly={isReadOnly}
+                                                                 className={`w-full pl-3 ${(nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-7' : 'pr-3'} py-1.5 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 ${isReadOnly ? 'cursor-default bg-gray-50/30' : 'cursor-text'} ${getCellFormattingClasses(cell, row, col)}`}
+                                                             />
+                                                         </div>
+                                                     ) : col.type === 'time' ? (
+                                                         <div className="min-h-9 flex items-center w-full relative">
+                                                             {isFocused ? (
                                                                 <input
                                                                     type="time"
-                                                                    autoFocus
                                                                     defaultValue={val || ''}
+                                                                    onFocus={() => setFocusedCell({ rowId: row.id, colId: col.id })}
                                                                     onBlur={(e) => {
                                                                         setFocusedCell(null);
                                                                         if (e.target.value !== val) {
@@ -3123,14 +3504,14 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                         <tr className="h-10">
                             <td
                                 onClick={handleAddRow}
-                                className="w-12 min-w-12 border-r border-gray-400 bg-[#475569] hover:bg-[#334155] transition-colors p-0 sticky left-0 z-30 cursor-pointer"
+                                className="w-12 min-w-12 border-r-2 border-slate-300 bg-[#475569] hover:bg-[#334155] transition-colors p-0 sticky left-0 z-30 cursor-pointer"
                                 title="Add Row"
                             >
                                 <div className="flex items-center justify-center w-full h-full">
                                     <FiPlus className="w-4 h-4 text-white" />
                                 </div>
                             </td>
-                            {columns.map((col) => {
+                            {columns.map((col, colIdx) => {
                                 const mode = columnCalcMode[col.id];
                                 const calcValue = mode ? getColumnCalcValue(col.id, mode) : null;
                                 const isNonCalcType = col.type === 'text' || col.type === 'multi_image' || col.type === 'comment' || col.type === 'image' || col.type === 'pdf' || col.type === 'date' || col.type === 'time';
@@ -3138,7 +3519,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                 return (
                                     <td
                                         key={col.id}
-                                        className={`border-r border-gray-400 bg-[#f8fafc] relative p-0 ${resizingCol === col.id ? 'bg-blue-50/20' : ''}`}
+                                        className={`${getColumnBorderClass(colIdx)} bg-[#f8fafc] relative p-0 ${resizingCol === col.id ? 'bg-blue-50/20' : ''}`}
                                     >
                                         {isNonCalcType ? null : mode ? (
                                             /* Show calculated value */
@@ -4539,7 +4920,15 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                 <div className="fixed inset-0 z-[600] flex items-center justify-center bg-black/50">
                     <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-                            <h3 className="text-lg font-bold text-gray-800">Add New {addingMetaField === 'companyName' ? 'Company' : addingMetaField.charAt(0).toUpperCase() + addingMetaField.slice(1)}</h3>
+                            <h3 className="text-lg font-bold text-gray-800">
+                                Add New {
+                                    addingMetaField === 'companyName' ? 'Company' :
+                                    addingMetaField === 'hsnCode' ? 'HSN Code' :
+                                    addingMetaField === 'gst' ? 'GST Option' :
+                                    addingMetaField === 'quantity' ? 'Quantity Unit' :
+                                    addingMetaField.charAt(0).toUpperCase() + addingMetaField.slice(1)
+                                }
+                            </h3>
                             <button
                                 onClick={() => {
                                     setAddingMetaField(null);
@@ -4560,7 +4949,13 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                     if (e.key === 'Enter') handleAddMetaSubmit();
                                 }}
                                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                placeholder={`Enter new ${addingMetaField === 'companyName' ? 'Company' : addingMetaField}...`}
+                                placeholder={`Enter new ${
+                                    addingMetaField === 'companyName' ? 'Company' :
+                                    addingMetaField === 'hsnCode' ? 'HSN Code' :
+                                    addingMetaField === 'gst' ? 'GST Option' :
+                                    addingMetaField === 'quantity' ? 'Quantity Unit' :
+                                    addingMetaField
+                                }...`}
                             />
                         </div>
                         <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50">

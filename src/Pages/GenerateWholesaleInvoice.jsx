@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FiMenu, FiArrowLeft, FiPlus, FiTrash2, FiPrinter, FiCheckCircle, FiSearch } from 'react-icons/fi';
+import { FiMenu, FiArrowLeft, FiPlus, FiTrash2, FiPrinter, FiCheckCircle, FiSearch, FiX, FiChevronDown, FiChevronUp } from 'react-icons/fi';
 import AddWholesalePartyModal from '../Components/AddWholesalePartyModal';
 import SelectMedicineModal from '../Components/SelectMedicineModal';
 import PharmaInvoiceModal from '../Components/PharmaInvoiceModal';
@@ -26,6 +26,18 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
     const [combinedUpiAmount, setCombinedUpiAmount] = useState('');
     const [combinedCashAmount, setCombinedCashAmount] = useState('');
     const [partialAmount, setPartialAmount] = useState('');
+    const [gstRate, setGstRate] = useState(5);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+
+    // Additional Charges state
+    const [additionalCharges, setAdditionalCharges] = useState([
+        { id: 1, name: 'Other Charges', amount: 0, gstRate: 18 }
+    ]);
+    const [discountPercent, setDiscountPercent] = useState('0');
+    const [discountAmount, setDiscountAmount] = useState('0');
+    const [roundOffType, setRoundOffType] = useState('+');
+    const [roundOffValue, setRoundOffValue] = useState(0);
+    const [isChargesExpanded, setIsChargesExpanded] = useState(true);
 
     // Line items state
     const [items, setItems] = useState([
@@ -125,9 +137,7 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
     };
 
     const handleRemoveItem = (id) => {
-        if (items.length > 1) {
-            setItems(items.filter(item => item.id !== id));
-        }
+        setItems(items.filter(item => item.id !== id));
     };
 
     const handleItemChange = (id, field, value) => {
@@ -140,9 +150,16 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
         }));
     };
 
-    const subtotal = items.reduce((acc, item) => acc + (item.qty * item.price), 0);
-    const taxAmount = subtotal * 0.05; // 5% GST estimate
-    const grandTotal = subtotal + taxAmount;
+    const itemSubtotal = items.reduce((acc, item) => acc + (item.qty * item.price), 0);
+    const taxAmount = itemSubtotal * (gstRate / 100);
+    const taxableSubtotal = Math.max(0, itemSubtotal - taxAmount);
+    const subtotal = taxableSubtotal;
+    const totalAdditionalCharges = additionalCharges.reduce((acc, chg) => acc + (Number(chg.amount) || 0), 0);
+    const subtotalWithCharges = taxableSubtotal + totalAdditionalCharges;
+    const effectiveDiscount = Number(discountAmount) || 0;
+    const roundOffSign = roundOffType === '-' ? -1 : 1;
+    const effectiveRoundOff = (Number(roundOffValue) || 0) * roundOffSign;
+    const grandTotal = Math.max(0, subtotalWithCharges - effectiveDiscount + effectiveRoundOff);
 
     const handleGenerateInvoice = async (e) => {
         e.preventDefault();
@@ -166,8 +183,10 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
             partyName: selectedParty?.name || '',
             invoiceDate,
             items: validItems,
-            subtotal,
+            itemSubtotal,
+            subtotal: taxableSubtotal,
             taxAmount,
+            gstRate,
             grandTotal,
             paymentMethod,
             paymentStatus,
@@ -269,9 +288,50 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
                                         type="text"
                                         placeholder="Search party by name, contact or registration no..."
                                         value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        onChange={(e) => {
+                                            setSearchQuery(e.target.value);
+                                            setShowSuggestions(true);
+                                        }}
+                                        onFocus={() => setShowSuggestions(true)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && filteredParties.length > 0) {
+                                                e.preventDefault();
+                                                setSelectedPartyId(filteredParties[0].id);
+                                                setSearchQuery(filteredParties[0].name);
+                                                setShowSuggestions(false);
+                                            }
+                                        }}
                                         className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
                                     />
+
+                                    {/* Auto-suggestions Dropdown */}
+                                    {showSuggestions && searchQuery.trim() !== '' && (
+                                        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-30 max-h-60 overflow-y-auto">
+                                            {filteredParties.length > 0 ? (
+                                                filteredParties.map(party => (
+                                                    <div
+                                                        key={party.id}
+                                                        onClick={() => {
+                                                            setSelectedPartyId(party.id);
+                                                            setSearchQuery(party.name);
+                                                            setShowSuggestions(false);
+                                                        }}
+                                                        className="px-4 py-2.5 hover:bg-indigo-50 cursor-pointer text-sm border-b border-gray-100 last:border-0 flex justify-between items-center transition-colors"
+                                                    >
+                                                        <div>
+                                                            <span className="font-semibold text-gray-900">{party.name}</span>
+                                                            <div className="text-xs text-gray-500">{party.contact} {party.registrationNo ? `• Reg: ${party.registrationNo}` : ''}</div>
+                                                        </div>
+                                                        <span className="text-xs text-indigo-600 font-semibold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">Select</span>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <div className="px-4 py-3 text-sm text-gray-500 text-center">
+                                                    No party found matching "{searchQuery}"
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div>
@@ -410,52 +470,67 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200 text-sm">
-                                    {items.map((item, index) => (
-                                        <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
-                                            <td className="px-6 py-3 text-gray-400 font-mono text-xs">{index + 1}</td>
-                                            <td className="px-6 py-3 font-medium text-gray-900">
-                                                {item.description || <span className="text-gray-400 italic">Select item...</span>}
-                                            </td>
-                                            <td className="px-6 py-3">
-                                                <select
-                                                    value={item.batch || ''}
-                                                    onChange={(e) => handleItemChange(item.id, 'batch', e.target.value)}
-                                                    className="w-full px-2 py-1.5 bg-white border border-gray-300 text-gray-700 font-mono text-xs rounded focus:ring-2 focus:ring-indigo-500 outline-none appearance-none"
-                                                >
-                                                    <option value={item.batch}>{item.batch || 'N/A'}</option>
-                                                    {item.batch && <option value={`${item.batch}-B2`}>{item.batch}-B2</option>}
-                                                    {item.batch && <option value={`${item.batch}-B3`}>{item.batch}-B3</option>}
-                                                </select>
-                                            </td>
-                                            <td className="px-6 py-3">
-                                                <input
-                                                    type="number"
-                                                    required
-                                                    min="1"
-                                                    value={item.qty}
-                                                    onChange={(e) => handleItemChange(item.id, 'qty', e.target.value)}
-                                                    className="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                                                />
-                                            </td>
-                                            <td className="px-6 py-3 font-medium text-gray-700">
-                                                ₹{item.price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                            </td>
-                                            <td className="px-6 py-3 text-right font-semibold text-gray-900">
-                                                ₹{(item.qty * item.price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                            </td>
-                                            <td className="px-6 py-3 text-center">
+                                    {items.length === 0 ? (
+                                        <tr>
+                                            <td colSpan="7" className="px-6 py-8 text-center text-gray-400">
+                                                No items added yet.{' '}
                                                 <button
                                                     type="button"
-                                                    onClick={() => handleRemoveItem(item.id)}
-                                                    disabled={items.length === 1}
-                                                    className={`p-1.5 rounded transition-colors ${items.length === 1 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-400 hover:text-red-600 hover:bg-red-50'}`}
-                                                    title="Delete row"
+                                                    onClick={handleAddItem}
+                                                    className="font-semibold text-indigo-600 hover:underline"
                                                 >
-                                                    <FiTrash2 size={16} />
-                                                </button>
+                                                    Click + Add Item
+                                                </button>{' '}
+                                                to select medicines for this invoice.
                                             </td>
                                         </tr>
-                                    ))}
+                                    ) : (
+                                        items.map((item, index) => (
+                                            <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
+                                                <td className="px-6 py-3 text-gray-400 font-mono text-xs">{index + 1}</td>
+                                                <td className="px-6 py-3 font-medium text-gray-900">
+                                                    {item.description || <span className="text-gray-400 italic">Select item...</span>}
+                                                </td>
+                                                <td className="px-6 py-3">
+                                                    <select
+                                                        value={item.batch || ''}
+                                                        onChange={(e) => handleItemChange(item.id, 'batch', e.target.value)}
+                                                        className="w-full px-2 py-1.5 bg-white border border-gray-300 text-gray-700 font-mono text-xs rounded focus:ring-2 focus:ring-indigo-500 outline-none appearance-none"
+                                                    >
+                                                        <option value={item.batch}>{item.batch || 'N/A'}</option>
+                                                        {item.batch && <option value={`${item.batch}-B2`}>{item.batch}-B2</option>}
+                                                        {item.batch && <option value={`${item.batch}-B3`}>{item.batch}-B3</option>}
+                                                    </select>
+                                                </td>
+                                                <td className="px-6 py-3">
+                                                    <input
+                                                        type="number"
+                                                        required
+                                                        min="1"
+                                                        value={item.qty}
+                                                        onChange={(e) => handleItemChange(item.id, 'qty', e.target.value)}
+                                                        className="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                    />
+                                                </td>
+                                                <td className="px-6 py-3 font-medium text-gray-700">
+                                                    ₹{item.price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                                </td>
+                                                <td className="px-6 py-3 text-right font-semibold text-gray-900">
+                                                    ₹{(item.qty * item.price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                                </td>
+                                                <td className="px-6 py-3 text-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRemoveItem(item.id)}
+                                                        className="p-1.5 rounded transition-colors text-gray-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
+                                                        title="Delete item"
+                                                    >
+                                                        <FiTrash2 size={16} />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
                                 </tbody>
                             </table>
                         </div>
@@ -494,19 +569,199 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
                             )}
                         </div>
 
-                        {/* Totals Box */}
-                        <div className="lg:col-span-5 bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-3 flex flex-col justify-center">
-                            <div className="flex justify-between text-sm text-gray-600">
-                                <span>Subtotal</span>
-                                <span className="font-medium text-gray-900">₹{subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        {/* Additional Charges & Totals Box */}
+                        <div className="lg:col-span-5 bg-white rounded-xl shadow-sm border border-gray-200 p-5 space-y-3">
+                            
+                            {/* Header with expand/collapse and (+) add button */}
+                            <div className="flex items-center justify-between border-b border-gray-100 pb-2.5">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsChargesExpanded(!isChargesExpanded)}
+                                    className="flex items-center gap-1.5 text-xs font-bold text-gray-800 uppercase tracking-wider hover:text-indigo-600 transition-colors"
+                                >
+                                    {isChargesExpanded ? <FiChevronUp size={16} /> : <FiChevronDown size={16} />}
+                                    <span>ADD ADDITIONAL CHARGES</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setAdditionalCharges([...additionalCharges, { id: Date.now(), name: 'Shipping Charges', amount: 0, gstRate: 18 }])}
+                                    className="p-1 text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors"
+                                    title="Add Additional Charge"
+                                >
+                                    <FiPlus size={16} />
+                                </button>
                             </div>
-                            <div className="flex justify-between text-sm text-gray-600">
-                                <span>Estimated GST (5%)</span>
-                                <span className="font-medium text-gray-900">₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+
+                            {/* Dynamic Charges List */}
+                            {isChargesExpanded && (
+                                <div className="space-y-3 py-1 text-sm">
+                                    {additionalCharges.map(chg => (
+                                        <div key={chg.id} className="grid grid-cols-12 items-center gap-1.5">
+                                            <div className="col-span-1 flex justify-center">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setAdditionalCharges(additionalCharges.filter(c => c.id !== chg.id))}
+                                                    className="text-gray-400 hover:text-red-500 transition-colors"
+                                                    title="Remove charge"
+                                                >
+                                                    <FiX size={16} />
+                                                </button>
+                                            </div>
+                                            <div className="col-span-7">
+                                                <input
+                                                    type="text"
+                                                    value={chg.name}
+                                                    onChange={(e) => setAdditionalCharges(additionalCharges.map(c => c.id === chg.id ? { ...c, name: e.target.value } : c))}
+                                                    className="w-full px-1 py-1 border-b border-gray-300 focus:border-indigo-500 outline-none text-gray-800 text-sm font-medium transition-colors"
+                                                    placeholder="Charge name (e.g. Courier / Other)"
+                                                />
+                                            </div>
+                                            <div className="col-span-4 flex items-center justify-end border-b border-gray-300 py-1">
+                                                <span className="text-gray-400 text-xs mr-1">₹</span>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={chg.amount}
+                                                    onChange={(e) => setAdditionalCharges(additionalCharges.map(c => c.id === chg.id ? { ...c, amount: Number(e.target.value) || 0 } : c))}
+                                                    className="w-20 text-right text-sm font-semibold text-gray-800 outline-none"
+                                                    placeholder="0"
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+
+                                    {/* Discount After Tax */}
+                                    <div className="grid grid-cols-12 items-center gap-1.5 pt-1 border-t border-gray-100">
+                                        <div className="col-span-1 flex justify-center">
+                                            <button
+                                                type="button"
+                                                onClick={() => { setDiscountPercent('0'); setDiscountAmount('0'); }}
+                                                className="text-gray-400 hover:text-red-500 transition-colors"
+                                                title="Clear discount"
+                                            >
+                                                <FiX size={16} />
+                                            </button>
+                                        </div>
+                                        <div className="col-span-5 font-medium text-gray-700 text-xs sm:text-sm whitespace-nowrap">
+                                            Discount After Tax
+                                        </div>
+                                        <div className="col-span-3 flex items-center justify-end border-b border-gray-300 py-1">
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                step="0.01"
+                                                value={discountPercent}
+                                                onChange={(e) => {
+                                                    const pct = e.target.value;
+                                                    setDiscountPercent(pct);
+                                                    const val = (Number(pct) || 0);
+                                                    const calcAmt = ((subtotalWithCharges * val) / 100).toFixed(1);
+                                                    setDiscountAmount(calcAmt);
+                                                }}
+                                                className="w-12 text-right text-sm font-semibold outline-none"
+                                            />
+                                            <span className="text-gray-500 text-xs font-bold ml-1">%</span>
+                                        </div>
+                                        <div className="col-span-3 flex items-center justify-end border-b border-gray-300 py-1">
+                                            <span className="text-gray-400 text-xs mr-1">₹</span>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                step="0.1"
+                                                value={discountAmount}
+                                                onChange={(e) => {
+                                                    const amt = e.target.value;
+                                                    setDiscountAmount(amt);
+                                                    const val = (Number(amt) || 0);
+                                                    if (subtotalWithCharges > 0) {
+                                                        const calcPct = ((val / subtotalWithCharges) * 100).toFixed(2);
+                                                        setDiscountPercent(calcPct);
+                                                    }
+                                                }}
+                                                className="w-16 text-right text-sm font-semibold text-gray-800 outline-none"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Round Off */}
+                                    <div className="grid grid-cols-12 items-center gap-1.5 pt-1">
+                                        <div className="col-span-1 flex justify-center">
+                                            <button
+                                                type="button"
+                                                onClick={() => setRoundOffValue(0)}
+                                                className="text-gray-400 hover:text-red-500 transition-colors"
+                                                title="Clear round off"
+                                            >
+                                                <FiX size={16} />
+                                            </button>
+                                        </div>
+                                        <div className="col-span-5 font-medium text-gray-700 text-xs sm:text-sm whitespace-nowrap">
+                                            Round Off
+                                        </div>
+                                        <div className="col-span-3 flex items-center justify-end">
+                                            <div className="flex items-center bg-gray-100 rounded-full p-0.5 border border-gray-200">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setRoundOffType('-')}
+                                                    className={`w-5 h-5 rounded-full text-xs font-bold transition-all ${roundOffType === '-' ? 'bg-indigo-600 text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}
+                                                >
+                                                    -
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setRoundOffType('+')}
+                                                    className={`w-5 h-5 rounded-full text-xs font-bold transition-all ${roundOffType === '+' ? 'bg-indigo-600 text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}
+                                                >
+                                                    +
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="col-span-3 flex items-center justify-end border-b border-gray-300 py-1">
+                                            <span className="text-gray-400 text-xs mr-1">₹</span>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                value={roundOffValue}
+                                                onChange={(e) => setRoundOffValue(e.target.value)}
+                                                className="w-16 text-right text-sm font-semibold text-gray-800 outline-none"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Item Subtotal & Deducted GST Summary */}
+                            <div className="space-y-2 pt-2 border-t border-gray-100 text-xs sm:text-sm">
+                                <div className="flex justify-between text-gray-600">
+                                    <span>Item Subtotal</span>
+                                    <span className="font-semibold text-gray-900">₹{itemSubtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-gray-600">
+                                    <div className="flex items-center gap-2">
+                                        <span>Deducted GST:</span>
+                                        <select
+                                            value={gstRate}
+                                            onChange={(e) => setGstRate(Number(e.target.value))}
+                                            className="text-xs bg-gray-50 border border-gray-300 rounded px-2 py-0.5 font-medium text-gray-700 focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer"
+                                        >
+                                            <option value={5}>5%</option>
+                                            <option value={18}>18%</option>
+                                        </select>
+                                    </div>
+                                    <span className="font-semibold text-red-600">- ₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                </div>
+                                {gstRate > 0 && (
+                                    <div className="flex justify-between text-gray-600 pt-1 border-t border-dashed border-gray-200">
+                                        <span>Net Taxable Subtotal</span>
+                                        <span className="font-semibold text-indigo-700">₹{taxableSubtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                    </div>
+                                )}
                             </div>
-                            <div className="border-t border-gray-200 pt-3 flex justify-between items-baseline">
-                                <span className="text-base font-bold text-gray-900">Grand Total</span>
-                                <span className="text-xl font-extrabold text-indigo-600">₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+
+                            {/* Total Amount */}
+                            <div className="border-t-2 border-gray-900 pt-3 flex justify-between items-baseline">
+                                <span className="text-base font-bold text-gray-900">Total Amount</span>
+                                <span className="text-2xl font-extrabold text-indigo-600">₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                             </div>
                         </div>
                     </div>
@@ -564,7 +819,12 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
                     date: invoiceDate,
                     paymentMethod,
                     party: selectedParty || { name: 'DR.BASHEER MBBS / SHIFA CLINIC', address: 'KILIMINOOR, THIRUVANANTHAPURAM - 695601', contact: '9447411778', id: 373 },
-                    items: items.filter(i => i.description && i.description.trim() !== '')
+                    items: items.filter(i => i.description && i.description.trim() !== ''),
+                    itemSubtotal,
+                    subtotal: taxableSubtotal,
+                    taxAmount,
+                    gstRate,
+                    grandTotal
                 }}
             />
         </div>

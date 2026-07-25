@@ -1,22 +1,45 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { FiX, FiSave } from 'react-icons/fi';
 
 export default function AddWholesalePartyModal({ isOpen, onClose, initialData, onSave }) {
+    const currentYear = new Date().getFullYear();
+
     const [formData, setFormData] = useState({
         name: '',
-        registrationNo: '',
+        dlNo: '',
+        gstinNo: '',
+        panNo: '',
+        age: '',
+        dobYear: '',
         contact: '',
         email: '',
         address: ''
     });
 
-    useEffect(() => {
+    const [prevInitialData, setPrevInitialData] = useState(initialData);
+    const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+
+    if (isOpen !== prevIsOpen || initialData !== prevInitialData) {
+        setPrevIsOpen(isOpen);
+        setPrevInitialData(initialData);
         if (isOpen && initialData) {
-            setFormData(initialData);
+            const initAge = initialData.age ? String(initialData.age) : (initialData.dobYear ? String(currentYear - Number(initialData.dobYear)) : '');
+            const initDobYear = initialData.dobYear ? String(initialData.dobYear) : (initialData.age ? String(currentYear - Number(initialData.age)) : '');
+            setFormData({
+                name: initialData.name || '',
+                dlNo: initialData.dlNo || '',
+                gstinNo: initialData.gstinNo || '',
+                panNo: initialData.panNo || '',
+                age: initAge,
+                dobYear: initDobYear,
+                contact: initialData.contact || '',
+                email: initialData.email || '',
+                address: initialData.address || ''
+            });
         } else if (isOpen && !initialData) {
-            setFormData({ name: '', registrationNo: '', contact: '', email: '', address: '' });
+            setFormData({ name: '', dlNo: '', gstinNo: '', panNo: '', age: '', dobYear: '', contact: '', email: '', address: '' });
         }
-    }, [isOpen, initialData]);
+    }
 
     if (!isOpen) return null;
 
@@ -24,15 +47,37 @@ export default function AddWholesalePartyModal({ isOpen, onClose, initialData, o
         setFormData({ ...formData, [e.target.name]: e.target.value });
     };
 
+    const handleAgeChange = (e) => {
+        const val = e.target.value;
+        if (val !== '' && !isNaN(Number(val)) && Number(val) >= 0 && Number(val) <= 120) {
+            const calculatedYear = currentYear - Number(val);
+            setFormData(prev => ({
+                ...prev,
+                age: val,
+                dobYear: String(calculatedYear)
+            }));
+        } else {
+            setFormData(prev => ({
+                ...prev,
+                age: val,
+                dobYear: ''
+            }));
+        }
+    };
+
     const handleSubmit = (e) => {
         e.preventDefault();
-        console.log("Saving new party from modal:", formData);
+        const payload = {
+            ...formData,
+            age: formData.age ? Number(formData.age) : null,
+            dobYear: formData.dobYear ? Number(formData.dobYear) : null
+        };
+        console.log("Saving new party from modal:", payload);
         if (onSave) {
-            onSave(formData);
+            onSave(payload);
         }
         onClose();
-        // Reset form
-        setFormData({ name: '', registrationNo: '', contact: '', email: '', address: '' });
+        setFormData({ name: '', dlNo: '', gstinNo: '', panNo: '', age: '', dobYear: '', contact: '', email: '', address: '' });
     };
 
     return (
@@ -79,7 +124,7 @@ export default function AddWholesalePartyModal({ isOpen, onClose, initialData, o
                                     value={formData.contact}
                                     onChange={handleChange}
                                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors" 
-                                    placeholder="+1 (555) 000-0000" 
+                                    placeholder="10 digit number only " 
                                 />
                             </div>
                             <div className="md:col-span-2">
@@ -93,16 +138,61 @@ export default function AddWholesalePartyModal({ isOpen, onClose, initialData, o
                                     placeholder="contact@company.com (Optional)" 
                                 />
                             </div>
-                            <div className="md:col-span-2">
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Registration No. (DL / GSTIN / PAN)</label>
-                                <textarea 
-                                    rows="2"
-                                    name="registrationNo"
-                                    value={formData.registrationNo}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Drug License No. (DL No.)</label>
+                                <input 
+                                    type="text" 
+                                    name="dlNo"
+                                    value={formData.dlNo}
                                     onChange={handleChange}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors resize-none" 
-                                    placeholder="e.g. GSTIN: 32AAG..., DL No: WLF20B..., REG-123456" 
-                                ></textarea>
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors" 
+                                    placeholder="e.g. DL-20B-123456" 
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">GSTIN No.</label>
+                                <input 
+                                    type="text" 
+                                    name="gstinNo"
+                                    value={formData.gstinNo}
+                                    onChange={handleChange}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors" 
+                                    placeholder="e.g. 32AABCU9603R1ZM" 
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">PAN No.</label>
+                                <input 
+                                    type="text" 
+                                    name="panNo"
+                                    value={formData.panNo}
+                                    onChange={handleChange}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors" 
+                                    placeholder="e.g. ABCDE1234F" 
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Age (in Years)</label>
+                                <input 
+                                    type="number" 
+                                    name="age"
+                                    min="0"
+                                    max="120"
+                                    value={formData.age}
+                                    onChange={handleAgeChange}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors" 
+                                    placeholder="e.g. 28" 
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Calculated Birth Year (Auto)</label>
+                                <input 
+                                    type="text" 
+                                    readOnly
+                                    value={formData.dobYear ? `${formData.dobYear}` : ''}
+                                    className="w-full px-4 py-2 border border-indigo-200 rounded-lg bg-indigo-50/50 font-bold text-indigo-700 outline-none cursor-default" 
+                                    placeholder="Auto-calculated" 
+                                />
                             </div>
                             <div className="md:col-span-2">
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>

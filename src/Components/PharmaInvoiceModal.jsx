@@ -90,9 +90,11 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
     });
 
     const totalQty = items.reduce((acc, item) => acc + item.qty, 0);
-    const subtotal = items.reduce((acc, item) => acc + item.value, 0);
-    const taxAmount = subtotal * 0.05; // 5% GST
-    const grandTotal = subtotal + taxAmount;
+    const itemSubtotal = invoice.itemSubtotal ?? items.reduce((acc, item) => acc + item.value, 0);
+    const gstRate = invoice.gstRate ?? 5;
+    const taxAmount = invoice.taxAmount ?? (itemSubtotal * (gstRate / 100));
+    const taxableSubtotal = invoice.subtotal ?? Math.max(0, itemSubtotal - taxAmount);
+    const grandTotal = invoice.grandTotal ?? (taxableSubtotal + taxAmount);
 
     const handlePrint = () => {
         window.print();
@@ -318,7 +320,7 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                 <div><b>Total Items :</b> {items.length}</div>
                                 <div><b>Total No :</b> {totalQty}</div>
                                 <div><b>SchDiscGiven:</b> 0.00</div>
-                                <div><b>Sale Value :</b> {subtotal.toFixed(2)}</div>
+                                <div><b>Sale Value :</b> {itemSubtotal.toFixed(2)}</div>
                                 <div><b>Cash Disc :</b> 0.00</div>
                                 <div><b>Total GST :</b> {taxAmount.toFixed(2)}</div>
                             </div>
@@ -336,46 +338,25 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-200 font-mono text-[9px]">
-                                        <tr>
-                                            <td className="font-sans font-bold">28%</td>
-                                            <td>0.00</td>
-                                            <td>0.00</td>
-                                            <td>0.00</td>
-                                            <td>0.00</td>
-                                        </tr>
-                                        <tr>
-                                            <td className="font-sans font-bold">18%</td>
-                                            <td>0.00</td>
-                                            <td>0.00</td>
-                                            <td>0.00</td>
-                                            <td>0.00</td>
-                                        </tr>
-                                        <tr>
-                                            <td className="font-sans font-bold">12%</td>
-                                            <td>0.00</td>
-                                            <td>0.00</td>
-                                            <td>0.00</td>
-                                            <td>0.00</td>
-                                        </tr>
-                                        <tr className="bg-gray-50 font-bold">
-                                            <td className="font-sans">5%</td>
-                                            <td>{subtotal.toFixed(2)}</td>
-                                            <td>{(taxAmount / 2).toFixed(2)}</td>
-                                            <td>{(taxAmount / 2).toFixed(2)}</td>
-                                            <td>0.00</td>
-                                        </tr>
-                                        <tr>
-                                            <td className="font-sans font-bold">0%</td>
-                                            <td>0.00</td>
-                                            <td>0.00</td>
-                                            <td>0.00</td>
-                                            <td>0.00</td>
-                                        </tr>
+                                        {[18, 5].map(rate => {
+                                            const isMatch = Number(gstRate) === rate;
+                                            const rowTaxable = isMatch ? taxableSubtotal : 0;
+                                            const rowTax = isMatch ? taxAmount : 0;
+                                            return (
+                                                <tr key={rate} className={isMatch ? "bg-gray-50 font-bold" : ""}>
+                                                    <td className="font-sans font-bold">{rate}%</td>
+                                                    <td>{rowTaxable.toFixed(2)}</td>
+                                                    <td>{(rowTax / 2).toFixed(2)}</td>
+                                                    <td>{(rowTax / 2).toFixed(2)}</td>
+                                                    <td>0.00</td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                     <tfoot>
                                         <tr className="border-t border-black font-bold font-mono">
                                             <td className="font-sans">Total</td>
-                                            <td>{subtotal.toFixed(2)}</td>
+                                            <td>{taxableSubtotal.toFixed(2)}</td>
                                             <td>{(taxAmount / 2).toFixed(2)}</td>
                                             <td>{(taxAmount / 2).toFixed(2)}</td>
                                             <td>0.00</td>
@@ -387,7 +368,7 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                             {/* Col 4: Final Financials & Sign */}
                             <div className="col-span-3 flex flex-col justify-between text-[11px]">
                                 <div className="p-1.5 space-y-0.5 font-mono">
-                                    <div className="flex justify-between font-sans"><span>Gross Amt</span><span className="font-mono font-bold">{subtotal.toFixed(2)}</span></div>
+                                    <div className="flex justify-between font-sans"><span>Gross Amt</span><span className="font-mono font-bold">{itemSubtotal.toFixed(2)}</span></div>
                                     <div className="flex justify-between font-sans"><span>Dis Amt</span><span>0.00</span></div>
                                     <div className="flex justify-between font-sans"><span>Scm Amt</span><span>0.00</span></div>
                                     <div className="flex justify-between font-sans"><span>GST Amt</span><span className="font-mono">{taxAmount.toFixed(2)}</span></div>

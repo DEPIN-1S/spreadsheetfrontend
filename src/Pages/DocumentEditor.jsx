@@ -22,6 +22,25 @@ import { useClipboard } from "../context/ClipboardContext";
 import EmojiPicker from "emoji-picker-react";
 import Swal from "sweetalert2";
 
+const COLUMN_BORDER_CLASSES = [
+    "border-r-2 border-indigo-400/80",   // Col 0 - Indigo
+    "border-r-2 border-emerald-400/80",  // Col 1 - Emerald / Green
+    "border-r-2 border-amber-400/80",    // Col 2 - Amber / Yellow
+    "border-r-2 border-purple-400/80",   // Col 3 - Purple
+    "border-r-2 border-rose-400/80",     // Col 4 - Rose / Red
+    "border-r-2 border-teal-400/80",     // Col 5 - Teal
+    "border-r-2 border-sky-400/80",      // Col 6 - Sky Blue
+    "border-r-2 border-violet-400/80",   // Col 7 - Violet
+    "border-r-2 border-pink-400/80",     // Col 8 - Pink
+    "border-r-2 border-blue-400/80",     // Col 9 - Blue
+    "border-r-2 border-lime-400/80",     // Col 10 - Lime
+    "border-r-2 border-orange-400/80"    // Col 11 - Orange
+];
+
+const getColumnBorderClass = (idx) => {
+    return COLUMN_BORDER_CLASSES[idx % COLUMN_BORDER_CLASSES.length];
+};
+
 export default function DocumentEditor({ docName, setActivePath, returnPath, isNested = false }) {
     const [sheetData, setSheetData] = useState(null);
     const [accessError, setAccessError] = useState(false);
@@ -2411,11 +2430,11 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                 <table className="w-max text-left border-collapse bg-white table-fixed relative">
                     <thead>
                         <tr className="bg-white sticky top-0 z-20 shadow-[0_1px_0_#9ca3af]">
-                            <th className="w-12 min-w-12 border-b border-r border-gray-400 text-center py-2 text-gray-400 font-normal sticky left-0 bg-white z-30"></th>
-                            {columns.map(col => (
+                            <th className="w-12 min-w-12 border-b border-r-2 border-slate-300 text-center py-2 text-gray-400 font-normal sticky left-0 bg-white z-30"></th>
+                            {columns.map((col, colIdx) => (
                                 <th
                                     key={col.id}
-                                    className={`border-b border-r border-gray-400 py-2 px-3 text-xs font-bold transition-colors relative group select-none ${resizingCol === col.id ? 'bg-blue-50/20' : (!col.bgColor ? 'bg-white hover:bg-gray-50 text-gray-800' : 'text-gray-800')}`}
+                                    className={`border-b ${getColumnBorderClass(colIdx)} py-2 px-3 text-xs font-bold transition-colors relative group select-none ${resizingCol === col.id ? 'bg-blue-50/20' : (!col.bgColor ? 'bg-white hover:bg-gray-50 text-gray-800' : 'text-gray-800')}`}
                                     style={{ width: col.width || 220, minWidth: col.width || 220, backgroundColor: col.bgColor || undefined }}
                                 >
                                     {/* Resize handle */}
@@ -2539,14 +2558,14 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                         style={{ backgroundColor: computedRowBg || 'transparent' }}
                                     >
                                         <td
-                                            className={`relative border-b border-r border-gray-400 text-center py-2 text-[13px] text-gray-500 group-hover:bg-gray-100/50 transition-colors w-12 sticky left-0 z-10 min-w-12 font-medium ${!computedRowBg ? 'bg-gray-50/50' : ''} ${activeRowMenu?.rowIndex === index ? 'bg-blue-100' : ''}`}
+                                            className={`relative border-b border-r-2 border-slate-300 text-center py-2 text-[13px] text-gray-500 group-hover:bg-gray-100/50 transition-colors w-12 sticky left-0 z-10 min-w-12 font-medium ${!computedRowBg ? 'bg-gray-50/50' : ''} ${activeRowMenu?.rowIndex === index ? 'bg-blue-100' : ''}`}
                                             style={{ backgroundColor: activeRowMenu?.rowIndex === index ? '#dbeafe' : (computedRowBg || undefined) }}
                                             onContextMenu={(e) => handleRowContextMenu(e, index)}
                                             onClick={(e) => handleRowContextMenu(e, index)}
                                         >
                                             <span className="cursor-pointer">{index + 1}</span>
                                         </td>
-                                        {columns.map((col) => {
+                                        {columns.map((col, colIdx) => {
                                             const cell = row.cells?.find(c => c.columnId === col.id);
                                             const isFormula = col.type === 'formula';
                                             const val = isFormula
@@ -2598,7 +2617,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                             return (
                                                 <td
                                                     key={col.id}
-                                                    className={`border-b border-r border-gray-400 p-0 relative min-h-9 h-auto ${resizingCol === col.id ? 'bg-blue-50/10' : ''} ${activeCellMenu?.rowIndex === index && activeCellMenu?.colId === col.id ? 'ring-2 ring-blue-500 z-10 bg-blue-50/10' : ''}`}
+                                                    className={`border-b ${getColumnBorderClass(colIdx)} p-0 relative min-h-9 h-auto ${resizingCol === col.id ? 'bg-blue-50/10' : ''} ${activeCellMenu?.rowIndex === index && activeCellMenu?.colId === col.id ? 'ring-2 ring-blue-500 z-10 bg-blue-50/10' : ''}`}
                                                     style={{
                                                         width: col.width || 220,
                                                         minWidth: col.width || 220,
@@ -2882,14 +2901,14 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                         <tr className="h-10">
                             <td
                                 onClick={handleAddRow}
-                                className="w-12 min-w-12 border-r border-gray-400 bg-[#475569] hover:bg-[#334155] transition-colors p-0 sticky left-0 z-30 cursor-pointer"
+                                className="w-12 min-w-12 border-r-2 border-slate-300 bg-[#475569] hover:bg-[#334155] transition-colors p-0 sticky left-0 z-30 cursor-pointer"
                                 title="Add Row"
                             >
                                 <div className="flex items-center justify-center w-full h-full">
                                     <FiPlus className="w-4 h-4 text-white" />
                                 </div>
                             </td>
-                            {columns.map((col) => {
+                            {columns.map((col, colIdx) => {
                                 const mode = columnCalcMode[col.id];
                                 const calcValue = mode ? getColumnCalcValue(col.id, mode) : null;
                                 const isNonCalcType = col.type === 'text' || col.type === 'multi_image' || col.type === 'comment' || col.type === 'image' || col.type === 'pdf' || col.type === 'date' || col.type === 'time';
@@ -2897,7 +2916,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                 return (
                                     <td
                                         key={col.id}
-                                        className={`border-r border-gray-400 bg-[#f8fafc] relative p-0 ${resizingCol === col.id ? 'bg-blue-50/20' : ''}`}
+                                        className={`${getColumnBorderClass(colIdx)} bg-[#f8fafc] relative p-0 ${resizingCol === col.id ? 'bg-blue-50/20' : ''}`}
                                     >
                                         {isNonCalcType ? null : mode ? (
                                             /* Show calculated value */
