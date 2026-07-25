@@ -3375,32 +3375,52 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                                                              {displayVal || 'N/A'}
                                                                          </span>
                                                                      );
-                                                                 }
-                                                             })()}
-                                                         </div>
-                                                     ) : col.type === 'date' ? (
-                                                         <div className="min-h-9 flex items-center w-full relative">
-                                                             <input
-                                                                 type={(col.id === 'col-cc-expiry-date' || (isNested && col.name?.toLowerCase().includes('expiry'))) ? "month" : "date"}
-                                                                 key={`date-${row.id}-${col.id}-${val}`}
-                                                                 value={
-                                                                     (col.id === 'col-cc-expiry-date' || (isNested && col.name?.toLowerCase().includes('expiry')))
-                                                                         ? (val ? (val.split('-').length === 2 && val.split('-')[0].length === 4 ? val : (val.split('-')[0].length === 4 ? `${val.split('-')[0]}-${val.split('-')[1].padStart(2, '0')}` : `${val.split('-')[2]}-${val.split('-')[1].padStart(2, '0')}`)) : '')
-                                                                         : (val || '')
-                                                                 }
-                                                                 onChange={(e) => {
-                                                                     const newVal = e.target.value;
-                                                                     if (newVal !== val) {
-                                                                         handleCellChange(row.id, col.id, newVal);
-                                                                     }
-                                                                 }}
-                                                                 onFocus={() => setFocusedCell({ rowId: row.id, colId: col.id })}
-                                                                 onBlur={() => setFocusedCell(null)}
-                                                                 readOnly={isReadOnly}
-                                                                 className={`w-full pl-3 ${(nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-7' : 'pr-3'} py-1.5 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 ${isReadOnly ? 'cursor-default bg-gray-50/30' : 'cursor-text'} ${getCellFormattingClasses(cell, row, col)}`}
-                                                             />
-                                                         </div>
-                                                     ) : col.type === 'time' ? (
+                                                                }
+                                                            })()}
+                                                        </div>
+                                                    ) : col.type === 'date' ? (
+                                                        <div className="min-h-9 flex items-center w-full relative">
+                                                            {((col.id === 'col-cc-expiry-date' || (isNested && col.name?.toLowerCase().includes('expiry'))) && !isFocused) ? (
+                                                                <div
+                                                                    onClick={() => {
+                                                                        if (!isReadOnly) setFocusedCell({ rowId: row.id, colId: col.id });
+                                                                    }}
+                                                                    className={`w-full pl-3 ${(nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-7' : 'pr-3'} py-1.5 outline-none text-[13px] text-gray-800 cursor-pointer flex items-center justify-between ${getCellFormattingClasses(cell, row, col)}`}
+                                                                >
+                                                                    <span>
+                                                                        {(() => {
+                                                                            if (!val) return '---------, ----';
+                                                                            const [year, month] = val.split('-');
+                                                                            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+                                                                            const mIdx = parseInt(month, 10) - 1;
+                                                                            return `${monthNames[mIdx] || ''} (${parseInt(month, 10)}) ${year}`;
+                                                                        })()}
+                                                                    </span>
+                                                                    <span className="text-gray-400 text-[11px] pr-1">📅</span>
+                                                                </div>
+                                                            ) : (
+                                                                <input
+                                                                    type={(col.id === 'col-cc-expiry-date' || (isNested && col.name?.toLowerCase().includes('expiry'))) ? "month" : "date"}
+                                                                    key={`date-${row.id}-${col.id}-${val}`}
+                                                                    value={
+                                                                        (col.id === 'col-cc-expiry-date' || (isNested && col.name?.toLowerCase().includes('expiry')))
+                                                                            ? (val ? (val.split('-').length === 2 && val.split('-')[0].length === 4 ? val : (val.split('-')[0].length === 4 ? `${val.split('-')[0]}-${val.split('-')[1].padStart(2, '0')}` : `${val.split('-')[2]}-${val.split('-')[1].padStart(2, '0')}`)) : '')
+                                                                            : (val || '')
+                                                                    }
+                                                                    onChange={(e) => {
+                                                                        const newVal = e.target.value;
+                                                                        if (newVal !== val) {
+                                                                            handleCellChange(row.id, col.id, newVal);
+                                                                        }
+                                                                    }}
+                                                                    onFocus={() => setFocusedCell({ rowId: row.id, colId: col.id })}
+                                                                    onBlur={() => setFocusedCell(null)}
+                                                                    readOnly={isReadOnly}
+                                                                    className={`w-full pl-3 ${(nestedSheetsMapping[`${row.id}_${col.id}`] || parseOptions(col.options).isDetailedViewEnabled) ? 'pr-7' : 'pr-3'} py-1.5 outline-none focus:ring-1 focus:ring-blue-500 focus:z-10 bg-transparent text-[13px] text-gray-800 ${isReadOnly ? 'cursor-default bg-gray-50/30' : 'cursor-text'} ${getCellFormattingClasses(cell, row, col)}`}
+                                                                />
+                                                            )}
+                                                        </div>
+                                                    ) : col.type === 'time' ? (
                                                          <div className="min-h-9 flex items-center w-full relative">
                                                              {isFocused ? (
                                                                 <input

@@ -24,10 +24,11 @@ export default function NotificationBell({ isCollapsed }) {
     const fetchNotifications = async () => {
         try {
             const listRes = await axios.get(`${BASE_URL}/inv/notifications?isRead=false`, getHeaders());
-            setNotifications(listRes.data.data || []);
-            
-            const countRes = await axios.get(`${BASE_URL}/inv/notifications/count`, getHeaders());
-            setUnreadCount(countRes.data.data?.count || 0);
+            const rawNotifs = listRes.data.data || [];
+            // Filter to ONLY low stock and out of stock
+            const stockNotifs = rawNotifs.filter(n => n.type === 'out_of_stock' || n.type === 'low_stock');
+            setNotifications(stockNotifs);
+            setUnreadCount(stockNotifs.length);
         } catch (error) {
             console.error("Error fetching notifications:", error);
         }
@@ -139,6 +140,15 @@ export default function NotificationBell({ isCollapsed }) {
                                     <div className="flex-1 min-w-0 pr-6">
                                         <div className="flex items-center justify-between gap-1.5">
                                             <span className="font-semibold text-xs text-white truncate block">{notif.title}</span>
+                                            {notif.currentQty !== null && notif.currentQty !== undefined && (
+                                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
+                                                    notif.type === 'out_of_stock'
+                                                        ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                                        : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
+                                                }`}>
+                                                    {notif.currentQty} Left
+                                                </span>
+                                            )}
                                         </div>
                                         <p className="text-[11px] text-gray-400 leading-normal mt-1 block pr-2 wrap-break-word">
                                             {notif.message}

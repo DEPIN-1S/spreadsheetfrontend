@@ -154,7 +154,24 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-3 text-xs text-gray-600 font-medium">
-                                                    {med.expiry}
+                                                    {(() => {
+                                                        if (!med.expiry) return 'N/A';
+                                                        const parts = String(med.expiry).split(/[-/,\s]+/);
+                                                        let mNum = null, yNum = null;
+                                                        if (parts.length >= 2) {
+                                                            const yearIdx = parts.findIndex(p => p.length === 4 && !isNaN(parseInt(p, 10)));
+                                                            if (yearIdx !== -1) {
+                                                                yNum = parts[yearIdx];
+                                                                const otherPart = parts.find((p, idx) => idx !== yearIdx && p.length > 0);
+                                                                if (otherPart) mNum = parseInt(otherPart, 10);
+                                                            }
+                                                        }
+                                                        const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+                                                        if (mNum >= 1 && mNum <= 12 && yNum) {
+                                                            return `${monthNames[mNum - 1]} (${mNum}) ${yNum}`;
+                                                        }
+                                                        return med.expiry;
+                                                    })()}
                                                 </td>
                                                 <td className="px-4 py-3 text-right font-medium text-emerald-600">
                                                     {med.stock} units
