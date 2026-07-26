@@ -912,15 +912,29 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
         } catch (_) { /* silent */ }
     };
 
-    // Compute filtered rows based on active filters
-    const filteredRows = rows.filter(row => {
-        return Object.entries(columnFilters).every(([colId, filterText]) => {
-            if (!filterText) return true;
-            const cell = row.cells?.find(c => c.columnId === colId);
-            const val = String(cell?.computedValue ?? cell?.rawValue ?? '').toLowerCase();
-            return val.includes(filterText.toLowerCase());
+    // Compute filtered rows based on global search query and active column filters
+    const filteredRows = useMemo(() => {
+        const query = (appliedSearchQuery || searchQuery || '').trim().toLowerCase();
+
+        return rows.filter(row => {
+            // 1. Global top search query (product name, company name, composition, etc.)
+            if (query) {
+                const matchesGlobal = (row.cells || []).some(cell => {
+                    const val = String(cell?.computedValue ?? cell?.rawValue ?? '').toLowerCase();
+                    return val.includes(query);
+                });
+                if (!matchesGlobal) return false;
+            }
+
+            // 2. Column-specific filters
+            return Object.entries(columnFilters).every(([colId, filterText]) => {
+                if (!filterText) return true;
+                const cell = row.cells?.find(c => c.columnId === colId);
+                const val = String(cell?.computedValue ?? cell?.rawValue ?? '').toLowerCase();
+                return val.includes(filterText.toLowerCase());
+            });
         });
-    });
+    }, [rows, appliedSearchQuery, searchQuery, columnFilters]);
 
     // Sort rows — stacked on top of filteredRows, safe and independent
     const sortedRows = useMemo(() => {
@@ -2879,12 +2893,36 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                         type="text"
                         placeholder="search values..."
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onChange={(e) => {
+                            setSearchQuery(e.target.value);
+                            setAppliedSearchQuery(e.target.value);
+                        }}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                setAppliedSearchQuery(searchQuery);
+                            }
+                        }}
                         className="pl-4 pr-10 py-1.5 bg-white border border-blue-400 rounded-full text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 w-full text-gray-700 placeholder:text-gray-400"
                     />
-                    <div className="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 bg-blue-500 rounded-full flex items-center justify-center shadow-sm cursor-pointer hover:bg-blue-600 transition-colors">
-                        <FiSearch className="w-3.5 h-3.5 text-white" />
-                    </div>
+                    {searchQuery ? (
+                        <button
+                            onClick={() => {
+                                setSearchQuery('');
+                                setAppliedSearchQuery('');
+                            }}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 text-gray-400 hover:text-gray-600 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+                            title="Clear search"
+                        >
+                            <FiX className="w-3.5 h-3.5" />
+                        </button>
+                    ) : (
+                        <div
+                            onClick={() => setAppliedSearchQuery(searchQuery)}
+                            className="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 bg-blue-500 rounded-full flex items-center justify-center shadow-sm cursor-pointer hover:bg-blue-600 transition-colors"
+                        >
+                            <FiSearch className="w-3.5 h-3.5 text-white" />
+                        </div>
+                    )}
                 </div>
                 </>
                 )}

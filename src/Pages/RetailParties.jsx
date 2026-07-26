@@ -31,6 +31,7 @@ export default function RetailParties({ setMobileOpen, setActivePath }) {
             fetchParties();
         } catch (error) {
             console.error("Failed to save retail party:", error);
+            throw error;
         }
     };
 

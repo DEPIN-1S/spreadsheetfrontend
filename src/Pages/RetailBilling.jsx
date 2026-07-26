@@ -39,6 +39,7 @@ export default function RetailBilling({ setMobileOpen, setActivePath }) {
             fetchData();
         } catch (error) {
             console.error("Failed to save retail party:", error);
+            throw error;
         }
     };
 

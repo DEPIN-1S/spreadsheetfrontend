@@ -18,10 +18,14 @@ export default function AddWholesalePartyModal({ isOpen, onClose, initialData, o
 
     const [prevInitialData, setPrevInitialData] = useState(initialData);
     const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [errorMessage, setErrorMessage] = useState('');
 
     if (isOpen !== prevIsOpen || initialData !== prevInitialData) {
         setPrevIsOpen(isOpen);
         setPrevInitialData(initialData);
+        setErrorMessage('');
+        setIsSubmitting(false);
         if (isOpen && initialData) {
             const initAge = initialData.age ? String(initialData.age) : (initialData.dobYear ? String(currentYear - Number(initialData.dobYear)) : '');
             const initDobYear = initialData.dobYear ? String(initialData.dobYear) : (initialData.age ? String(currentYear - Number(initialData.age)) : '');
@@ -65,19 +69,27 @@ export default function AddWholesalePartyModal({ isOpen, onClose, initialData, o
         }
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
+        setErrorMessage('');
+        setIsSubmitting(true);
         const payload = {
             ...formData,
             age: formData.age ? Number(formData.age) : null,
             dobYear: formData.dobYear ? Number(formData.dobYear) : null
         };
-        console.log("Saving new party from modal:", payload);
-        if (onSave) {
-            onSave(payload);
+        try {
+            if (onSave) {
+                await onSave(payload);
+            }
+            onClose();
+            setFormData({ name: '', dlNo: '', gstinNo: '', panNo: '', age: '', dobYear: '', contact: '', email: '', address: '' });
+        } catch (err) {
+            console.error("Error saving wholesale party modal:", err);
+            setErrorMessage(err.response?.data?.message || err.message || "Failed to save wholesale party.");
+        } finally {
+            setIsSubmitting(false);
         }
-        onClose();
-        setFormData({ name: '', dlNo: '', gstinNo: '', panNo: '', age: '', dobYear: '', contact: '', email: '', address: '' });
     };
 
     return (
@@ -94,13 +106,19 @@ export default function AddWholesalePartyModal({ isOpen, onClose, initialData, o
                     </div>
                     <button 
                         onClick={onClose}
-                        className="text-gray-400 hover:text-gray-600 p-2 rounded-lg hover:bg-gray-200 transition-colors"
+                        disabled={isSubmitting}
+                        className="text-gray-400 hover:text-gray-600 p-2 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
                     >
                         <FiX size={20} />
                     </button>
                 </div>
                 
                 <div className="flex-1 overflow-y-auto p-6">
+                    {errorMessage && (
+                        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">
+                            {errorMessage}
+                        </div>
+                    )}
                     <form id="add-party-form" onSubmit={handleSubmit} className="space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
@@ -213,17 +231,19 @@ export default function AddWholesalePartyModal({ isOpen, onClose, initialData, o
                     <button 
                         type="button"
                         onClick={onClose}
-                        className="px-5 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:ring-4 focus:ring-gray-200 transition-colors"
+                        disabled={isSubmitting}
+                        className="px-5 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:ring-4 focus:ring-gray-200 transition-colors disabled:opacity-50"
                     >
                         Cancel
                     </button>
                     <button 
                         type="submit"
                         form="add-party-form"
-                        className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-500/30 transition-colors"
+                        disabled={isSubmitting}
+                        className="flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-500/30 transition-colors disabled:opacity-50"
                     >
                         <FiSave size={16} />
-                        Save Party
+                        {isSubmitting ? "Saving..." : "Save Party"}
                     </button>
                 </div>
             </div>

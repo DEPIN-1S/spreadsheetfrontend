@@ -113,6 +113,7 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
             setSelectedPartyId(created.id);
         } catch (error) {
             console.error("Failed to add wholesale party:", error);
+            throw error;
         }
     };
 

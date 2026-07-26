@@ -31,6 +31,7 @@ export default function WholesaleParties({ setMobileOpen, setActivePath }) {
             fetchParties();
         } catch (error) {
             console.error("Failed to save wholesale party:", error);
+            throw error;
         }
     };
 

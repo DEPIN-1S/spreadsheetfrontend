@@ -112,6 +112,7 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
             setSelectedPartyId(created.id);
         } catch (error) {
             console.error("Failed to add party:", error);
+            throw error;
         }
     };
 

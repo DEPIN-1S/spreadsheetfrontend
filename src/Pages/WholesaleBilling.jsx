@@ -39,6 +39,7 @@ export default function WholesaleBilling({ setMobileOpen, setActivePath }) {
             fetchData();
         } catch (error) {
             console.error("Failed to save wholesale party:", error);
+            throw error;
         }
     };
 
