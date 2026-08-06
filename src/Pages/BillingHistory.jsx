@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { FiMenu, FiSearch, FiEye, FiDownload, FiTrash2, FiFileText, FiTrendingUp, FiBox, FiShoppingBag, FiFilter } from 'react-icons/fi';
 import PharmaInvoiceModal from '../Components/PharmaInvoiceModal';
+import Pagination from '../Components/Pagination';
 import { invInvoicesApi } from '../api/inventoryApiClient';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -96,6 +97,19 @@ export default function BillingHistory({ setMobileOpen }) {
             return true;
         });
     }, [invoices, searchQuery, filterType]);
+
+    // Pagination State
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(10);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchQuery, filterType]);
+
+    const paginatedInvoices = useMemo(() => {
+        const start = (currentPage - 1) * itemsPerPage;
+        return filteredInvoices.slice(start, start + itemsPerPage);
+    }, [filteredInvoices, currentPage, itemsPerPage]);
 
     const handleDeleteInvoice = async (id) => {
         if (!window.confirm("Are you sure you want to delete this invoice? Stock will be restored.")) return;
@@ -336,7 +350,7 @@ export default function BillingHistory({ setMobileOpen }) {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200 text-sm font-medium">
-                                    {filteredInvoices.map((inv) => {
+                                    {paginatedInvoices.map((inv) => {
                                         const isChApplied = chAppliedIds.includes(inv.id);
                                         return (
                                         <tr key={inv.id} className={`${isChApplied ? 'bg-orange-50/80 hover:bg-orange-100/80' : 'hover:bg-gray-50/80'} transition-colors group`}>
@@ -427,6 +441,13 @@ export default function BillingHistory({ setMobileOpen }) {
                                 </tbody>
                             </table>
                         </div>
+                        <Pagination
+                            currentPage={currentPage}
+                            totalItems={filteredInvoices.length}
+                            itemsPerPage={itemsPerPage}
+                            onPageChange={setCurrentPage}
+                            onItemsPerPageChange={setItemsPerPage}
+                        />
                     </div>
 
                 </div>

@@ -1607,6 +1607,76 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                         return updated;
                     });
                     break;
+                case 'duplicate_row':
+                    if (row && row.id) {
+                        try {
+                            if (isNested && parentSheetId && docName) {
+                                // Sub-Spreadsheet View modal (duplicating a batch row)
+                                try {
+                                    await apiClient.post(`/inv-sheets/${parentSheetId}/rows/${docName}/cc-rows/${row.id}/copy`, {});
+                                } catch (err1) {
+                                    console.warn('Cc-row copy failed, trying main copy route:', err1);
+                                    await apiClient.post(`/inv-sheets/${parentSheetId}/rows/${row.id}/copy`, {});
+                                }
+                                await fetchSheetData();
+                            } else if (docName) {
+                                // Main Inventory Spreadsheet (duplicating a product row)
+                                try {
+                                    await apiClient.post(`/inv-sheets/${docName}/rows/${row.id}/copy`, {});
+                                } catch (err2) {
+                                    if (parentSheetId) {
+                                        await apiClient.post(`/inv-sheets/${parentSheetId}/rows/${docName}/cc-rows/${row.id}/copy`, {});
+                                    } else {
+                                        throw err2;
+                                    }
+                                }
+                                await fetchSheetData();
+                            } else {
+                                setRows(prev => {
+                                    const idx = prev.findIndex(r => r.id === row.id);
+                                    if (idx === -1) return prev;
+                                    const updated = [...prev];
+                                    const newRowId = `row-${Date.now()}-${Math.random()}`;
+                                    const copiedCells = (row.cells || []).map(cell => {
+                                        let rawVal = cell.rawValue;
+                                        let compVal = cell.computedValue;
+                                        let fmtVal = cell.formattedValue;
+
+                                        if (cell.columnId === 'col-cc-batch' || cell.columnId === 'col-cc-expiry-date') {
+                                            rawVal = '';
+                                            compVal = '';
+                                            fmtVal = '';
+                                        } else if (cell.columnId === 'col-cc-quantity-stock' || cell.columnId === 'col-cc-quantity-notified') {
+                                            rawVal = '0';
+                                            compVal = '0';
+                                            fmtVal = '0';
+                                        }
+
+                                        return {
+                                            ...cell,
+                                            rowId: newRowId,
+                                            rawValue: rawVal,
+                                            computedValue: compVal,
+                                            formattedValue: fmtVal
+                                        };
+                                    });
+                                    const newRow = {
+                                        ...row,
+                                        id: newRowId,
+                                        order: row.order + 0.5,
+                                        cells: copiedCells
+                                    };
+                                    updated.splice(idx + 1, 0, newRow);
+                                    updated.forEach((r, i) => { r.order = i; });
+                                    saveMockDataLocally(columns, updated);
+                                    return updated;
+                                });
+                            }
+                        } catch (err) {
+                            console.error('Failed to duplicate row:', err);
+                        }
+                    }
+                    break;
                 case 'add_row':
                     setRows(prev => {
                         const updated = [...prev];
@@ -3086,7 +3156,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                                 displayVal = isFocused ? val : (col.type === 'currency' && cell?.formattedValue ? cell.formattedValue : formatCurrency(val, col.type === 'currency' ? col.currencyCode : formulaCurrencyCode));
                                             } else if (col.type === 'date' && val) {
                                                 if (col.id === 'col-cc-expiry-date' || (isNested && col.name?.toLowerCase().includes('expiry'))) {
-                                                    const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+                                                    const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
                                                     let mNum = null;
                                                     let yNum = null;
                                                     const parts = String(val).split('-');
@@ -3095,13 +3165,13 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                                         else { mNum = parseInt(parts[0], 10); yNum = parts[1]; }
                                                     } else if (parts.length === 3) {
                                                         if (parts[0].length === 4) { yNum = parts[0]; mNum = parseInt(parts[1], 10); }
-                                                        else { mNum = parseInt(parts[1], 10); yNum = parts[2]; }
+                                                        else { mNum = parseInt(parts[0], 10); yNum = parts[2]; }
                                                     } else {
                                                         const d = new Date(val);
                                                         if (!isNaN(d.getTime())) { mNum = d.getMonth() + 1; yNum = d.getFullYear(); }
                                                     }
                                                     if (mNum >= 1 && mNum <= 12 && yNum) {
-                                                        displayVal = `${MONTH_NAMES[mNum - 1]} (${mNum}) ${yNum}`;
+                                                        displayVal = `${MONTH_NAMES[mNum - 1]} ${yNum}`;
                                                     }
                                                 } else {
                                                     const d = new Date(val + 'T00:00:00');
@@ -3431,7 +3501,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                                                             const [year, month] = val.split('-');
                                                                             const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
                                                                             const mIdx = parseInt(month, 10) - 1;
-                                                                            return `${monthNames[mIdx] || ''} (${parseInt(month, 10)}) ${year}`;
+                                                                            return `${monthNames[mIdx] || ''} ${year}`;
                                                                         })()}
                                                                     </span>
                                                                     <span className="text-gray-400 text-[11px] pr-1">📅</span>
@@ -3867,6 +3937,12 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                         setActiveRowMenu(null);
                     }} className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors">
                         <FiPlus className="w-4 h-4 text-blue-400" /> Add Row Below
+                    </button>
+                    <button onClick={() => {
+                        handleCellAction('duplicate_row', activeRowMenu.rowIndex, null);
+                        setActiveRowMenu(null);
+                    }} className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors text-indigo-600 font-medium">
+                        <FiCopy className="w-4 h-4 text-indigo-500" /> Duplicate Row
                     </button>
                     <div className="my-1 border-t border-gray-100"></div>
 

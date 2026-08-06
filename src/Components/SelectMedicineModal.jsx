@@ -168,7 +168,7 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                                                         }
                                                         const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
                                                         if (mNum >= 1 && mNum <= 12 && yNum) {
-                                                            return `${monthNames[mNum - 1]} (${mNum}) ${yNum}`;
+                                                            return `${monthNames[mNum - 1]} ${yNum}`;
                                                         }
                                                         return med.expiry;
                                                     })()}

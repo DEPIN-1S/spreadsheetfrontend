@@ -19,6 +19,7 @@ import WholesaleParties from "./Pages/WholesaleParties";
 import WholesaleInvoices from "./Pages/WholesaleInvoices";
 import GenerateWholesaleInvoice from "./Pages/GenerateWholesaleInvoice";
 import BillingHistory from "./Pages/BillingHistory";
+import InvoiceList from "./Pages/InvoiceList";
 import Ledger from "./Pages/Ledger";
 import { ClipboardProvider } from "./context/ClipboardContext";
 
@@ -126,6 +127,9 @@ function App() {
                     )}
                     {activePath === "/inventory/wholesale-invoices/generate" && (
                         <GenerateWholesaleInvoice setMobileOpen={setMobileOpen} setActivePath={setActivePath} />
+                    )}
+                    {activePath === "/inventory/invoice-list" && (
+                        <InvoiceList setMobileOpen={setMobileOpen} setActivePath={setActivePath} />
                     )}
                     {activePath === "/inventory/transaction-history" && (
                         <BillingHistory setMobileOpen={setMobileOpen} setActivePath={setActivePath} />

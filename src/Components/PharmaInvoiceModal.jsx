@@ -89,12 +89,17 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
         };
     });
 
-    const totalQty = items.reduce((acc, item) => acc + item.qty, 0);
-    const itemSubtotal = invoice.itemSubtotal ?? items.reduce((acc, item) => acc + item.value, 0);
-    const gstRate = invoice.gstRate ?? 5;
-    const taxAmount = invoice.taxAmount ?? (itemSubtotal * (gstRate / 100));
-    const taxableSubtotal = invoice.subtotal ?? Math.max(0, itemSubtotal - taxAmount);
-    const grandTotal = invoice.grandTotal ?? (taxableSubtotal + taxAmount);
+    const safeNum = (val, fallback = 0) => {
+        const n = Number(val);
+        return isNaN(n) ? fallback : n;
+    };
+
+    const totalQty = items.reduce((acc, item) => acc + safeNum(item.qty), 0);
+    const itemSubtotal = safeNum(invoice.itemSubtotal ?? items.reduce((acc, item) => acc + safeNum(item.value), 0));
+    const gstRate = safeNum(invoice.gstRate ?? 5);
+    const taxAmount = safeNum(invoice.taxAmount ?? (itemSubtotal * (gstRate / 100)));
+    const taxableSubtotal = safeNum(invoice.subtotal ?? Math.max(0, itemSubtotal - taxAmount));
+    const grandTotal = safeNum(invoice.grandTotal ?? (taxableSubtotal + taxAmount));
 
     const handlePrint = () => {
         window.print();

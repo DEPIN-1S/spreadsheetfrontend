@@ -1,11 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { FiMenu, FiArrowLeft, FiEye, FiEdit2, FiDownload, FiTrash2, FiFileText } from 'react-icons/fi';
 import PharmaInvoiceModal from '../Components/PharmaInvoiceModal';
+import Pagination from '../Components/Pagination';
 import { invInvoicesApi } from '../api/inventoryApiClient';
 
 export default function WholesaleInvoices({ setMobileOpen, setActivePath }) {
     const [selectedInvoice, setSelectedInvoice] = useState(null);
     const [allInvoices, setAllInvoices] = useState([]);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(10);
+
+    const paginatedInvoices = React.useMemo(() => {
+        const start = (currentPage - 1) * itemsPerPage;
+        return allInvoices.slice(start, start + itemsPerPage);
+    }, [allInvoices, currentPage, itemsPerPage]);
 
     useEffect(() => {
         fetchInvoices();
@@ -90,7 +98,7 @@ export default function WholesaleInvoices({ setMobileOpen, setActivePath }) {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200 text-sm">
-                                    {allInvoices.map((invoice) => {
+                                    {paginatedInvoices.map((invoice) => {
                                         return (
                                         <tr key={invoice.id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-4 font-medium text-indigo-600">{invoice.invoiceNo}</td>
@@ -148,6 +156,13 @@ export default function WholesaleInvoices({ setMobileOpen, setActivePath }) {
                                 </tbody>
                             </table>
                         </div>
+                        <Pagination
+                            currentPage={currentPage}
+                            totalItems={allInvoices.length}
+                            itemsPerPage={itemsPerPage}
+                            onPageChange={setCurrentPage}
+                            onItemsPerPageChange={setItemsPerPage}
+                        />
                     </div>
                 </div>
             </main>

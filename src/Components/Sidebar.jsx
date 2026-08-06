@@ -19,6 +19,7 @@ const navItems = [
             { name: "Inventory files", path: "/inventory/files" },
             { name: "RT Billing", path: "/inventory/retail-billing" },
             { name: "WH Billing", path: "/inventory/wholesale-billing" },
+            { name: "Invoice List", path: "/inventory/invoice-list" },
             { name: "Transaction History", path: "/inventory/transaction-history" },
             { name: "Downloads", path: "/downloads/transactions" },
             { name: "Ledger", path: "/inventory/ledger" }
@@ -120,7 +121,14 @@ export default function Sidebar({ isCollapsed, toggleCollapse, mobileOpen, setMo
                         {navItems
                             .filter(item => {
                                 const isSuperOrAdmin = user?.role === 'admin' || user?.role === 'superadmin';
-                                if ((item.name === "Users" || item.name === "Audit Logs") && !isSuperOrAdmin) {
+                                const isSuperadmin = user?.role === 'superadmin';
+                                if (item.name === "Users" && !isSuperOrAdmin) {
+                                    return false;
+                                }
+                                if (item.name === "Audit Logs" && !isSuperadmin) {
+                                    return false;
+                                }
+                                if (item.name === "Inventory" && !isSuperadmin) {
                                     return false;
                                 }
                                 return true;

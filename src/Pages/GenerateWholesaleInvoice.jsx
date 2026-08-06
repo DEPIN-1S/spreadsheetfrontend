@@ -69,6 +69,7 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
                                 id: idx + 1,
                                 description: item.description || '',
                                 batch: item.batch || '',
+                                expiry: item.expiry || '',
                                 qty: parseFloat(item.qty || 0),
                                 price: parseFloat(item.price || 0),
                                 invCcRowId: item.invCcRowId || null
@@ -129,10 +130,10 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
             ));
         } else {
             if (items.length === 1 && items[0].description.trim() === '' && items[0].price === 0) {
-                setItems([{ id: items[0].id, description: medicine.name, batch: medicine.batch, qty: 1, price: medicine.price, invCcRowId: medicine.ccRowId }]);
+                setItems([{ id: items[0].id, description: medicine.name, batch: medicine.batch, expiry: medicine.expiry || '08/28', qty: 1, price: medicine.price, invCcRowId: medicine.ccRowId }]);
             } else {
                 const newId = items.length > 0 ? Math.max(...items.map(i => i.id)) + 1 : 1;
-                setItems([...items, { id: newId, description: medicine.name, batch: medicine.batch, qty: 1, price: medicine.price, invCcRowId: medicine.ccRowId }]);
+                setItems([...items, { id: newId, description: medicine.name, batch: medicine.batch, expiry: medicine.expiry || '08/28', qty: 1, price: medicine.price, invCcRowId: medicine.ccRowId }]);
             }
         }
     };
@@ -144,7 +145,7 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
     const handleItemChange = (id, field, value) => {
         setItems(items.map(item => {
             if (item.id === id) {
-                const updatedVal = (field === 'description' || field === 'batch') ? value : Number(value) || 0;
+                const updatedVal = (field === 'description' || field === 'batch' || field === 'expiry') ? value : Number(value) || 0;
                 return { ...item, [field]: updatedVal };
             }
             return item;
@@ -208,7 +209,9 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
             setIsSuccess(true);
             setTimeout(() => {
                 if (setActivePath) {
-                    setActivePath('/inventory/wholesale-invoices');
+                    const returnPath = localStorage.getItem('return_path_invoice') || '/inventory/wholesale-invoices';
+                    localStorage.removeItem('return_path_invoice');
+                    setActivePath(returnPath);
                 }
             }, 1800);
         } catch (error) {
@@ -464,7 +467,8 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
                                         <th className="px-6 py-3 w-12">#</th>
                                         <th className="px-6 py-3">Item Description</th>
                                         <th className="px-6 py-3 w-32">Batch No.</th>
-                                        <th className="px-6 py-3 w-28">No</th>
+                                        <th className="px-6 py-3 w-28">Exp. Date</th>
+                                        <th className="px-6 py-3 w-24">No</th>
                                         <th className="px-6 py-3 w-36">Unit Price (₹)</th>
                                         <th className="px-6 py-3 w-36 text-right">Total (₹)</th>
                                         <th className="px-6 py-3 w-16 text-center">Action</th>
@@ -473,7 +477,7 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
                                 <tbody className="divide-y divide-gray-200 text-sm">
                                     {items.length === 0 ? (
                                         <tr>
-                                            <td colSpan="7" className="px-6 py-8 text-center text-gray-400">
+                                            <td colSpan="8" className="px-6 py-8 text-center text-gray-400">
                                                 No items added yet.{' '}
                                                 <button
                                                     type="button"
@@ -502,6 +506,15 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
                                                         {item.batch && <option value={`${item.batch}-B2`}>{item.batch}-B2</option>}
                                                         {item.batch && <option value={`${item.batch}-B3`}>{item.batch}-B3</option>}
                                                     </select>
+                                                </td>
+                                                <td className="px-6 py-3">
+                                                    <input
+                                                        type="text"
+                                                        placeholder="MM/YY"
+                                                        value={item.expiry || ''}
+                                                        onChange={(e) => handleItemChange(item.id, 'expiry', e.target.value)}
+                                                        className="w-full px-2 py-1.5 bg-white border border-gray-300 text-gray-700 font-mono text-xs rounded focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                    />
                                                 </td>
                                                 <td className="px-6 py-3">
                                                     <input

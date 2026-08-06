@@ -175,13 +175,15 @@ export default function Users({ setMobileOpen }) {
                                 className="pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 w-full sm:w-64 bg-white transition-all shadow-sm"
                             />
                         </div>
-                        <button
-                            onClick={openAddModal}
-                            className="flex items-center gap-2 bg-[#1A56DB] hover:bg-blue-700 text-white px-5 py-2 rounded-xl text-sm font-medium transition-all shadow-sm shadow-blue-500/20 active:scale-95"
-                        >
-                            <FiUserPlus className="w-4 h-4" />
-                            Add User
-                        </button>
+                        {currentUser?.role === 'superadmin' && (
+                            <button
+                                onClick={openAddModal}
+                                className="flex items-center gap-2 bg-[#1A56DB] hover:bg-blue-700 text-white px-5 py-2 rounded-xl text-sm font-medium transition-all shadow-sm shadow-blue-500/20 active:scale-95"
+                            >
+                                <FiUserPlus className="w-4 h-4" />
+                                Add User
+                            </button>
+                        )}
                     </div>
                 </div>
 

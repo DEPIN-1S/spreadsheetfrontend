@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FiMenu, FiBookOpen, FiSearch } from 'react-icons/fi';
+import Pagination from '../Components/Pagination';
 import { invLedgerApi } from '../api/inventoryApiClient';
 
 export default function Ledger({ setMobileOpen, setActivePath }) {
@@ -30,6 +31,19 @@ export default function Ledger({ setMobileOpen, setActivePath }) {
         const matchesType = filterType === 'ALL' || (filterType === 'WH' && entry.type === 'Wholesale') || (filterType === 'RT' && entry.type === 'Retail');
         return matchesSearch && matchesType;
     });
+
+    // Pagination State
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(10);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchQuery, filterType]);
+
+    const paginatedEntries = React.useMemo(() => {
+        const start = (currentPage - 1) * itemsPerPage;
+        return filteredEntries.slice(start, start + itemsPerPage);
+    }, [filteredEntries, currentPage, itemsPerPage]);
 
     const handleStatusChange = async (id, newStatus) => {
         const entry = ledgerEntries.find(e => e.id === id);
@@ -171,7 +185,7 @@ export default function Ledger({ setMobileOpen, setActivePath }) {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200 text-sm">
-                                    {filteredEntries.map((entry) => (
+                                    {paginatedEntries.map((entry) => (
                                         <tr key={entry.id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-4 text-gray-600">{entry.date}</td>
                                             <td className="px-6 py-4">
@@ -218,6 +232,13 @@ export default function Ledger({ setMobileOpen, setActivePath }) {
                                 </tbody>
                             </table>
                         </div>
+                        <Pagination
+                            currentPage={currentPage}
+                            totalItems={filteredEntries.length}
+                            itemsPerPage={itemsPerPage}
+                            onPageChange={setCurrentPage}
+                            onItemsPerPageChange={setItemsPerPage}
+                        />
                     </div>
                 </div>
             </main>
