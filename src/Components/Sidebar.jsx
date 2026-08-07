@@ -215,7 +215,7 @@ export default function Sidebar({ isCollapsed, toggleCollapse, mobileOpen, setMo
 
                     {/* Footer */}
                     <div className="p-4 border-t border-white/5 space-y-2">
-                        {user && (user.role === 'admin' || user.role === 'superadmin') && (
+                        {user && user.role !== 'admin' && (
                             <NotificationBell isCollapsed={isCollapsed} />
                         )}
                         <button

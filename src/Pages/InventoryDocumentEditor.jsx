@@ -295,6 +295,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
     const { cellClipboard, setCellClipboard } = useClipboard();
     const [emojiPickerCell, setEmojiPickerCell] = useState(null); // { rowId, colId }
     const emojiTextareaRefs = useRef({});
+    const pendingSavesRef = useRef([]);
 
     useEffect(() => {
         const handleClickOutside = () => setActiveQtyDropdown(null);
@@ -1684,12 +1685,22 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                     break;
                 case 'delete_row':
                     if (row && row.id) {
-                        setRows(prev => {
-                            const updated = prev.filter(r => r.id !== row.id);
-                            updated.forEach((r, i) => { r.order = i; });
-                            saveMockDataLocally(columns, updated);
-                            return updated;
-                        });
+                        try {
+                            if (isNested && parentSheetId && docName) {
+                                await invSheetsApi.deleteCcRow(parentSheetId, docName, row.id);
+                            } else if (docName) {
+                                await invSheetsApi.deleteRow(docName, row.id);
+                            }
+                            await fetchSheetData();
+                        } catch (err) {
+                            console.error("Failed to delete row:", err);
+                            setRows(prev => {
+                                const updated = prev.filter(r => r.id !== row.id);
+                                updated.forEach((r, i) => { r.order = i; });
+                                saveMockDataLocally(columns, updated);
+                                return updated;
+                            });
+                        }
                     }
                     break;
                 case 'remove_cc':
@@ -1812,7 +1823,29 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
         }
 
         try {
-            // Optimistic update
+            // Initiate API save IMMEDIATELY (synchronously) so pendingSavesRef is populated right away
+            const targetRowBeforeUpdate = rows.find(r => r.id === rowId);
+            if (targetRowBeforeUpdate) {
+                const updatedCellsMap = new Map((targetRowBeforeUpdate.cells || []).map(c => [c.columnId, { ...c }]));
+                updatedCellsMap.set(columnId, {
+                    ...(updatedCellsMap.get(columnId) || { columnId }),
+                    rawValue: String(finalValue),
+                    computedValue: String(finalValue)
+                });
+                const updatedCellsArray = Array.from(updatedCellsMap.values());
+
+                const savePromise = isNested
+                    ? invSheetsApi.updateCcCells(parentSheetId, docName, rowId, updatedCellsArray)
+                    : invSheetsApi.updateCells(docName, rowId, updatedCellsArray);
+
+                savePromise.catch(err => console.error("Failed to save cells:", err));
+                pendingSavesRef.current.push(savePromise);
+                savePromise.finally(() => {
+                    pendingSavesRef.current = pendingSavesRef.current.filter(p => p !== savePromise);
+                });
+            }
+
+            // Optimistic state update
             setRows(currentRows => {
                 const updated = currentRows.map(row => {
                     if (row.id === rowId) {
@@ -1914,17 +1947,6 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                     }
                     return row;
                 });
-
-                const targetRow = updated.find(r => r.id === rowId);
-                if (targetRow) {
-                    if (isNested) {
-                        invSheetsApi.updateCcCells(parentSheetId, docName, rowId, targetRow.cells)
-                            .catch(err => console.error("Failed to save CC cells:", err));
-                    } else {
-                        invSheetsApi.updateCells(docName, rowId, targetRow.cells)
-                            .catch(err => console.error("Failed to save cells:", err));
-                    }
-                }
 
                 return updated;
             });
@@ -5024,7 +5046,13 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                         <div className="flex-1 overflow-hidden relative bg-white">
                             {/* Close button overlayed or integrated into child header */}
                             <button
-                                onClick={() => setActiveNestedSheetId(null)}
+                                onClick={async () => {
+                                    if (pendingSavesRef.current && pendingSavesRef.current.length > 0) {
+                                        await Promise.allSettled(pendingSavesRef.current);
+                                    }
+                                    setActiveNestedSheetId(null);
+                                    await fetchSheetData();
+                                }}
                                 className="absolute top-4 right-6 z-[310] text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-colors p-1.5 rounded-lg"
                                 title="Close Details"
                             >
