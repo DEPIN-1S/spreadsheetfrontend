@@ -1864,9 +1864,18 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         try {
             setIsExportModalOpen(false);
             setIsLoading(true);
+
+            const stripEmojis = (str) => {
+                if (!str || typeof str !== 'string') return str;
+                return str
+                    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}\u{2B55}\u{203C}\u{2049}\u{2122}\u{2139}\u{3297}\u{3299}\u{FE0F}\u{FE0E}\u{200D}\u{200C}]/gu, '')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+            };
+
             const EXCLUDED_TYPES = ['comment', 'pdf'];
             const colsToExport = columns.filter(c => exportSelectedColumns[c.id] && !EXCLUDED_TYPES.includes(c.type));
-            const tableCols = colsToExport.map(c => ({ header: c.name, dataKey: c.id }));
+            const tableCols = colsToExport.map(c => ({ header: stripEmojis(c.name), dataKey: c.id }));
             
             // Add a serial number column to the beginning
             tableCols.unshift({ header: 'S.No.', dataKey: 'serial_number' });
@@ -1880,7 +1889,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                 unit: 'mm',
                 format: [calculatedWidth, 210]
             });
-            doc.text(`${sheetData?.name || 'Spreadsheet'} - Export`, 14, 15);
+            doc.text(`${stripEmojis(sheetData?.name || 'Spreadsheet')} - Export`, 14, 15);
 
             const tableData = [];
             const imagesToDraw = {};
@@ -1945,7 +1954,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
 
                     // Strip emojis because jsPDF standard fonts cannot render them and produce garbled text
                     if (typeof val === 'string') {
-                        val = val.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
+                        val = stripEmojis(val);
                     }
 
                     // Determine if formula should be formatted as currency
