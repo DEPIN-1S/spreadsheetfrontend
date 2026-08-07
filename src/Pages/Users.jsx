@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { FiMenu, FiEdit2, FiTrash2, FiSearch, FiUserPlus, FiX, FiUser, FiMail, FiLock, FiPhone, FiShield, FiEye, FiEyeOff } from "react-icons/fi";
+import { FiMenu, FiEdit2, FiSearch, FiUserPlus, FiX, FiUser, FiMail, FiPhone, FiShield, FiCheckCircle } from "react-icons/fi";
 import apiClient from "../api/apiClient";
 import Swal from "sweetalert2";
 
@@ -11,12 +11,9 @@ export default function Users({ setMobileOpen }) {
     // Modal state
     const [showModal, setShowModal] = useState(false); // add/edit modal
     const [editingUser, setEditingUser] = useState(null); // null = add mode, object = edit mode
-    const [formData, setFormData] = useState({ name: '', email: '', phone: '', role: 'staff' });
+    const [formData, setFormData] = useState({ name: '', email: '', phone: '', role: 'staff', isActive: true });
     const [formError, setFormError] = useState('');
     const [formLoading, setFormLoading] = useState(false);
-
-    // Delete confirmation loading
-    const [deleteLoading, setDeleteLoading] = useState(false);
 
     // Current user from localStorage
     const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
@@ -49,14 +46,20 @@ export default function Users({ setMobileOpen }) {
     // ── Add/Edit Modal ───────────────────────────────────────────────────────────
     const openAddModal = () => {
         setEditingUser(null);
-        setFormData({ name: '', email: '', phone: '', role: 'staff' });
+        setFormData({ name: '', email: '', phone: '', role: 'staff', isActive: true });
         setFormError('');
         setShowModal(true);
     };
 
     const openEditModal = (user) => {
         setEditingUser(user);
-        setFormData({ name: user.name || '', email: user.email || '', phone: user.phone || '', role: user.role || 'staff' });
+        setFormData({
+            name: user.name || '',
+            email: user.email || '',
+            phone: user.phone || '',
+            role: user.role || 'staff',
+            isActive: user.isActive !== undefined ? user.isActive : true
+        });
         setFormError('');
         setShowModal(true);
     };
@@ -64,7 +67,7 @@ export default function Users({ setMobileOpen }) {
     const closeModal = () => {
         setShowModal(false);
         setEditingUser(null);
-        setFormData({ name: '', email: '', phone: '', role: 'staff' });
+        setFormData({ name: '', email: '', phone: '', role: 'staff', isActive: true });
         setFormError('');
     };
 
@@ -76,7 +79,13 @@ export default function Users({ setMobileOpen }) {
         try {
             if (editingUser) {
                 // Edit mode
-                const payload = { name: formData.name, email: formData.email, phone: formData.phone, role: formData.role };
+                const payload = {
+                    name: formData.name,
+                    email: formData.email,
+                    phone: formData.phone,
+                    role: formData.role,
+                    isActive: formData.isActive
+                };
                 await apiClient.put(`/user/${editingUser.id}`, payload);
             } else {
                 // Add mode
@@ -89,7 +98,8 @@ export default function Users({ setMobileOpen }) {
                     name: formData.name,
                     email: formData.email,
                     phone: formData.phone,
-                    role: formData.role
+                    role: formData.role,
+                    isActive: formData.isActive
                 });
             }
             closeModal();
@@ -101,36 +111,20 @@ export default function Users({ setMobileOpen }) {
         }
     };
 
-    // ── Delete ────────────────────────────────────────────────────────────────────
-    const handleDelete = async (user) => {
-        const result = await Swal.fire({
-            title: 'Delete User?',
-            text: `Are you sure you want to deactivate ${user.name}? This will revoke their access.`,
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#ef4444',
-            cancelButtonColor: '#6b7280',
-            confirmButtonText: 'Delete',
-            cancelButtonText: 'Cancel',
-            customClass: {
-                popup: 'rounded-2xl',
-                confirmButton: 'rounded-xl px-5',
-                cancelButton: 'rounded-xl px-5'
-            }
-        });
-
-        if (!result.isConfirmed) return;
-
-        setDeleteLoading(true);
+    // ── Toggle Active / Inactive Status ─────────────────────────────────────────
+    const handleToggleStatus = async (user) => {
         try {
-            await apiClient.delete(`/user/${user.id}`);
-            Swal.fire({ icon: 'success', title: 'Deleted', text: 'User deactivated.', timer: 1500, showConfirmButton: false, customClass: { popup: 'rounded-2xl' } });
+            const newStatus = !user.isActive;
+            await apiClient.put(`/user/${user.id}`, { isActive: newStatus });
             fetchUsers();
         } catch (err) {
-            console.error('Failed to delete user:', err);
-            Swal.fire({ icon: 'error', title: 'Error', text: err.response?.data?.message || 'Failed to delete user.', customClass: { popup: 'rounded-2xl' } });
-        } finally {
-            setDeleteLoading(false);
+            console.error('Failed to toggle user status:', err);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: err.response?.data?.message || 'Failed to change user status.',
+                customClass: { popup: 'rounded-2xl' }
+            });
         }
     };
 
@@ -230,9 +224,18 @@ export default function Users({ setMobileOpen }) {
                                                 {getRoleBadge(user.role)}
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className={`px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full ${user.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'}`}>
+                                                <button
+                                                    onClick={() => handleToggleStatus(user)}
+                                                    className={`px-3 py-1 inline-flex items-center text-xs leading-5 font-semibold rounded-full transition-all cursor-pointer hover:scale-105 active:scale-95 shadow-xs ${
+                                                        user.isActive
+                                                            ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                                    }`}
+                                                    title="Click to toggle status"
+                                                >
+                                                    <span className={`w-2 h-2 rounded-full mr-1.5 ${user.isActive ? 'bg-emerald-500' : 'bg-gray-400'}`}></span>
                                                     {user.isActive ? 'Active' : 'Inactive'}
-                                                </span>
+                                                </button>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                                 <div className="flex justify-end gap-3">
@@ -243,15 +246,6 @@ export default function Users({ setMobileOpen }) {
                                                     >
                                                         <FiEdit2 className="w-4 h-4" />
                                                     </button>
-                                                    {user.id !== currentUser?.id && user.role !== 'superadmin' && (
-                                                        <button
-                                                            onClick={() => handleDelete(user)}
-                                                            className="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 p-2 rounded-lg transition-colors"
-                                                            title="Delete User"
-                                                        >
-                                                            <FiTrash2 className="w-4 h-4" />
-                                                        </button>
-                                                    )}
                                                 </div>
                                             </td>
                                         </tr>
@@ -357,6 +351,22 @@ export default function Users({ setMobileOpen }) {
                                         {currentUser?.role === 'superadmin' && (
                                             <option value="superadmin">Super Admin</option>
                                         )}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Status */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
+                                <div className="relative">
+                                    <FiCheckCircle className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                                    <select
+                                        value={formData.isActive ? 'active' : 'inactive'}
+                                        onChange={(e) => setFormData(f => ({ ...f, isActive: e.target.value === 'active' }))}
+                                        className="block w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-sm transition-all appearance-none bg-white"
+                                    >
+                                        <option value="active">Active</option>
+                                        <option value="inactive">Inactive</option>
                                     </select>
                                 </div>
                             </div>

@@ -14,6 +14,7 @@ import { BiStrikethrough, BiArrowToLeft, BiArrowToRight } from "react-icons/bi";
 import { TbMathFunction } from "react-icons/tb";
 import apiClient from "../api/apiClient";
 import { invMastersApi, invSheetsApi } from "../api/inventoryApiClient";
+import inventoryApiClient from "../api/inventoryApiClient";
 import { getMediaUrl } from "../utils/media";
 import { formatCurrency, parseCurrencyInput, SUPPORTED_CURRENCIES, getCurrencySymbol } from "../utils/currencyUtils";
 import ShareModal from "../Components/ShareModal";
@@ -718,6 +719,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
     const [isSortPanelOpen, setIsSortPanelOpen] = useState(false);
     const [pendingSortConfig, setPendingSortConfig] = useState({ colId: '', direction: 'asc' });
     const sortPanelRef = useRef(null);
+    const isDuplicatingRef = useRef(false);
 
 
     // ── Comment State ─────────────────────────────────────────────────────────
@@ -1609,27 +1611,17 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                     break;
                 case 'duplicate_row':
                     if (row && row.id) {
+                        // Guard against double-firing (StrictMode, event bubbling, etc.)
+                        if (isDuplicatingRef.current) break;
+                        isDuplicatingRef.current = true;
                         try {
                             if (isNested && parentSheetId && docName) {
                                 // Sub-Spreadsheet View modal (duplicating a batch row)
-                                try {
-                                    await apiClient.post(`/inv-sheets/${parentSheetId}/rows/${docName}/cc-rows/${row.id}/copy`, {});
-                                } catch (err1) {
-                                    console.warn('Cc-row copy failed, trying main copy route:', err1);
-                                    await apiClient.post(`/inv-sheets/${parentSheetId}/rows/${row.id}/copy`, {});
-                                }
+                                await inventoryApiClient.post(`/inv-sheets/${parentSheetId}/rows/${docName}/cc-rows/${row.id}/copy`, {});
                                 await fetchSheetData();
                             } else if (docName) {
                                 // Main Inventory Spreadsheet (duplicating a product row)
-                                try {
-                                    await apiClient.post(`/inv-sheets/${docName}/rows/${row.id}/copy`, {});
-                                } catch (err2) {
-                                    if (parentSheetId) {
-                                        await apiClient.post(`/inv-sheets/${parentSheetId}/rows/${docName}/cc-rows/${row.id}/copy`, {});
-                                    } else {
-                                        throw err2;
-                                    }
-                                }
+                                await inventoryApiClient.post(`/inv-sheets/${docName}/rows/${row.id}/copy`, {});
                                 await fetchSheetData();
                             } else {
                                 setRows(prev => {
@@ -1674,6 +1666,9 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                             }
                         } catch (err) {
                             console.error('Failed to duplicate row:', err);
+                        } finally {
+                            // Reset guard after 500ms to allow future duplications
+                            setTimeout(() => { isDuplicatingRef.current = false; }, 500);
                         }
                     }
                     break;
