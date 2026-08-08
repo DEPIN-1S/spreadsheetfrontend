@@ -21,6 +21,8 @@ export default function BillingHistory({ setMobileOpen }) {
                 invoiceNo: inv.invoiceNo,
                 date: inv.invoiceDate,
                 partyName: inv.partyName,
+                subtotal: Number(inv.subtotal) || 0,
+                taxAmount: Number(inv.taxAmount) || 0,
                 amount: Number(inv.grandTotal) || 0,
                 paymentMethod: inv.paymentMethod,
                 type: inv.type === 'wholesale' ? 'Wholesale' : 'Retail',
@@ -44,6 +46,8 @@ export default function BillingHistory({ setMobileOpen }) {
                     invoiceNo: inv.invoiceNo,
                     date: inv.invoiceDate,
                     partyName: inv.partyName,
+                    subtotal: Number(inv.subtotal) || 0,
+                    taxAmount: Number(inv.taxAmount) || 0,
                     amount: Number(inv.grandTotal) || 0,
                     paymentMethod: inv.paymentMethod,
                     type: inv.type === 'wholesale' ? 'Wholesale' : 'Retail',
@@ -66,19 +70,25 @@ export default function BillingHistory({ setMobileOpen }) {
         const activeInvoices = invoices.filter(inv => !chAppliedIds.includes(inv.id));
         const totalCount = invoices.length;
         const totalRevenue = activeInvoices.reduce((sum, inv) => sum + inv.amount, 0);
+        const totalGst = activeInvoices.reduce((sum, inv) => sum + (inv.taxAmount || 0), 0);
         const wholesaleInvoices = activeInvoices.filter(inv => inv.type === 'Wholesale');
         const retailInvoices = activeInvoices.filter(inv => inv.type === 'Retail');
         
         const wholesaleRevenue = wholesaleInvoices.reduce((sum, inv) => sum + inv.amount, 0);
         const retailRevenue = retailInvoices.reduce((sum, inv) => sum + inv.amount, 0);
+        const wholesaleGst = wholesaleInvoices.reduce((sum, inv) => sum + (inv.taxAmount || 0), 0);
+        const retailGst = retailInvoices.reduce((sum, inv) => sum + (inv.taxAmount || 0), 0);
 
         return {
             totalCount,
             totalRevenue,
+            totalGst,
             wholesaleCount: wholesaleInvoices.length,
             wholesaleRevenue,
+            wholesaleGst,
             retailCount: retailInvoices.length,
-            retailRevenue
+            retailRevenue,
+            retailGst
         };
     }, [invoices, chAppliedIds]);
 
@@ -127,7 +137,7 @@ export default function BillingHistory({ setMobileOpen }) {
     };
 
     const handleDownloadPDF = () => {
-        const doc = new jsPDF();
+        const doc = new jsPDF('landscape');
         
         // Header
         doc.setFontSize(16);
@@ -144,10 +154,17 @@ export default function BillingHistory({ setMobileOpen }) {
 
         const exportInvoices = filteredInvoices.filter(inv => !chAppliedIds.includes(inv.id));
 
-        let totalAmount = 0;
+        let totalSubtotal = 0;
+        let totalGstCut = 0;
+        let totalGrandTotal = 0;
         const tableRows = exportInvoices.map((inv, index) => {
+            const subtotalVal = Number(inv.subtotal) || 0;
+            const gstVal = Number(inv.taxAmount) || 0;
             const amountVal = Number(inv.amount) || 0;
-            totalAmount += amountVal;
+            totalSubtotal += subtotalVal;
+            totalGstCut += gstVal;
+            totalGrandTotal += amountVal;
+
             return [
                 index + 1,
                 inv.invoiceNo,
@@ -156,6 +173,8 @@ export default function BillingHistory({ setMobileOpen }) {
                 inv.partyName,
                 inv.paymentMethod,
                 inv.status || 'Paid',
+                `Rs. ${subtotalVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                `Rs. ${gstVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
                 `Rs. ${amountVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
             ];
         });
@@ -169,11 +188,13 @@ export default function BillingHistory({ setMobileOpen }) {
             "",
             "",
             "GRAND TOTAL:",
-            `Rs. ${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+            `Rs. ${totalSubtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+            `Rs. ${totalGstCut.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+            `Rs. ${totalGrandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
         ]);
 
         autoTable(doc, {
-            head: [["#", "Invoice No", "Date", "Type", "Party / Customer Name", "Payment Method", "Status", "Amount"]],
+            head: [["#", "Invoice No", "Date", "Type", "Party / Customer Name", "Payment Method", "Status", "Subtotal", "GST (Cut)", "Grand Total"]],
             body: tableRows,
             startY: 36,
             styles: { fontSize: 8, cellPadding: 3, font: 'helvetica' },
@@ -186,13 +207,15 @@ export default function BillingHistory({ setMobileOpen }) {
                 4: { cellWidth: 45 },
                 5: { cellWidth: 26 },
                 6: { cellWidth: 20 },
-                7: { cellWidth: 22, halign: 'right' }
+                7: { cellWidth: 25, halign: 'right' },
+                8: { cellWidth: 25, halign: 'right' },
+                9: { cellWidth: 25, halign: 'right' }
             },
             didParseCell: function(data) {
                 if (data.row.index === tableRows.length - 1) {
                     data.cell.styles.fontStyle = 'bold';
                     data.cell.styles.fillColor = [243, 244, 246];
-                    if (data.column.index === 5 || data.column.index === 6) {
+                    if (data.column.index >= 7) {
                         data.cell.styles.textColor = [79, 70, 229];
                         data.cell.styles.fontSize = 9;
                     }
@@ -239,15 +262,26 @@ export default function BillingHistory({ setMobileOpen }) {
                 <div className="max-w-7xl mx-auto space-y-6">
                     
                     {/* KPI Summary Cards */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                         <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
                             <div>
                                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Transactions</p>
                                 <p className="text-2xl font-black text-gray-900 mt-1">{stats.totalCount}</p>
                                 <p className="text-xs text-indigo-600 font-medium mt-0.5">All generated bills</p>
                             </div>
-                            <div className="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                            <div className="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
                                 <FiFileText size={24} />
+                            </div>
+                        </div>
+
+                        <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
+                            <div>
+                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total GST (Cut)</p>
+                                <p className="text-2xl font-black text-rose-600 mt-1">{formatCurrency(stats.totalGst)}</p>
+                                <p className="text-xs text-rose-500 font-medium mt-0.5">Tax deducted on bills</p>
+                            </div>
+                            <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+                                <FiTrendingUp size={24} />
                             </div>
                         </div>
 
@@ -255,9 +289,9 @@ export default function BillingHistory({ setMobileOpen }) {
                             <div>
                                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">WH Revenue</p>
                                 <p className="text-2xl font-black text-gray-900 mt-1">{formatCurrency(stats.wholesaleRevenue)}</p>
-                                <p className="text-xs text-blue-600 font-medium mt-0.5">{stats.wholesaleCount} invoices</p>
+                                <p className="text-xs text-blue-600 font-medium mt-0.5">{stats.wholesaleCount} invoices (GST: {formatCurrency(stats.wholesaleGst)})</p>
                             </div>
-                            <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
+                            <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
                                 <FiBox size={24} />
                             </div>
                         </div>
@@ -266,9 +300,9 @@ export default function BillingHistory({ setMobileOpen }) {
                             <div>
                                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">RT Revenue</p>
                                 <p className="text-2xl font-black text-gray-900 mt-1">{formatCurrency(stats.retailRevenue)}</p>
-                                <p className="text-xs text-purple-600 font-medium mt-0.5">{stats.retailCount} invoices</p>
+                                <p className="text-xs text-purple-600 font-medium mt-0.5">{stats.retailCount} invoices (GST: {formatCurrency(stats.retailGst)})</p>
                             </div>
-                            <div className="w-12 h-12 rounded-full bg-purple-50 text-purple-600 flex items-center justify-center">
+                            <div className="w-12 h-12 rounded-full bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
                                 <FiShoppingBag size={24} />
                             </div>
                         </div>
@@ -336,17 +370,19 @@ export default function BillingHistory({ setMobileOpen }) {
                         </div>
 
                         <div className="overflow-x-auto">
-                            <table className="w-full text-left border-collapse min-w-[850px]">
+                            <table className="w-full text-left border-collapse min-w-[1000px]">
                                 <thead>
                                     <tr className="bg-gray-50 border-b border-gray-200 text-xs uppercase tracking-wider text-gray-500 font-bold">
-                                        <th className="px-6 py-3.5">Invoice No.</th>
-                                        <th className="px-6 py-3.5">Date</th>
-                                        <th className="px-6 py-3.5">Type</th>
-                                        <th className="px-6 py-3.5">Customer / Party Name</th>
-                                        <th className="px-6 py-3.5">Payment Method</th>
-                                        <th className="px-6 py-3.5">Status</th>
-                                        <th className="px-6 py-3.5 text-right">Amount</th>
-                                        <th className="px-6 py-3.5 text-right">Actions</th>
+                                        <th className="px-5 py-3.5">Invoice No.</th>
+                                        <th className="px-5 py-3.5">Date</th>
+                                        <th className="px-5 py-3.5">Type</th>
+                                        <th className="px-5 py-3.5">Customer / Party Name</th>
+                                        <th className="px-5 py-3.5">Payment</th>
+                                        <th className="px-5 py-3.5">Status</th>
+                                        <th className="px-5 py-3.5 text-right">Subtotal</th>
+                                        <th className="px-5 py-3.5 text-right text-rose-600">GST (Cut)</th>
+                                        <th className="px-5 py-3.5 text-right">Grand Total</th>
+                                        <th className="px-5 py-3.5 text-right">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200 text-sm font-medium">
@@ -354,13 +390,13 @@ export default function BillingHistory({ setMobileOpen }) {
                                         const isChApplied = chAppliedIds.includes(inv.id);
                                         return (
                                         <tr key={inv.id} className={`${isChApplied ? 'bg-orange-50/80 hover:bg-orange-100/80' : 'hover:bg-gray-50/80'} transition-colors group`}>
-                                            <td className="px-6 py-4 font-mono font-bold text-indigo-600">
+                                            <td className="px-5 py-4 font-mono font-bold text-indigo-600">
                                                 {inv.invoiceNo}
                                             </td>
-                                            <td className="px-6 py-4 text-gray-600 font-sans">
+                                            <td className="px-5 py-4 text-gray-600 font-sans whitespace-nowrap">
                                                 {inv.date}
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-5 py-4">
                                                 <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider inline-flex items-center gap-1 ${
                                                     inv.type === 'Wholesale' 
                                                         ? 'bg-blue-100 text-blue-800 border border-blue-200' 
@@ -370,10 +406,10 @@ export default function BillingHistory({ setMobileOpen }) {
                                                     {inv.type === 'Wholesale' ? 'WH' : 'RT'}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 font-bold text-gray-900">
+                                            <td className="px-5 py-4 font-bold text-gray-900">
                                                 {inv.partyName}
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-5 py-4">
                                                 <span className={`px-2.5 py-1 rounded-md text-xs font-semibold ${
                                                     inv.paymentMethod === 'Cash' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
                                                     inv.paymentMethod === 'UPI' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' :
@@ -382,7 +418,7 @@ export default function BillingHistory({ setMobileOpen }) {
                                                     {inv.paymentMethod}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-5 py-4">
                                                 <span className={`px-2.5 py-1 rounded-md text-xs font-semibold ${
                                                     inv.status === 'Paid' ? 'bg-green-50 text-green-700 border border-green-200' :
                                                     inv.status === 'Unpaid' ? 'bg-red-50 text-red-700 border border-red-200' :
@@ -391,13 +427,19 @@ export default function BillingHistory({ setMobileOpen }) {
                                                     {inv.status || 'Paid'}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 text-right">
+                                            <td className="px-5 py-4 text-right font-mono text-gray-600">
+                                                {formatCurrency(inv.subtotal || 0)}
+                                            </td>
+                                            <td className="px-5 py-4 text-right font-mono font-bold text-rose-600">
+                                                {formatCurrency(inv.taxAmount || 0)}
+                                            </td>
+                                            <td className="px-5 py-4 text-right">
                                                 <div className="font-extrabold font-mono text-gray-900">{formatCurrency(inv.amount)}</div>
                                                 {inv.status === 'Partially Paid' && inv.pendingAmount && (
                                                     <div className="text-xs text-red-500 font-semibold mt-0.5 font-sans">Pending: {formatCurrency(inv.pendingAmount)}</div>
                                                 )}
                                             </td>
-                                            <td className="px-6 py-4 text-right whitespace-nowrap">
+                                            <td className="px-5 py-4 text-right whitespace-nowrap">
                                                 <div className="flex items-center justify-end gap-2">
                                                     <button 
                                                         onClick={() => setSelectedInvoice(inv)} 
@@ -431,7 +473,7 @@ export default function BillingHistory({ setMobileOpen }) {
                                     })}
                                     {filteredInvoices.length === 0 && (
                                         <tr>
-                                            <td colSpan="7" className="px-6 py-12 text-center text-gray-500 font-sans">
+                                            <td colSpan="10" className="px-6 py-12 text-center text-gray-500 font-sans">
                                                 <FiFileText className="mx-auto h-8 w-8 text-gray-300 mb-2" />
                                                 <p className="text-base font-semibold text-gray-600">No invoices found</p>
                                                 <p className="text-xs text-gray-400 mt-1">Try adjusting your search query or filter criteria.</p>

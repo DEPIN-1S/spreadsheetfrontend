@@ -189,6 +189,10 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
             subtotal: taxableSubtotal,
             taxAmount,
             gstRate,
+            discountAmount: effectiveDiscount,
+            additionalChargesAmount: totalAdditionalCharges,
+            additionalCharges: additionalCharges,
+            roundOffAmount: effectiveRoundOff,
             grandTotal,
             paymentMethod,
             paymentStatus,
@@ -832,12 +836,16 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
                     invoiceNo,
                     date: invoiceDate,
                     paymentMethod,
-                    party: selectedParty || { name: 'DR.BASHEER MBBS / SHIFA CLINIC', address: 'KILIMINOOR, THIRUVANANTHAPURAM - 695601', contact: '9447411778', id: 373 },
+                    party: selectedParty || { name: 'Wholesale Customer', address: '', contact: '', id: 373 },
                     items: items.filter(i => i.description && i.description.trim() !== ''),
                     itemSubtotal,
                     subtotal: taxableSubtotal,
                     taxAmount,
                     gstRate,
+                    discountAmount: effectiveDiscount,
+                    additionalChargesAmount: totalAdditionalCharges,
+                    additionalCharges: additionalCharges,
+                    roundOffAmount: effectiveRoundOff,
                     grandTotal
                 }}
             />

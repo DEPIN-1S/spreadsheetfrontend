@@ -475,9 +475,28 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                 let meta = {};
                 try {
                     const ccMetaRes = await invSheetsApi.getCcMeta(parentSheetId, docName);
-                    meta = ccMetaRes.data.data || {};
+                    meta = ccMetaRes.data?.data || {};
                 } catch (err) {
                     console.error("Error fetching ccMeta:", err);
+                }
+
+                // Fallback to localStorage if values exist locally
+                const localMetaStr = localStorage.getItem(`cc_meta_${docName}`);
+                if (localMetaStr) {
+                    try {
+                        const localMeta = JSON.parse(localMetaStr);
+                        meta = {
+                            gst: meta.gst || localMeta.gst || '',
+                            category: meta.category || localMeta.category || '',
+                            division: meta.division || localMeta.division || '',
+                            manufacturer: meta.manufacturer || localMeta.manufacturer || '',
+                            companyName: meta.companyName || localMeta.companyName || '',
+                            quantity: meta.quantity || localMeta.quantity || '',
+                            hsnCode: meta.hsnCode || localMeta.hsnCode || ''
+                        };
+                    } catch (e) {
+                        console.error("Error parsing localMeta:", e);
+                    }
                 }
 
                 setCcCategory(meta.category || '');
@@ -540,23 +559,81 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
         }
     }, [docName, isNested, parentSheetId]);
 
-    const handleCCMetaChange = (field, value) => {
+    const [isSavingMeta, setIsSavingMeta] = useState(false);
+
+    const handleCCMetaChange = async (field, value) => {
         if (!isNested) return;
-        const currentMeta = JSON.parse(localStorage.getItem(`cc_meta_${docName}`) || "{}");
-        const updatedMeta = { ...currentMeta, [field]: value };
-        localStorage.setItem(`cc_meta_${docName}`, JSON.stringify(updatedMeta));
         
         if (field === 'category') setCcCategory(value);
-        if (field === 'unit') setCcUnit(value);
+        if (field === 'unit' || field === 'quantity') {
+            setCcUnit(value);
+            setCcQuantity(value);
+        }
         if (field === 'gst') setCcGst(value);
         if (field === 'division') setCcDivision(value);
         if (field === 'manufacturer') setCcManufacturer(value);
         if (field === 'companyName') setCcCompanyName(value);
-        if (field === 'quantity') setCcQuantity(value);
         if (field === 'hsnCode') setCcHsnCode(value);
 
+        const currentMeta = JSON.parse(localStorage.getItem(`cc_meta_${docName}`) || "{}");
+        const updatedMeta = {
+            gst: field === 'gst' ? value : (ccGst || currentMeta.gst || ''),
+            category: field === 'category' ? value : (ccCategory || currentMeta.category || ''),
+            division: field === 'division' ? value : (ccDivision || currentMeta.division || ''),
+            manufacturer: field === 'manufacturer' ? value : (ccManufacturer || currentMeta.manufacturer || ''),
+            companyName: field === 'companyName' ? value : (ccCompanyName || currentMeta.companyName || ''),
+            quantity: (field === 'quantity' || field === 'unit') ? value : (ccQuantity || currentMeta.quantity || ''),
+            hsnCode: field === 'hsnCode' ? value : (ccHsnCode || currentMeta.hsnCode || ''),
+        };
+        localStorage.setItem(`cc_meta_${docName}`, JSON.stringify(updatedMeta));
+
         if (parentSheetId && docName) {
-            invSheetsApi.updateCcMeta(docName, { [field]: value }).catch(err => console.error("Failed to update ccMeta:", err));
+            try {
+                await invSheetsApi.updateCcMeta(parentSheetId, docName, updatedMeta);
+            } catch (err) {
+                console.error("Failed to update ccMeta:", err);
+            }
+        }
+    };
+
+    const handleSaveCCMeta = async () => {
+        if (!isNested) return;
+        setIsSavingMeta(true);
+        const updatedMeta = {
+            gst: ccGst || '',
+            category: ccCategory || '',
+            division: ccDivision || '',
+            manufacturer: ccManufacturer || '',
+            companyName: ccCompanyName || '',
+            quantity: ccQuantity || '',
+            hsnCode: ccHsnCode || ''
+        };
+
+        localStorage.setItem(`cc_meta_${docName}`, JSON.stringify(updatedMeta));
+
+        try {
+            if (pendingSavesRef.current && pendingSavesRef.current.length > 0) {
+                await Promise.allSettled(pendingSavesRef.current);
+            }
+            if (parentSheetId && docName) {
+                await invSheetsApi.updateCcMeta(parentSheetId, docName, updatedMeta);
+            }
+            Swal.fire({
+                icon: 'success',
+                title: 'Saved Successfully!',
+                text: 'All sub-spreadsheet metadata and batch details have been saved.',
+                timer: 1500,
+                showConfirmButton: false
+            });
+        } catch (err) {
+            console.error("Failed to save ccMeta:", err);
+            Swal.fire({
+                icon: 'error',
+                title: 'Save Failed',
+                text: 'Could not save details. Please try again.',
+            });
+        } finally {
+            setIsSavingMeta(false);
         }
     };
 
@@ -2539,259 +2616,255 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                             
                             {/* Meta Inputs moved here below the name section */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3 w-full max-w-full pr-4">
-                                {(sheetData?.userPermission === 'admin' || sheetData?.userPermission === 'editor') && (
-                                    <>
-                                        <div className="flex items-center gap-3">
-                                            <label className="text-sm text-gray-600 font-medium w-24 shrink-0">GST:</label>
-                                            <div className="flex flex-1 items-center gap-1">
-                                                <div className="flex-1 min-w-0">
-                                                    <Select
-                                                        isClearable
-                                                        placeholder="Select GST..."
-                                                        value={ccGst ? { label: ccGst, value: ccGst } : null}
-                                                        onChange={(newValue) => handleCCMetaChange('gst', newValue ? newValue.value : '')}
-                                                        options={(metaOptions.gst || []).map(opt => ({
-                                                            label: typeof opt === 'object' ? opt.value : opt,
-                                                            value: typeof opt === 'object' ? opt.value : opt,
-                                                            id: typeof opt === 'object' ? opt.id : null,
-                                                            onDelete: (id, val) => handleDeleteMetaOption('gst', id, val)
-                                                        }))}
-                                                        components={{ Option: CustomSelectOption }}
-                                                        className="text-sm w-full"
-                                                        menuPortalTarget={document.body}
-                                                        styles={{
-                                                            control: (base) => ({
-                                                                ...base,
-                                                                borderColor: '#d1d5db',
-                                                                '&:hover': { borderColor: '#9ca3af' },
-                                                                minHeight: '38px',
-                                                                boxShadow: 'none'
-                                                            }),
-                                                            menuPortal: (base) => ({ ...base, zIndex: 9999 })
-                                                        }}
-                                                    />
-                                                </div>
-                                                <button onClick={() => setAddingMetaField('gst')} title="Add GST" className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors shrink-0">
-                                                    <FiPlus className="w-4 h-4" />
-                                                </button>
-                                            </div>
+                                <div className="flex items-center gap-3">
+                                    <label className="text-sm text-gray-600 font-medium w-24 shrink-0">GST:</label>
+                                    <div className="flex flex-1 items-center gap-1">
+                                        <div className="flex-1 min-w-0">
+                                            <Select
+                                                isClearable
+                                                placeholder="Select GST..."
+                                                value={ccGst ? { label: ccGst, value: ccGst } : null}
+                                                onChange={(newValue) => handleCCMetaChange('gst', newValue ? newValue.value : '')}
+                                                options={(metaOptions.gst || []).map(opt => ({
+                                                    label: typeof opt === 'object' ? opt.value : opt,
+                                                    value: typeof opt === 'object' ? opt.value : opt,
+                                                    id: typeof opt === 'object' ? opt.id : null,
+                                                    onDelete: (id, val) => handleDeleteMetaOption('gst', id, val)
+                                                }))}
+                                                components={{ Option: CustomSelectOption }}
+                                                className="text-sm w-full"
+                                                menuPortalTarget={document.body}
+                                                styles={{
+                                                    control: (base) => ({
+                                                        ...base,
+                                                        borderColor: '#d1d5db',
+                                                        '&:hover': { borderColor: '#9ca3af' },
+                                                        minHeight: '38px',
+                                                        boxShadow: 'none'
+                                                    }),
+                                                    menuPortal: (base) => ({ ...base, zIndex: 9999 })
+                                                }}
+                                            />
                                         </div>
-                                        <div className="flex items-center gap-3">
-                                            <label className="text-sm text-gray-600 font-medium w-24 shrink-0">Category:</label>
-                                            <div className="flex flex-1 items-center gap-1">
-                                                <div className="flex-1 min-w-0">
-                                                    <Select
-                                                        isClearable
-                                                        placeholder="Select Category..."
-                                                        value={ccCategory ? { label: ccCategory, value: ccCategory } : null}
-                                                        onChange={(newValue) => handleCCMetaChange('category', newValue ? newValue.value : '')}
-                                                        options={(metaOptions.category || []).map(opt => ({
-                                                            label: typeof opt === 'object' ? opt.value : opt,
-                                                            value: typeof opt === 'object' ? opt.value : opt,
-                                                            id: typeof opt === 'object' ? opt.id : null,
-                                                            onDelete: (id, val) => handleDeleteMetaOption('category', id, val)
-                                                        }))}
-                                                        components={{ Option: CustomSelectOption }}
-                                                        className="text-sm w-full"
-                                                        menuPortalTarget={document.body}
-                                                        styles={{
-                                                            control: (base) => ({
-                                                                ...base,
-                                                                borderColor: '#d1d5db',
-                                                                '&:hover': { borderColor: '#9ca3af' },
-                                                                minHeight: '38px',
-                                                                boxShadow: 'none'
-                                                            }),
-                                                            menuPortal: (base) => ({ ...base, zIndex: 9999 })
-                                                        }}
-                                                    />
-                                                </div>
-                                                <button onClick={() => setAddingMetaField('category')} title="Add Category" className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors shrink-0">
-                                                    <FiPlus className="w-4 h-4" />
-                                                </button>
-                                            </div>
+                                        <button onClick={() => setAddingMetaField('gst')} title="Add GST" className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors shrink-0">
+                                            <FiPlus className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <label className="text-sm text-gray-600 font-medium w-24 shrink-0">Category:</label>
+                                    <div className="flex flex-1 items-center gap-1">
+                                        <div className="flex-1 min-w-0">
+                                            <Select
+                                                isClearable
+                                                placeholder="Select Category..."
+                                                value={ccCategory ? { label: ccCategory, value: ccCategory } : null}
+                                                onChange={(newValue) => handleCCMetaChange('category', newValue ? newValue.value : '')}
+                                                options={(metaOptions.category || []).map(opt => ({
+                                                    label: typeof opt === 'object' ? opt.value : opt,
+                                                    value: typeof opt === 'object' ? opt.value : opt,
+                                                    id: typeof opt === 'object' ? opt.id : null,
+                                                    onDelete: (id, val) => handleDeleteMetaOption('category', id, val)
+                                                }))}
+                                                components={{ Option: CustomSelectOption }}
+                                                className="text-sm w-full"
+                                                menuPortalTarget={document.body}
+                                                styles={{
+                                                    control: (base) => ({
+                                                        ...base,
+                                                        borderColor: '#d1d5db',
+                                                        '&:hover': { borderColor: '#9ca3af' },
+                                                        minHeight: '38px',
+                                                        boxShadow: 'none'
+                                                    }),
+                                                    menuPortal: (base) => ({ ...base, zIndex: 9999 })
+                                                }}
+                                            />
                                         </div>
-                                        <div className="flex items-center gap-3">
-                                            <label className="text-sm text-gray-600 font-medium w-24 shrink-0">Division:</label>
-                                            <div className="flex flex-1 items-center gap-1">
-                                                <div className="flex-1 min-w-0">
-                                                    <Select
-                                                        isClearable
-                                                        placeholder="Select Division..."
-                                                        value={ccDivision ? { label: ccDivision, value: ccDivision } : null}
-                                                        onChange={(newValue) => handleCCMetaChange('division', newValue ? newValue.value : '')}
-                                                        options={(metaOptions.division || []).map(opt => ({
-                                                            label: typeof opt === 'object' ? opt.value : opt,
-                                                            value: typeof opt === 'object' ? opt.value : opt,
-                                                            id: typeof opt === 'object' ? opt.id : null,
-                                                            onDelete: (id, val) => handleDeleteMetaOption('division', id, val)
-                                                        }))}
-                                                        components={{ Option: CustomSelectOption }}
-                                                        className="text-sm w-full"
-                                                        menuPortalTarget={document.body}
-                                                        styles={{
-                                                            control: (base) => ({
-                                                                ...base,
-                                                                borderColor: '#d1d5db',
-                                                                '&:hover': { borderColor: '#9ca3af' },
-                                                                minHeight: '38px',
-                                                                boxShadow: 'none'
-                                                            }),
-                                                            menuPortal: (base) => ({ ...base, zIndex: 9999 })
-                                                        }}
-                                                    />
-                                                </div>
-                                                <button onClick={() => setAddingMetaField('division')} title="Add Division" className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors shrink-0">
-                                                    <FiPlus className="w-4 h-4" />
-                                                </button>
-                                            </div>
+                                        <button onClick={() => setAddingMetaField('category')} title="Add Category" className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors shrink-0">
+                                            <FiPlus className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <label className="text-sm text-gray-600 font-medium w-24 shrink-0">Division:</label>
+                                    <div className="flex flex-1 items-center gap-1">
+                                        <div className="flex-1 min-w-0">
+                                            <Select
+                                                isClearable
+                                                placeholder="Select Division..."
+                                                value={ccDivision ? { label: ccDivision, value: ccDivision } : null}
+                                                onChange={(newValue) => handleCCMetaChange('division', newValue ? newValue.value : '')}
+                                                options={(metaOptions.division || []).map(opt => ({
+                                                    label: typeof opt === 'object' ? opt.value : opt,
+                                                    value: typeof opt === 'object' ? opt.value : opt,
+                                                    id: typeof opt === 'object' ? opt.id : null,
+                                                    onDelete: (id, val) => handleDeleteMetaOption('division', id, val)
+                                                }))}
+                                                components={{ Option: CustomSelectOption }}
+                                                className="text-sm w-full"
+                                                menuPortalTarget={document.body}
+                                                styles={{
+                                                    control: (base) => ({
+                                                        ...base,
+                                                        borderColor: '#d1d5db',
+                                                        '&:hover': { borderColor: '#9ca3af' },
+                                                        minHeight: '38px',
+                                                        boxShadow: 'none'
+                                                    }),
+                                                    menuPortal: (base) => ({ ...base, zIndex: 9999 })
+                                                }}
+                                            />
                                         </div>
-                                        <div className="flex items-center gap-3">
-                                            <label className="text-sm text-gray-600 font-medium w-24 shrink-0">Mfg:</label>
-                                            <div className="flex flex-1 items-center gap-1">
-                                                <div className="flex-1 min-w-0">
-                                                    <Select
-                                                        isClearable
-                                                        placeholder="Select Manufacturer..."
-                                                        value={ccManufacturer ? { label: ccManufacturer, value: ccManufacturer } : null}
-                                                        onChange={(newValue) => handleCCMetaChange('manufacturer', newValue ? newValue.value : '')}
-                                                        options={(metaOptions.manufacturer || []).map(opt => ({
-                                                            label: typeof opt === 'object' ? opt.value : opt,
-                                                            value: typeof opt === 'object' ? opt.value : opt,
-                                                            id: typeof opt === 'object' ? opt.id : null,
-                                                            onDelete: (id, val) => handleDeleteMetaOption('manufacturer', id, val)
-                                                        }))}
-                                                        components={{ Option: CustomSelectOption }}
-                                                        className="text-sm w-full"
-                                                        menuPortalTarget={document.body}
-                                                        styles={{
-                                                            control: (base) => ({
-                                                                ...base,
-                                                                borderColor: '#d1d5db',
-                                                                '&:hover': { borderColor: '#9ca3af' },
-                                                                minHeight: '38px',
-                                                                boxShadow: 'none'
-                                                            }),
-                                                            menuPortal: (base) => ({ ...base, zIndex: 9999 })
-                                                        }}
-                                                    />
-                                                </div>
-                                                <button onClick={() => setAddingMetaField('manufacturer')} title="Add Manufacturer" className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors shrink-0">
-                                                    <FiPlus className="w-4 h-4" />
-                                                </button>
-                                            </div>
+                                        <button onClick={() => setAddingMetaField('division')} title="Add Division" className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors shrink-0">
+                                            <FiPlus className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <label className="text-sm text-gray-600 font-medium w-24 shrink-0">Mfg:</label>
+                                    <div className="flex flex-1 items-center gap-1">
+                                        <div className="flex-1 min-w-0">
+                                            <Select
+                                                isClearable
+                                                placeholder="Select Manufacturer..."
+                                                value={ccManufacturer ? { label: ccManufacturer, value: ccManufacturer } : null}
+                                                onChange={(newValue) => handleCCMetaChange('manufacturer', newValue ? newValue.value : '')}
+                                                options={(metaOptions.manufacturer || []).map(opt => ({
+                                                    label: typeof opt === 'object' ? opt.value : opt,
+                                                    value: typeof opt === 'object' ? opt.value : opt,
+                                                    id: typeof opt === 'object' ? opt.id : null,
+                                                    onDelete: (id, val) => handleDeleteMetaOption('manufacturer', id, val)
+                                                }))}
+                                                components={{ Option: CustomSelectOption }}
+                                                className="text-sm w-full"
+                                                menuPortalTarget={document.body}
+                                                styles={{
+                                                    control: (base) => ({
+                                                        ...base,
+                                                        borderColor: '#d1d5db',
+                                                        '&:hover': { borderColor: '#9ca3af' },
+                                                        minHeight: '38px',
+                                                        boxShadow: 'none'
+                                                    }),
+                                                    menuPortal: (base) => ({ ...base, zIndex: 9999 })
+                                                }}
+                                            />
                                         </div>
-                                        <div className="flex items-center gap-3">
-                                            <label className="text-sm text-gray-600 font-medium w-24 shrink-0">Company:</label>
-                                            <div className="flex flex-1 items-center gap-1">
-                                                <div className="flex-1 min-w-0">
-                                                    <Select
-                                                        isClearable
-                                                        placeholder="Select Company..."
-                                                        value={ccCompanyName ? { label: ccCompanyName, value: ccCompanyName } : null}
-                                                        onChange={(newValue) => handleCCMetaChange('companyName', newValue ? newValue.value : '')}
-                                                        options={(metaOptions.companyName || []).map(opt => ({
-                                                            label: typeof opt === 'object' ? opt.value : opt,
-                                                            value: typeof opt === 'object' ? opt.value : opt,
-                                                            id: typeof opt === 'object' ? opt.id : null,
-                                                            onDelete: (id, val) => handleDeleteMetaOption('companyName', id, val)
-                                                        }))}
-                                                        components={{ Option: CustomSelectOption }}
-                                                        className="text-sm w-full"
-                                                        menuPortalTarget={document.body}
-                                                        styles={{
-                                                            control: (base) => ({
-                                                                ...base,
-                                                                borderColor: '#d1d5db',
-                                                                '&:hover': { borderColor: '#9ca3af' },
-                                                                minHeight: '38px',
-                                                                boxShadow: 'none'
-                                                            }),
-                                                            menuPortal: (base) => ({ ...base, zIndex: 9999 })
-                                                        }}
-                                                    />
-                                                </div>
-                                                <button onClick={() => setAddingMetaField('companyName')} title="Add Company" className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors shrink-0">
-                                                    <FiPlus className="w-4 h-4" />
-                                                </button>
-                                            </div>
+                                        <button onClick={() => setAddingMetaField('manufacturer')} title="Add Manufacturer" className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors shrink-0">
+                                            <FiPlus className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <label className="text-sm text-gray-600 font-medium w-24 shrink-0">Company:</label>
+                                    <div className="flex flex-1 items-center gap-1">
+                                        <div className="flex-1 min-w-0">
+                                            <Select
+                                                isClearable
+                                                placeholder="Select Company..."
+                                                value={ccCompanyName ? { label: ccCompanyName, value: ccCompanyName } : null}
+                                                onChange={(newValue) => handleCCMetaChange('companyName', newValue ? newValue.value : '')}
+                                                options={(metaOptions.companyName || []).map(opt => ({
+                                                    label: typeof opt === 'object' ? opt.value : opt,
+                                                    value: typeof opt === 'object' ? opt.value : opt,
+                                                    id: typeof opt === 'object' ? opt.id : null,
+                                                    onDelete: (id, val) => handleDeleteMetaOption('companyName', id, val)
+                                                }))}
+                                                components={{ Option: CustomSelectOption }}
+                                                className="text-sm w-full"
+                                                menuPortalTarget={document.body}
+                                                styles={{
+                                                    control: (base) => ({
+                                                        ...base,
+                                                        borderColor: '#d1d5db',
+                                                        '&:hover': { borderColor: '#9ca3af' },
+                                                        minHeight: '38px',
+                                                        boxShadow: 'none'
+                                                    }),
+                                                    menuPortal: (base) => ({ ...base, zIndex: 9999 })
+                                                }}
+                                            />
                                         </div>
-                                        <div className="flex items-center gap-3">
-                                            <label className="text-sm text-gray-600 font-medium w-24 shrink-0">Quantity:</label>
-                                            <div className="flex flex-1 items-center gap-1">
-                                                <div className="flex-1 min-w-0">
-                                                    <Select
-                                                        isClearable
-                                                        placeholder="Select Quantity..."
-                                                        value={ccQuantity ? { label: ccQuantity, value: ccQuantity } : null}
-                                                        onChange={(newValue) => handleCCMetaChange('quantity', newValue ? newValue.value : '')}
-                                                        options={(metaOptions.quantity || []).map(opt => ({
-                                                            label: typeof opt === 'object' ? opt.value : opt,
-                                                            value: typeof opt === 'object' ? opt.value : opt,
-                                                            id: typeof opt === 'object' ? opt.id : null,
-                                                            onDelete: (id, val) => handleDeleteMetaOption('quantity', id, val)
-                                                        }))}
-                                                        components={{ Option: CustomSelectOption }}
-                                                        className="text-sm w-full"
-                                                        menuPortalTarget={document.body}
-                                                        styles={{
-                                                            control: (base) => ({
-                                                                ...base,
-                                                                borderColor: '#d1d5db',
-                                                                '&:hover': { borderColor: '#9ca3af' },
-                                                                minHeight: '38px',
-                                                                boxShadow: 'none'
-                                                            }),
-                                                            menuPortal: (base) => ({ ...base, zIndex: 9999 })
-                                                        }}
-                                                    />
-                                                </div>
-                                                <button onClick={() => setAddingMetaField('quantity')} title="Add Quantity" className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors shrink-0">
-                                                    <FiPlus className="w-4 h-4" />
-                                                </button>
-                                            </div>
+                                        <button onClick={() => setAddingMetaField('companyName')} title="Add Company" className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors shrink-0">
+                                            <FiPlus className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <label className="text-sm text-gray-600 font-medium w-24 shrink-0">Quantity:</label>
+                                    <div className="flex flex-1 items-center gap-1">
+                                        <div className="flex-1 min-w-0">
+                                            <Select
+                                                isClearable
+                                                placeholder="Select Quantity..."
+                                                value={ccQuantity ? { label: ccQuantity, value: ccQuantity } : null}
+                                                onChange={(newValue) => handleCCMetaChange('quantity', newValue ? newValue.value : '')}
+                                                options={(metaOptions.quantity || []).map(opt => ({
+                                                    label: typeof opt === 'object' ? opt.value : opt,
+                                                    value: typeof opt === 'object' ? opt.value : opt,
+                                                    id: typeof opt === 'object' ? opt.id : null,
+                                                    onDelete: (id, val) => handleDeleteMetaOption('quantity', id, val)
+                                                }))}
+                                                components={{ Option: CustomSelectOption }}
+                                                className="text-sm w-full"
+                                                menuPortalTarget={document.body}
+                                                styles={{
+                                                    control: (base) => ({
+                                                        ...base,
+                                                        borderColor: '#d1d5db',
+                                                        '&:hover': { borderColor: '#9ca3af' },
+                                                        minHeight: '38px',
+                                                        boxShadow: 'none'
+                                                    }),
+                                                    menuPortal: (base) => ({ ...base, zIndex: 9999 })
+                                                }}
+                                            />
                                         </div>
-                                        <div className="flex items-center gap-3">
-                                            <label className="text-sm text-gray-600 font-medium w-24 shrink-0">HSN Code:</label>
-                                            <div className="flex flex-1 items-center gap-1">
-                                                <div className="flex-1 min-w-0">
-                                                    <Select
-                                                        isClearable
-                                                        placeholder="Select HSN Code..."
-                                                        value={ccHsnCode ? { label: ccHsnCode, value: ccHsnCode } : null}
-                                                        onChange={(newValue) => handleCCMetaChange('hsnCode', newValue ? newValue.value : '')}
-                                                        options={(metaOptions.hsnCode || []).map(opt => ({
-                                                            label: typeof opt === 'object' ? opt.value : opt,
-                                                            value: typeof opt === 'object' ? opt.value : opt,
-                                                            id: typeof opt === 'object' ? opt.id : null,
-                                                            onDelete: (id, val) => handleDeleteMetaOption('hsnCode', id, val)
-                                                        }))}
-                                                        components={{ Option: CustomSelectOption }}
-                                                        className="text-sm w-full"
-                                                        menuPortalTarget={document.body}
-                                                        styles={{
-                                                            control: (base) => ({
-                                                                ...base,
-                                                                borderColor: '#d1d5db',
-                                                                '&:hover': { borderColor: '#9ca3af' },
-                                                                minHeight: '38px',
-                                                                boxShadow: 'none'
-                                                            }),
-                                                            menuPortal: (base) => ({ ...base, zIndex: 9999 })
-                                                        }}
-                                                    />
-                                                </div>
-                                                <button onClick={() => setAddingMetaField('hsnCode')} title="Add HSN Code" className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors shrink-0">
-                                                    <FiPlus className="w-4 h-4" />
-                                                </button>
-                                            </div>
+                                        <button onClick={() => setAddingMetaField('quantity')} title="Add Quantity" className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors shrink-0">
+                                            <FiPlus className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <label className="text-sm text-gray-600 font-medium w-24 shrink-0">HSN Code:</label>
+                                    <div className="flex flex-1 items-center gap-1">
+                                        <div className="flex-1 min-w-0">
+                                            <Select
+                                                isClearable
+                                                placeholder="Select HSN Code..."
+                                                value={ccHsnCode ? { label: ccHsnCode, value: ccHsnCode } : null}
+                                                onChange={(newValue) => handleCCMetaChange('hsnCode', newValue ? newValue.value : '')}
+                                                options={(metaOptions.hsnCode || []).map(opt => ({
+                                                    label: typeof opt === 'object' ? opt.value : opt,
+                                                    value: typeof opt === 'object' ? opt.value : opt,
+                                                    id: typeof opt === 'object' ? opt.id : null,
+                                                    onDelete: (id, val) => handleDeleteMetaOption('hsnCode', id, val)
+                                                }))}
+                                                components={{ Option: CustomSelectOption }}
+                                                className="text-sm w-full"
+                                                menuPortalTarget={document.body}
+                                                styles={{
+                                                    control: (base) => ({
+                                                        ...base,
+                                                        borderColor: '#d1d5db',
+                                                        '&:hover': { borderColor: '#9ca3af' },
+                                                        minHeight: '38px',
+                                                        boxShadow: 'none'
+                                                    }),
+                                                    menuPortal: (base) => ({ ...base, zIndex: 9999 })
+                                                }}
+                                            />
                                         </div>
-                                    </>
-                                )}
+                                        <button onClick={() => setAddingMetaField('hsnCode')} title="Add HSN Code" className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors shrink-0">
+                                            <FiPlus className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0">
                         {/* Search is handled in the shared toolbar below */}
                     </div>
                 </div>
@@ -5051,23 +5124,48 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
             {activeNestedSheetId && (
                 <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4">
                     <div className="bg-white rounded-2xl shadow-2xl w-[95vw] max-w-7xl h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
-                        {/* Recursive Nested Content */}
                         <div className="flex-1 overflow-hidden relative bg-white">
-                            {/* Close button overlayed or integrated into child header */}
-                            <button
-                                onClick={async () => {
-                                    if (pendingSavesRef.current && pendingSavesRef.current.length > 0) {
-                                        await Promise.allSettled(pendingSavesRef.current);
-                                    }
-                                    setActiveNestedSheetId(null);
-                                    await fetchSheetData();
-                                }}
-                                className="absolute top-4 right-6 z-[310] text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-colors p-1.5 rounded-lg"
-                                title="Close Details"
-                            >
-                                <FiX className="w-6 h-6" />
-                            </button>
-                            {/* BUG #9: pass setActivePath and returnPath to nested editor */}
+                            {/* Header action buttons overlayed on top right */}
+                            <div className="absolute top-4 right-6 z-[310] flex items-center gap-3">
+                                <button
+                                    onClick={async () => {
+                                        if (pendingSavesRef.current && pendingSavesRef.current.length > 0) {
+                                            await Promise.allSettled(pendingSavesRef.current);
+                                        }
+                                        try {
+                                            const currentMeta = JSON.parse(localStorage.getItem(`cc_meta_${activeNestedSheetId}`) || "{}");
+                                            await invSheetsApi.updateCcMeta(docName, activeNestedSheetId, currentMeta);
+                                        } catch (err) {
+                                            console.error("Save failed:", err);
+                                        }
+                                        Swal.fire({
+                                            icon: 'success',
+                                            title: 'Saved Successfully!',
+                                            text: 'All sub-spreadsheet metadata and batch details have been saved.',
+                                            timer: 1500,
+                                            showConfirmButton: false
+                                        });
+                                    }}
+                                    className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-sm rounded-xl shadow-lg transition-all cursor-pointer"
+                                    title="Save All Changes"
+                                >
+                                    <FiUploadCloud className="w-4 h-4" />
+                                    Save
+                                </button>
+                                <button
+                                    onClick={async () => {
+                                        if (pendingSavesRef.current && pendingSavesRef.current.length > 0) {
+                                            await Promise.allSettled(pendingSavesRef.current);
+                                        }
+                                        setActiveNestedSheetId(null);
+                                        await fetchSheetData();
+                                    }}
+                                    className="text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-colors p-1.5 rounded-lg"
+                                    title="Close Details"
+                                >
+                                    <FiX className="w-6 h-6" />
+                                </button>
+                            </div>
                             <InventoryDocumentEditor docName={activeNestedSheetId} parentSheetId={docName} isNested={true} setActivePath={setActivePath} returnPath={returnPath} />
                         </div>
                     </div>

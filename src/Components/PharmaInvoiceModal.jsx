@@ -1,11 +1,31 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FiX, FiPrinter, FiDownload, FiCheckCircle, FiSettings } from 'react-icons/fi';
+import { invInvoicesApi } from '../api/inventoryApiClient';
 
 export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
     if (!isOpen || !invoice) return null;
 
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const settingsRef = useRef(null);
+
+    const [fullInvoiceData, setFullInvoiceData] = useState(invoice);
+    const [loadingInvoice, setLoadingInvoice] = useState(false);
+
+    useEffect(() => {
+        setFullInvoiceData(invoice);
+        const isSavedInvoiceUUID = invoice?.id && typeof invoice.id === 'string' && invoice.id.length > 20 && !invoice.id.startsWith('INV-');
+        if (isSavedInvoiceUUID) {
+            setLoadingInvoice(true);
+            invInvoicesApi.get(invoice.id)
+                .then(res => {
+                    if (res.data?.data) {
+                        setFullInvoiceData(res.data.data);
+                    }
+                })
+                .catch(err => console.error("Error loading invoice details:", err))
+                .finally(() => setLoadingInvoice(false));
+        }
+    }, [invoice]);
 
     const [visibleColumns, setVisibleColumns] = useState({
         slNo: true,
@@ -45,30 +65,42 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // Extract or fallback invoice fields
-    const invoiceNo = invoice.invoiceNo || invoice.id || 'BR-26-1025';
-    const date = invoice.date || invoice.invoiceDate || '10/04/2026';
-    const paymentMethod = invoice.paymentMethod || 'CREDIT';
+    const safeNum = (val, fallback = 0) => {
+        const n = Number(val);
+        return isNaN(n) ? fallback : n;
+    };
+
+    const currentInv = fullInvoiceData || invoice;
+
+    // Extract invoice fields
+    const invoiceNo = currentInv.invoiceNo || currentInv.id || 'BR-26-1025';
+    const date = currentInv.date || currentInv.invoiceDate || new Date().toISOString().split('T')[0];
+    const paymentMethod = currentInv.paymentMethod || 'CASH';
     
     // Extract customer / party details
-    const partyName = invoice.partyName || (invoice.party && invoice.party.name) || 'DR.BASHEER MBBS / SHIFA CLINIC';
-    const partyAddress = (invoice.party && invoice.party.address) || 'KILIMINOOR, THIRUVANANTHAPURAM - 695601';
-    const partyContact = (invoice.party && invoice.party.contact) || '9447411778 / 9946973266';
-    const partyCode = (invoice.party && invoice.party.id) ? `Code A30${invoice.party.id}` : 'Code A373';
-    const partyDl = (invoice.party && invoice.party.dlNo) || 'REG NO-16475';
-    const partyGstin = (invoice.party && invoice.party.gstin) || '';
-    const partyPan = (invoice.party && invoice.party.pan) || '';
+    const partyName = currentInv.partyName || (currentInv.party && currentInv.party.name) || 'WALK-IN CUSTOMER';
+    const partyAddress = (currentInv.party && currentInv.party.address) || 'KILIMINOOR, THIRUVANANTHAPURAM - 695601';
+    const partyContact = (currentInv.party && currentInv.party.contact) || '';
+    const partyCode = (currentInv.party && currentInv.party.id) ? `Code A30${currentInv.party.id}` : 'Code A373';
+    const partyDl = (currentInv.party && currentInv.party.dlNo) || '';
+    const partyGstin = (currentInv.party && currentInv.party.gstin) || '';
+    const partyPan = (currentInv.party && currentInv.party.pan) || '';
 
-    // Extract line items or fallback to mock pharma items if summary row
-    let rawItems = invoice.items && invoice.items.length > 0 ? invoice.items : [
-        { id: 1, description: 'INSUTREND 30/70 REFILL', qty: 10, price: 284.00, batch: 'A042517682', expiry: '11/28', mrp: 355.00, scheme: '+3', hsn: '30043110', gst: 5, mkt: 'ANTHE', rack: 'A1' },
-        { id: 2, description: 'INSUTREND 50/50 REFILL', qty: 10, price: 260.00, batch: 'A042517622', expiry: '08/28', mrp: 325.00, scheme: '+3', hsn: '30043110', gst: 5, mkt: 'ANTHE', rack: 'A2' }
-    ];
+    // Extract line items
+    let rawItems = currentInv.items || [];
+    if (rawItems.length === 0 && !currentInv.id) {
+        // Fallback for preview mode when no ID exists
+        rawItems = [
+            { id: 1, description: 'INSUTREND 30/70 REFILL', qty: 10, price: 284.00, batch: 'A042517682', expiry: '11/28', mrp: 355.00, gst: 5 },
+            { id: 2, description: 'INSUTREND 50/50 REFILL', qty: 10, price: 260.00, batch: 'A042517622', expiry: '08/28', mrp: 325.00, gst: 5 }
+        ];
+    }
 
-    // Normalize items with pharma defaults
+    // Normalize items
     const items = rawItems.map((item, idx) => {
-        const price = Number(item.price) || 100;
-        const qty = Number(item.qty) || 1;
+        const price = safeNum(item.price);
+        const qty = safeNum(item.qty, 1);
+        const gstPercent = safeNum(item.gstPercent ?? item.gst ?? currentInv.gstRate ?? 5);
         return {
             id: item.id || idx + 1,
             rack: item.rack || `R-${idx + 1}`,
@@ -77,29 +109,24 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
             pack: item.pack || '1',
             qty: qty,
             scheme: item.scheme || '+0',
-            batch: item.batch || `B${202600 + idx}`,
-            expiry: item.expiry || '08/28',
-            mrp: item.mrp || (price * 1.25),
+            batch: item.batch || `-`,
+            expiry: item.expiry || item.expDate || `-`,
+            mrp: safeNum(item.mrp, price > 0 ? price * 1.25 : 0),
             tradePrice: price,
-            scmPercent: item.scmPercent || 0,
-            disPercent: item.disPercent || 0,
-            gstPercent: item.gst || item.gstPercent || 5,
-            hsnCode: item.hsn || item.hsnCode || '30043110',
+            scmPercent: safeNum(item.scmPercent),
+            disPercent: safeNum(item.disPercent),
+            gstPercent: gstPercent,
+            hsnCode: item.hsnCode || item.hsn || '30043110',
             value: qty * price
         };
     });
 
-    const safeNum = (val, fallback = 0) => {
-        const n = Number(val);
-        return isNaN(n) ? fallback : n;
-    };
-
     const totalQty = items.reduce((acc, item) => acc + safeNum(item.qty), 0);
-    const itemSubtotal = safeNum(invoice.itemSubtotal ?? items.reduce((acc, item) => acc + safeNum(item.value), 0));
-    const gstRate = safeNum(invoice.gstRate ?? 5);
-    const taxAmount = safeNum(invoice.taxAmount ?? (itemSubtotal * (gstRate / 100)));
-    const taxableSubtotal = safeNum(invoice.subtotal ?? Math.max(0, itemSubtotal - taxAmount));
-    const grandTotal = safeNum(invoice.grandTotal ?? (taxableSubtotal + taxAmount));
+    const itemSubtotal = items.reduce((acc, item) => acc + safeNum(item.value), 0);
+    const gstRate = safeNum(currentInv.gstRate ?? 5);
+    const taxAmount = safeNum(currentInv.taxAmount ?? (itemSubtotal * (gstRate / 100)));
+    const taxableSubtotal = safeNum(currentInv.subtotal ?? Math.max(0, itemSubtotal - taxAmount));
+    const grandTotal = safeNum(currentInv.grandTotal ?? (taxableSubtotal + taxAmount));
 
     const handlePrint = () => {
         window.print();
@@ -252,31 +279,35 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
 
                         {/* 2. Items Table */}
                         <div className="w-full overflow-x-auto border-b-2 border-black">
-                            <table className="w-full border-collapse text-[11px]">
+                            <table className="w-full text-left border-collapse min-w-[700px]">
                                 <thead>
-                                    <tr className="border-b-2 border-black bg-gray-50 font-bold text-black uppercase text-[10px]">
-                                        {visibleColumns.slNo && <th className="border-r border-black py-1.5 px-1 text-center w-10">Sl<br/>No.</th>}
-                                        {visibleColumns.product && <th className="border-r border-black py-1.5 px-2 text-left">PRODUCT</th>}
-                                        {visibleColumns.qty && <th className="border-r border-black py-1.5 px-1 text-right w-12">No</th>}
-                                        {visibleColumns.batchNo && <th className="border-r border-black py-1.5 px-1 text-center w-20">BATCH<br/>No.</th>}
-                                        {visibleColumns.expDate && <th className="border-r border-black py-1.5 px-1 text-center w-16">EXP.<br/>Date</th>}
-                                        {visibleColumns.sellingRate && <th className="border-r border-black py-1.5 px-1 text-right w-16">Selling<br/>Rate</th>}
-                                        {visibleColumns.disc && invoice?.type !== 'Wholesale' && <th className="border-r border-black py-1.5 px-1 text-right w-12">Disc<br/>%</th>}
-                                        {visibleColumns.mrp && <th className="border-r border-black py-1.5 px-1 text-right w-16">MRP</th>}
-                                        {visibleColumns.gst && <th className="border-r border-black py-1.5 px-1 text-center w-12">GST<br/>%</th>}
-                                        {visibleColumns.total && <th className="py-1.5 px-2 text-right w-20">TOTAL</th>}
+                                    <tr className="bg-gray-100 border-b border-black text-[10px] font-extrabold uppercase tracking-tight text-black">
+                                        {visibleColumns.slNo && <th className="border-r border-black py-1 px-1 text-center w-8">SL.</th>}
+                                        {visibleColumns.product && <th className="border-r border-black py-1 px-1.5 w-48">PRODUCT</th>}
+                                        {visibleColumns.qty && <th className="border-r border-black py-1 px-1 text-center w-10">NO</th>}
+                                        {visibleColumns.batchNo && <th className="border-r border-black py-1 px-1 text-center w-16">BATCH NO.</th>}
+                                        {visibleColumns.expDate && <th className="border-r border-black py-1 px-1 text-center w-12">EXP. DATE</th>}
+                                        {visibleColumns.sellingRate && <th className="border-r border-black py-1 px-1 text-right w-16">SELLING RATE</th>}
+                                        {visibleColumns.disc && invoice?.type !== 'Wholesale' && <th className="border-r border-black py-1 px-1 text-right w-12">DISC %</th>}
+                                        {visibleColumns.mrp && <th className="border-r border-black py-1 px-1 text-right w-14">MRP</th>}
+                                        {visibleColumns.gst && <th className="border-r border-black py-1 px-1 text-center w-10">GST %</th>}
+                                        {visibleColumns.total && <th className="py-1 px-2 text-right w-20">TOTAL</th>}
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-gray-300 font-medium text-black">
-                                    {items.map((item, idx) => (
-                                        <tr key={item.id || idx} className="hover:bg-gray-50/50">
-                                            {visibleColumns.slNo && <td className="border-r border-black py-1 px-1 text-center font-mono text-[10px]">{idx + 1}</td>}
-                                            {visibleColumns.product && <td className="border-r border-black py-1 px-2 font-bold text-left">{item.description}</td>}
-                                            {visibleColumns.qty && <td className="border-r border-black py-1 px-1 text-right font-bold">{item.qty}</td>}
-                                            {visibleColumns.batchNo && <td className="border-r border-black py-1 px-1 text-center font-mono text-[10px]">{item.batch}</td>}
-                                            {visibleColumns.expDate && <td className="border-r border-black py-1 px-1 text-center font-mono text-[10px]">{item.expiry}</td>}
+                                <tbody className="divide-y divide-gray-300 text-[10px]">
+                                    {items.map((item, index) => (
+                                        <tr key={item.id || index} className="hover:bg-gray-50/80 transition-colors">
+                                            {visibleColumns.slNo && <td className="border-r border-black py-1 px-1 text-center font-bold">{index + 1}</td>}
+                                            {visibleColumns.product && (
+                                                <td className="border-r border-black py-1 px-1.5 font-bold uppercase text-black">
+                                                    {item.description}
+                                                </td>
+                                            )}
+                                            {visibleColumns.qty && <td className="border-r border-black py-1 px-1 text-center font-bold">{item.qty}</td>}
+                                            {visibleColumns.batchNo && <td className="border-r border-black py-1 px-1 text-center uppercase font-mono text-[9px]">{item.batch}</td>}
+                                            {visibleColumns.expDate && <td className="border-r border-black py-1 px-1 text-center font-mono text-[9px]">{item.expiry}</td>}
                                             {visibleColumns.sellingRate && <td className="border-r border-black py-1 px-1 text-right font-mono">{Number(item.tradePrice).toFixed(2)}</td>}
-                                            {visibleColumns.disc && invoice?.type !== 'Wholesale' && <td className="border-r border-black py-1 px-1 text-right">{item.disPercent || '0.00'}</td>}
+                                            {visibleColumns.disc && invoice?.type !== 'Wholesale' && <td className="border-r border-black py-1 px-1 text-right font-mono">{Number(item.disPercent).toFixed(2)}</td>}
                                             {visibleColumns.mrp && <td className="border-r border-black py-1 px-1 text-right font-mono">{Number(item.mrp).toFixed(2)}</td>}
                                             {visibleColumns.gst && <td className="border-r border-black py-1 px-1 text-center font-bold">{item.gstPercent}</td>}
                                             {visibleColumns.total && <td className="py-1 px-2 text-right font-bold font-mono">{Number(item.value).toFixed(2)}</td>}
@@ -325,8 +356,8 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                 <div><b>Total Items :</b> {items.length}</div>
                                 <div><b>Total No :</b> {totalQty}</div>
                                 <div><b>SchDiscGiven:</b> 0.00</div>
-                                <div><b>Sale Value :</b> {itemSubtotal.toFixed(2)}</div>
-                                <div><b>Cash Disc :</b> 0.00</div>
+                                <div><b>Sale Value :</b> {safeNum(currentInv.itemSubtotal, itemSubtotal).toFixed(2)}</div>
+                                <div><b>Cash Disc :</b> {safeNum(currentInv.discountAmount).toFixed(2)}</div>
                                 <div><b>Total GST :</b> {taxAmount.toFixed(2)}</div>
                             </div>
 
@@ -343,10 +374,21 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-200 font-mono text-[9px]">
-                                        {[18, 5].map(rate => {
-                                            const isMatch = Number(gstRate) === rate;
-                                            const rowTaxable = isMatch ? taxableSubtotal : 0;
-                                            const rowTax = isMatch ? taxAmount : 0;
+                                        {[18, 12, 5].map(rate => {
+                                            const matchingItems = items.filter(i => Number(i.gstPercent) === rate);
+                                            const hasItems = matchingItems.length > 0;
+                                            const isMatch = hasItems || (items.length === 0 && Number(gstRate) === rate);
+                                            
+                                            let rowTaxable = 0;
+                                            let rowTax = 0;
+                                            if (hasItems) {
+                                                rowTaxable = matchingItems.reduce((acc, i) => acc + i.value, 0);
+                                                rowTax = rowTaxable * (rate / 100);
+                                            } else if (isMatch) {
+                                                rowTaxable = taxableSubtotal;
+                                                rowTax = taxAmount;
+                                            }
+
                                             return (
                                                 <tr key={rate} className={isMatch ? "bg-gray-50 font-bold" : ""}>
                                                     <td className="font-sans font-bold">{rate}%</td>
@@ -373,14 +415,26 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                             {/* Col 4: Final Financials & Sign */}
                             <div className="col-span-3 flex flex-col justify-between text-[11px]">
                                 <div className="p-1.5 space-y-0.5 font-mono">
-                                    <div className="flex justify-between font-sans"><span>Gross Amt</span><span className="font-mono font-bold">{itemSubtotal.toFixed(2)}</span></div>
-                                    <div className="flex justify-between font-sans"><span>Dis Amt</span><span>0.00</span></div>
-                                    <div className="flex justify-between font-sans"><span>Scm Amt</span><span>0.00</span></div>
+                                    <div className="flex justify-between font-sans"><span>Gross Amt</span><span className="font-mono font-bold">{safeNum(currentInv.itemSubtotal, itemSubtotal).toFixed(2)}</span></div>
+                                    <div className="flex justify-between font-sans"><span>Dis Amt</span><span>{safeNum(currentInv.discountAmount).toFixed(2)}</span></div>
+                                    {Array.isArray(currentInv.additionalCharges) && currentInv.additionalCharges.length > 0 ? (
+                                        currentInv.additionalCharges.map((chg, cIdx) => (
+                                            <div key={cIdx} className="flex justify-between font-sans">
+                                                <span className="truncate pr-1 font-semibold">{chg.name || 'Addl Chg'}</span>
+                                                <span>{safeNum(chg.amount).toFixed(2)}</span>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="flex justify-between font-sans">
+                                            <span>Addl Chg</span>
+                                            <span>{safeNum(currentInv.additionalChargesAmount).toFixed(2)}</span>
+                                        </div>
+                                    )}
                                     <div className="flex justify-between font-sans"><span>GST Amt</span><span className="font-mono">{taxAmount.toFixed(2)}</span></div>
                                     <div className="flex justify-between font-sans"><span>Cr No.</span><span>0.00</span></div>
                                     <div className="flex justify-between font-sans"><span>Db No.</span><span>0.00</span></div>
                                     <div className="flex justify-between font-sans"><span>TCS% 0.000</span><span>0.00</span></div>
-                                    <div className="flex justify-between font-sans"><span>R.off</span><span>0.00</span></div>
+                                    <div className="flex justify-between font-sans"><span>R.off</span><span>{safeNum(currentInv.roundOffAmount).toFixed(2)}</span></div>
                                 </div>
                                 <div className="bg-gray-900 text-white font-black text-sm px-2.5 py-1.5 flex justify-between items-center tracking-wide">
                                     <span>Grand Total</span>

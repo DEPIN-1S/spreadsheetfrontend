@@ -188,6 +188,10 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
             subtotal: taxableSubtotal,
             taxAmount,
             gstRate,
+            discountAmount: effectiveDiscount,
+            additionalChargesAmount: totalAdditionalCharges,
+            additionalCharges: additionalCharges,
+            roundOffAmount: effectiveRoundOff,
             grandTotal,
             paymentMethod,
             paymentStatus,
@@ -827,12 +831,16 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                     invoiceNo,
                     date: invoiceDate,
                     paymentMethod,
-                    party: selectedParty || { name: 'John Doe (Walk-in)', address: '12 Maple St, NY', contact: '+1 (555) 111-2233', id: 201 },
+                    party: selectedParty || { name: 'Walk-in Customer', address: '', contact: '', id: 201 },
                     items: items.filter(i => i.description && i.description.trim() !== ''),
                     itemSubtotal,
                     subtotal: taxableSubtotal,
                     taxAmount,
                     gstRate,
+                    discountAmount: effectiveDiscount,
+                    additionalChargesAmount: totalAdditionalCharges,
+                    additionalCharges: additionalCharges,
+                    roundOffAmount: effectiveRoundOff,
                     grandTotal
                 }}
             />
