@@ -28,6 +28,7 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                 batch: item.batch,
                 expiry: item.expiry,
                 stock: item.stock,
+                rackNo: item.rackNo || '',
                 // Pick retailPrice or wholesalePrice depending on type
                 price: inventoryType === 'retail' ? item.retailPrice : item.wholesalePrice,
                 ccRowId: item.ccRowId
@@ -45,15 +46,70 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
 
     const categories = ['All', ...new Set(medicines.map(m => m.category || 'General'))];
 
+    const isExpiredBatch = (expiryStr) => {
+        if (!expiryStr || expiryStr.toLowerCase() === 'no expiry' || expiryStr.trim() === '') return false;
+        
+        let expDate = new Date(expiryStr);
+        if (isNaN(expDate.getTime())) {
+            const parts = expiryStr.trim().split(/\s+/);
+            if (parts.length === 2) {
+                expDate = new Date(`${parts[0]} 1, ${parts[1]}`);
+            }
+        }
+        if (isNaN(expDate.getTime())) return false;
+        
+        const lastDay = new Date(expDate.getFullYear(), expDate.getMonth() + 1, 0, 23, 59, 59);
+        const now = new Date();
+        return lastDay < now;
+    };
+
+    const parseExpiryDateTimestamp = (expiryStr) => {
+        if (!expiryStr || expiryStr.toLowerCase() === 'no expiry' || expiryStr.trim() === '') {
+            return Infinity;
+        }
+        
+        let expDate = new Date(expiryStr);
+        if (isNaN(expDate.getTime())) {
+            const parts = expiryStr.trim().split(/\s+/);
+            if (parts.length === 2) {
+                expDate = new Date(`${parts[0]} 1, ${parts[1]}`);
+            }
+        }
+        
+        if (isNaN(expDate.getTime())) return Infinity;
+        return expDate.getTime();
+    };
+
     const filteredMedicines = medicines.filter(med => {
+        // Exclude items with No Batch or empty batch number
+        const isNoBatch = !med.batch || med.batch.trim() === '' || med.batch.toLowerCase() === 'no batch';
+        if (isNoBatch) return false;
+
+        // Exclude expired batches
+        if (isExpiredBatch(med.expiry)) return false;
+
         const nameVal = med.name || '';
         const batchVal = med.batch || '';
         const catVal = med.category || '';
+        const rackVal = med.rackNo || '';
         const matchesSearch = nameVal.toLowerCase().includes(searchQuery.toLowerCase()) ||
                               batchVal.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                              catVal.toLowerCase().includes(searchQuery.toLowerCase());
+                              catVal.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                              rackVal.toLowerCase().includes(searchQuery.toLowerCase());
         const matchesCategory = selectedCategory === 'All' || (med.category || 'General') === selectedCategory;
         return matchesSearch && matchesCategory;
+    });
+
+    // Sort medicines alphabetically by Name (A-Z), and by Expiry Month/Year ascending (Earliest expiry first, e.g. June 2026 before Dec 2026)
+    const sortedMedicines = [...filteredMedicines].sort((a, b) => {
+        const nameA = (a.name || '').toLowerCase();
+        const nameB = (b.name || '').toLowerCase();
+        const nameCompare = nameA.localeCompare(nameB);
+        if (nameCompare !== 0) return nameCompare;
+
+        const timeA = parseExpiryDateTimestamp(a.expiry);
+        const timeB = parseExpiryDateTimestamp(b.expiry);
+        return timeA - timeB;
     });
 
     return (
@@ -120,6 +176,7 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                                 <tr className="bg-gray-50 border-b border-gray-200 text-[11px] uppercase tracking-wider text-gray-500 font-semibold sticky top-0 bg-gray-50 z-10">
                                     <th className="px-4 py-3">Medicine Name</th>
                                     <th className="px-4 py-3">Category</th>
+                                    <th className="px-4 py-3">Rack No.</th>
                                     <th className="px-4 py-3">Batch No.</th>
                                     <th className="px-4 py-3">Expiry Date</th>
                                     <th className="px-4 py-3 text-right">Stock</th>
@@ -130,7 +187,7 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                             <tbody className="divide-y divide-gray-200 text-sm">
                                 {isLoading ? (
                                     <tr>
-                                        <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
+                                        <td colSpan="8" className="px-6 py-12 text-center text-gray-500">
                                             <div className="flex justify-center items-center gap-2">
                                                 <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
                                                 <span>Loading stock data...</span>
@@ -138,7 +195,7 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                                         </td>
                                     </tr>
                                 ) : (
-                                    filteredMedicines.map(med => {
+                                    sortedMedicines.map(med => {
                                         const isAlreadyAdded = existingItemNames.includes(med.name);
                                         return (
                                             <tr key={med.id} className="hover:bg-indigo-50/30 transition-colors">
@@ -147,6 +204,15 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                                                     <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
                                                         {med.category || 'General'}
                                                     </span>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    {med.rackNo ? (
+                                                        <span className="px-2 py-0.5 bg-amber-50 text-amber-700 font-medium rounded text-xs border border-amber-200">
+                                                            {med.rackNo}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-gray-400 text-xs">-</span>
+                                                    )}
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     <span className="px-2 py-1 bg-gray-100 text-gray-800 font-mono text-xs rounded border border-gray-200 inline-block">
@@ -159,7 +225,7 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                                                         const parts = String(med.expiry).split(/[-/,\s]+/);
                                                         let mNum = null, yNum = null;
                                                         if (parts.length >= 2) {
-                                                            const yearIdx = parts.findIndex(p => p.length === 4 && !isNaN(parseInt(p, 10)));
+                                                             const yearIdx = parts.findIndex(p => p.length === 4 && !isNaN(parseInt(p, 10)));
                                                             if (yearIdx !== -1) {
                                                                 yNum = parts[yearIdx];
                                                                 const otherPart = parts.find((p, idx) => idx !== yearIdx && p.length > 0);
@@ -183,7 +249,7 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                                                     <button
                                                         type="button"
                                                         onClick={() => {
-                                                            onSelect(med);
+                                                             onSelect(med);
                                                             onClose();
                                                         }}
                                                         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
@@ -209,9 +275,9 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                                         );
                                     })
                                 )}
-                                {!isLoading && filteredMedicines.length === 0 && (
+                                {!isLoading && sortedMedicines.length === 0 && (
                                     <tr>
-                                        <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
+                                        <td colSpan="8" className="px-6 py-8 text-center text-gray-500">
                                             No medicines found matching "{searchQuery}".
                                         </td>
                                     </tr>
@@ -223,7 +289,7 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
 
                 {/* Footer */}
                 <div className="px-6 py-3.5 border-t border-gray-200 bg-gray-50 flex justify-between items-center text-xs text-gray-500">
-                    <span>Showing {filteredMedicines.length} of {medicines.length} items</span>
+                    <span>Showing {sortedMedicines.length} of {medicines.length} items</span>
                     <button
                         type="button"
                         onClick={onClose}

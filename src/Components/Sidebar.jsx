@@ -128,9 +128,6 @@ export default function Sidebar({ isCollapsed, toggleCollapse, mobileOpen, setMo
                                 if (item.name === "Audit Logs" && !isSuperadmin) {
                                     return false;
                                 }
-                                if (item.name === "Inventory" && !isSuperadmin) {
-                                    return false;
-                                }
                                 return true;
                             })
                             .map((item) => {

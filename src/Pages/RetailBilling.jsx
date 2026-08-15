@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FiMenu, FiPlus, FiFileText, FiEdit2, FiTrash2, FiEye, FiDownload } from 'react-icons/fi';
+import Swal from 'sweetalert2';
 import AddRetailPartyModal from '../Components/AddRetailPartyModal';
 import PharmaInvoiceModal from '../Components/PharmaInvoiceModal';
 import { invPartiesApi, invInvoicesApi } from '../api/inventoryApiClient';
@@ -44,7 +45,17 @@ export default function RetailBilling({ setMobileOpen, setActivePath }) {
     };
 
     const handleDeleteParty = async (id) => {
-        if (!window.confirm("Are you sure you want to delete this customer?")) return;
+        const confirmRes = await Swal.fire({
+            title: 'Delete Customer?',
+            text: 'Are you sure you want to delete this customer?',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#EF4444',
+            cancelButtonColor: '#6B7280',
+            confirmButtonText: 'Yes, Delete',
+            customClass: { popup: 'rounded-2xl' }
+        });
+        if (!confirmRes.isConfirmed) return;
         try {
             await invPartiesApi.delete('retail', id);
             fetchData();
@@ -54,13 +65,38 @@ export default function RetailBilling({ setMobileOpen, setActivePath }) {
     };
 
     const handleDeleteInvoice = async (id) => {
-        if (!window.confirm("Are you sure you want to delete this invoice? Stock will be restored.")) return;
+        const confirmRes = await Swal.fire({
+            title: 'Delete Retail Invoice?',
+            text: 'Stock quantities will be restored automatically.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#EF4444',
+            cancelButtonColor: '#6B7280',
+            confirmButtonText: 'Yes, Delete',
+            customClass: { popup: 'rounded-2xl' }
+        });
+        if (!confirmRes.isConfirmed) return;
+
         try {
             await invInvoicesApi.delete(id);
+            Swal.fire({
+                icon: 'success',
+                title: 'Deleted',
+                text: 'Invoice deleted and stock restored.',
+                timer: 1500,
+                showConfirmButton: false,
+                customClass: { popup: 'rounded-2xl' }
+            });
             fetchData();
         } catch (error) {
             console.error("Failed to delete invoice:", error);
-            alert("Failed to delete invoice: " + (error.response?.data?.message || error.message));
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: error.response?.data?.message || error.message || 'Failed to delete invoice.',
+                confirmButtonColor: '#4F46E5',
+                customClass: { popup: 'rounded-2xl' }
+            });
         }
     };
 

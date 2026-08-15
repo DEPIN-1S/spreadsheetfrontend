@@ -126,7 +126,13 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
     const gstRate = safeNum(currentInv.gstRate ?? 5);
     const taxAmount = safeNum(currentInv.taxAmount ?? (itemSubtotal * (gstRate / 100)));
     const taxableSubtotal = safeNum(currentInv.subtotal ?? Math.max(0, itemSubtotal - taxAmount));
-    const grandTotal = safeNum(currentInv.grandTotal ?? (taxableSubtotal + taxAmount));
+
+    const addlChargesList = Array.isArray(currentInv.additionalCharges) ? currentInv.additionalCharges : [];
+    const addlChargesBaseSum = addlChargesList.reduce((acc, c) => acc + safeNum(c.amount), 0);
+    const addlChargesTaxSum = addlChargesList.reduce((acc, c) => acc + (safeNum(c.amount) * (safeNum(c.gstRate) / 100)), 0);
+    const totalInvoiceGst = taxAmount + addlChargesTaxSum;
+
+    const grandTotal = safeNum(currentInv.grandTotal ?? (taxableSubtotal + taxAmount + addlChargesBaseSum + addlChargesTaxSum));
 
     const handlePrint = () => {
         window.print();
@@ -358,7 +364,7 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                 <div><b>SchDiscGiven:</b> 0.00</div>
                                 <div><b>Sale Value :</b> {safeNum(currentInv.itemSubtotal, itemSubtotal).toFixed(2)}</div>
                                 <div><b>Cash Disc :</b> {safeNum(currentInv.discountAmount).toFixed(2)}</div>
-                                <div><b>Total GST :</b> {taxAmount.toFixed(2)}</div>
+                                <div><b>Total GST :</b> {totalInvoiceGst.toFixed(2)}</div>
                             </div>
 
                             {/* Col 3: GST Tax Breakdown Table */}
@@ -389,8 +395,18 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                                 rowTax = taxAmount;
                                             }
 
+                                            // Add additional charges matching this GST rate
+                                            const matchingAddlCharges = addlChargesList.filter(c => Number(c.gstRate) === rate);
+                                            const addlTaxable = matchingAddlCharges.reduce((acc, c) => acc + safeNum(c.amount), 0);
+                                            const addlTax = addlTaxable * (rate / 100);
+
+                                            rowTaxable += addlTaxable;
+                                            rowTax += addlTax;
+
+                                            if (rowTaxable === 0 && rowTax === 0) return null;
+
                                             return (
-                                                <tr key={rate} className={isMatch ? "bg-gray-50 font-bold" : ""}>
+                                                <tr key={rate} className={rowTaxable > 0 ? "bg-gray-50 font-bold" : ""}>
                                                     <td className="font-sans font-bold">{rate}%</td>
                                                     <td>{rowTaxable.toFixed(2)}</td>
                                                     <td>{(rowTax / 2).toFixed(2)}</td>
@@ -403,9 +419,9 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                     <tfoot>
                                         <tr className="border-t border-black font-bold font-mono">
                                             <td className="font-sans">Total</td>
-                                            <td>{taxableSubtotal.toFixed(2)}</td>
-                                            <td>{(taxAmount / 2).toFixed(2)}</td>
-                                            <td>{(taxAmount / 2).toFixed(2)}</td>
+                                            <td>{(taxableSubtotal + addlChargesBaseSum).toFixed(2)}</td>
+                                            <td>{(totalInvoiceGst / 2).toFixed(2)}</td>
+                                            <td>{(totalInvoiceGst / 2).toFixed(2)}</td>
                                             <td>0.00</td>
                                         </tr>
                                     </tfoot>
@@ -417,8 +433,8 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                 <div className="p-1.5 space-y-0.5 font-mono">
                                     <div className="flex justify-between font-sans"><span>Gross Amt</span><span className="font-mono font-bold">{safeNum(currentInv.itemSubtotal, itemSubtotal).toFixed(2)}</span></div>
                                     <div className="flex justify-between font-sans"><span>Dis Amt</span><span>{safeNum(currentInv.discountAmount).toFixed(2)}</span></div>
-                                    {Array.isArray(currentInv.additionalCharges) && currentInv.additionalCharges.length > 0 ? (
-                                        currentInv.additionalCharges.map((chg, cIdx) => (
+                                    {addlChargesList.length > 0 ? (
+                                        addlChargesList.map((chg, cIdx) => (
                                             <div key={cIdx} className="flex justify-between font-sans">
                                                 <span className="truncate pr-1 font-semibold">{chg.name || 'Addl Chg'}</span>
                                                 <span>{safeNum(chg.amount).toFixed(2)}</span>
@@ -430,7 +446,7 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                             <span>{safeNum(currentInv.additionalChargesAmount).toFixed(2)}</span>
                                         </div>
                                     )}
-                                    <div className="flex justify-between font-sans"><span>GST Amt</span><span className="font-mono">{taxAmount.toFixed(2)}</span></div>
+                                    <div className="flex justify-between font-sans"><span>GST Amt</span><span className="font-mono">{totalInvoiceGst.toFixed(2)}</span></div>
                                     <div className="flex justify-between font-sans"><span>Cr No.</span><span>0.00</span></div>
                                     <div className="flex justify-between font-sans"><span>Db No.</span><span>0.00</span></div>
                                     <div className="flex justify-between font-sans"><span>TCS% 0.000</span><span>0.00</span></div>

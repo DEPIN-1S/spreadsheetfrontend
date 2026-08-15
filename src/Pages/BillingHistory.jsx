@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { FiMenu, FiSearch, FiEye, FiDownload, FiTrash2, FiFileText, FiTrendingUp, FiBox, FiShoppingBag, FiFilter } from 'react-icons/fi';
+import Swal from 'sweetalert2';
 import PharmaInvoiceModal from '../Components/PharmaInvoiceModal';
 import Pagination from '../Components/Pagination';
 import { invInvoicesApi } from '../api/inventoryApiClient';
@@ -16,19 +17,27 @@ export default function BillingHistory({ setMobileOpen }) {
     const fetchInvoices = async () => {
         try {
             const res = await invInvoicesApi.list();
-            const normalized = (res.data.data || []).map(inv => ({
-                id: inv.id,
-                invoiceNo: inv.invoiceNo,
-                date: inv.invoiceDate,
-                partyName: inv.partyName,
-                subtotal: Number(inv.subtotal) || 0,
-                taxAmount: Number(inv.taxAmount) || 0,
-                amount: Number(inv.grandTotal) || 0,
-                paymentMethod: inv.paymentMethod,
-                type: inv.type === 'wholesale' ? 'Wholesale' : 'Retail',
-                status: inv.paymentStatus,
-                pendingAmount: Number(inv.pendingAmount) || 0
-            }));
+            const normalized = (res.data.data || []).map(inv => {
+                const addlList = Array.isArray(inv.additionalCharges) ? inv.additionalCharges : [];
+                const addlGst = addlList.reduce((sum, c) => sum + ((Number(c.amount) || 0) * ((Number(c.gstRate) || 0) / 100)), 0);
+                const itemGst = Number(inv.taxAmount) || 0;
+                const totalGst = itemGst + addlGst;
+                return {
+                    id: inv.id,
+                    invoiceNo: inv.invoiceNo,
+                    date: inv.invoiceDate,
+                    partyName: inv.partyName,
+                    subtotal: Number(inv.subtotal) || 0,
+                    taxAmount: totalGst,
+                    amount: Number(inv.grandTotal) || 0,
+                    paymentMethod: inv.paymentMethod,
+                    type: inv.type === 'wholesale' ? 'Wholesale' : 'Retail',
+                    status: inv.paymentStatus,
+                    pendingAmount: Number(inv.pendingAmount) || 0,
+                    ...inv,
+                    taxAmount: totalGst
+                };
+            });
             setInvoices(normalized);
         } catch (error) {
             console.error("Failed to load combined invoices:", error);
@@ -41,19 +50,27 @@ export default function BillingHistory({ setMobileOpen }) {
             try {
                 const res = await invInvoicesApi.list();
                 if (!active) return;
-                const normalized = (res.data.data || []).map(inv => ({
-                    id: inv.id,
-                    invoiceNo: inv.invoiceNo,
-                    date: inv.invoiceDate,
-                    partyName: inv.partyName,
-                    subtotal: Number(inv.subtotal) || 0,
-                    taxAmount: Number(inv.taxAmount) || 0,
-                    amount: Number(inv.grandTotal) || 0,
-                    paymentMethod: inv.paymentMethod,
-                    type: inv.type === 'wholesale' ? 'Wholesale' : 'Retail',
-                    status: inv.paymentStatus,
-                    pendingAmount: Number(inv.pendingAmount) || 0
-                }));
+                const normalized = (res.data.data || []).map(inv => {
+                    const addlList = Array.isArray(inv.additionalCharges) ? inv.additionalCharges : [];
+                    const addlGst = addlList.reduce((sum, c) => sum + ((Number(c.amount) || 0) * ((Number(c.gstRate) || 0) / 100)), 0);
+                    const itemGst = Number(inv.taxAmount) || 0;
+                    const totalGst = itemGst + addlGst;
+                    return {
+                        id: inv.id,
+                        invoiceNo: inv.invoiceNo,
+                        date: inv.invoiceDate,
+                        partyName: inv.partyName,
+                        subtotal: Number(inv.subtotal) || 0,
+                        taxAmount: totalGst,
+                        amount: Number(inv.grandTotal) || 0,
+                        paymentMethod: inv.paymentMethod,
+                        type: inv.type === 'wholesale' ? 'Wholesale' : 'Retail',
+                        status: inv.paymentStatus,
+                        pendingAmount: Number(inv.pendingAmount) || 0,
+                        ...inv,
+                        taxAmount: totalGst
+                    };
+                });
                 setInvoices(normalized);
             } catch (error) {
                 console.error("Failed to load combined invoices:", error);
@@ -122,13 +139,38 @@ export default function BillingHistory({ setMobileOpen }) {
     }, [filteredInvoices, currentPage, itemsPerPage]);
 
     const handleDeleteInvoice = async (id) => {
-        if (!window.confirm("Are you sure you want to delete this invoice? Stock will be restored.")) return;
+        const confirmRes = await Swal.fire({
+            title: 'Delete Invoice?',
+            text: 'Stock quantities will be restored automatically.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#EF4444',
+            cancelButtonColor: '#6B7280',
+            confirmButtonText: 'Yes, Delete',
+            customClass: { popup: 'rounded-2xl' }
+        });
+        if (!confirmRes.isConfirmed) return;
+
         try {
             await invInvoicesApi.delete(id);
+            Swal.fire({
+                icon: 'success',
+                title: 'Deleted',
+                text: 'Invoice deleted and stock restored.',
+                timer: 1500,
+                showConfirmButton: false,
+                customClass: { popup: 'rounded-2xl' }
+            });
             fetchInvoices();
         } catch (error) {
             console.error("Failed to delete invoice:", error);
-            alert("Failed to delete invoice: " + (error.response?.data?.message || error.message));
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: error.response?.data?.message || error.message || 'Failed to delete invoice.',
+                confirmButtonColor: '#4F46E5',
+                customClass: { popup: 'rounded-2xl' }
+            });
         }
     };
 

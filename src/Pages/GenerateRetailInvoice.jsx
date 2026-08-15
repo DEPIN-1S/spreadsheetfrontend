@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { FiMenu, FiArrowLeft, FiPlus, FiTrash2, FiPrinter, FiCheckCircle, FiSearch, FiX, FiChevronDown, FiChevronUp } from 'react-icons/fi';
+import { FiMenu, FiArrowLeft, FiPlus, FiTrash2, FiPrinter, FiCheckCircle, FiSearch, FiX, FiChevronDown, FiChevronUp, FiEdit, FiLoader } from 'react-icons/fi';
+import Swal from 'sweetalert2';
 import AddRetailPartyModal from '../Components/AddRetailPartyModal';
 import SelectMedicineModal from '../Components/SelectMedicineModal';
 import PharmaInvoiceModal from '../Components/PharmaInvoiceModal';
@@ -11,9 +12,11 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
     const [selectedPartyId, setSelectedPartyId] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isSelectMedModalOpen, setIsSelectMedModalOpen] = useState(false);
     const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
     const [isSuccess, setIsSuccess] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     // Invoice details state
     const [invoiceNo, setInvoiceNo] = useState('INV-RET-PENDING');
@@ -117,6 +120,18 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
         }
     };
 
+    const handleEditPartySave = async (updatedData) => {
+        try {
+            const res = await invPartiesApi.update('retail', selectedParty.id, updatedData);
+            const updated = res.data.data || { ...selectedParty, ...updatedData };
+            setParties(parties.map(p => String(p.id) === String(selectedParty.id) ? updated : p));
+            setIsEditModalOpen(false);
+        } catch (error) {
+            console.error("Failed to update retail party:", error);
+            throw error;
+        }
+    };
+
     const handleAddItem = () => {
         setIsSelectMedModalOpen(true);
     };
@@ -155,7 +170,9 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
     const taxAmount = itemSubtotal * (gstRate / 100);
     const taxableSubtotal = Math.max(0, itemSubtotal - taxAmount);
     const subtotal = taxableSubtotal;
-    const totalAdditionalCharges = additionalCharges.reduce((acc, chg) => acc + (Number(chg.amount) || 0), 0);
+    const totalAdditionalChargesBase = additionalCharges.reduce((acc, chg) => acc + (Number(chg.amount) || 0), 0);
+    const totalAdditionalChargesTax = additionalCharges.reduce((acc, chg) => acc + ((Number(chg.amount) || 0) * ((Number(chg.gstRate) || 0) / 100)), 0);
+    const totalAdditionalCharges = totalAdditionalChargesBase + totalAdditionalChargesTax;
     const subtotalWithCharges = taxableSubtotal + totalAdditionalCharges;
     const effectiveDiscount = Number(discountAmount) || 0;
     const roundOffSign = roundOffType === '-' ? -1 : 1;
@@ -164,17 +181,32 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
 
     const handleGenerateInvoice = async (e) => {
         e.preventDefault();
+        if (isSubmitting || isSuccess) return;
+
         if (!selectedPartyId) {
-            alert('Please select a customer / party first.');
+            Swal.fire({
+                icon: 'warning',
+                title: 'Customer Required',
+                text: 'Please select a customer / party first.',
+                confirmButtonColor: '#4F46E5',
+                customClass: { popup: 'rounded-2xl' }
+            });
             return;
         }
 
         const validItems = items.filter(i => i.description && i.description.trim() !== '');
         if (validItems.length === 0) {
-            alert('Please add at least one item.');
+            Swal.fire({
+                icon: 'warning',
+                title: 'Items Required',
+                text: 'Please add at least one item to the invoice.',
+                confirmButtonColor: '#4F46E5',
+                customClass: { popup: 'rounded-2xl' }
+            });
             return;
         }
 
+        setIsSubmitting(true);
         const pendingAmt = paymentStatus === 'Paid' ? 0 : (paymentStatus === 'Partially Paid' ? (grandTotal - (Number(partialAmount) || 0)) : grandTotal);
 
         const payload = {
@@ -208,8 +240,17 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
             } else {
                 res = await invInvoicesApi.create(payload);
             }
-            setInvoiceNo(res.data.invoiceNo || (editInvoiceId ? 'INV-RET-UPDATED' : 'INV-RET-GENERATED'));
+            const generatedNo = res.data.invoiceNo || (editInvoiceId ? 'INV-RET-UPDATED' : 'INV-RET-GENERATED');
+            setInvoiceNo(generatedNo);
             setIsSuccess(true);
+            Swal.fire({
+                icon: 'success',
+                title: editInvoiceId ? 'Invoice Updated!' : 'Invoice Generated!',
+                text: `Retail Invoice ${generatedNo} saved successfully.`,
+                timer: 1800,
+                showConfirmButton: false,
+                customClass: { popup: 'rounded-2xl' }
+            });
             setTimeout(() => {
                 if (setActivePath) {
                     const returnPath = localStorage.getItem('return_path_invoice') || '/inventory/retail-invoices';
@@ -219,7 +260,14 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
             }, 1800);
         } catch (error) {
             console.error("Failed to save retail invoice:", error);
-            alert("Failed to save invoice: " + (error.response?.data?.message || error.message));
+            Swal.fire({
+                icon: 'error',
+                title: 'Failed to Save Invoice',
+                text: error.response?.data?.message || error.message || 'An error occurred while saving the invoice.',
+                confirmButtonColor: '#4F46E5',
+                customClass: { popup: 'rounded-2xl' }
+            });
+            setIsSubmitting(false);
         }
     };
 
@@ -278,14 +326,27 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                         <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-4">
                             <div className="flex justify-between items-center border-b border-gray-100 pb-3">
                                 <h2 className="text-base font-semibold text-gray-900">1. Select Customer / Party</h2>
-                                <button
-                                    type="button"
-                                    onClick={() => setIsAddModalOpen(true)}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-md text-xs font-semibold transition-colors border border-indigo-200"
-                                >
-                                    <FiPlus size={14} />
-                                    Add New Customer
-                                </button>
+                                <div className="flex items-center gap-2">
+                                    {selectedParty && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsEditModalOpen(true)}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-md text-xs font-semibold transition-colors border border-amber-200"
+                                            title="Edit selected party details"
+                                        >
+                                            <FiEdit size={14} />
+                                            Edit Party
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsAddModalOpen(true)}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-md text-xs font-semibold transition-colors border border-indigo-200"
+                                    >
+                                        <FiPlus size={14} />
+                                        Add New Customer
+                                    </button>
+                                </div>
                             </div>
 
                             <div className="space-y-3">
@@ -364,6 +425,15 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                                 <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200 text-sm space-y-2 animate-fade-in">
                                     <div className="flex justify-between items-start">
                                         <span className="font-bold text-gray-900 text-base">{selectedParty.name}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsEditModalOpen(true)}
+                                            className="flex items-center gap-1 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-300 rounded text-xs font-semibold transition-colors"
+                                            title="Edit customer information"
+                                        >
+                                            <FiEdit size={13} />
+                                            Edit
+                                        </button>
                                     </div>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-600 pt-1">
                                         <div><span className="font-semibold text-gray-700">Contact:</span> {selectedParty.contact}</div>
@@ -607,40 +677,66 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                             {/* Dynamic Charges List */}
                             {isChargesExpanded && (
                                 <div className="space-y-3 py-1 text-sm">
-                                    {additionalCharges.map(chg => (
-                                        <div key={chg.id} className="grid grid-cols-12 items-center gap-1.5">
-                                            <div className="col-span-1 flex justify-center">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setAdditionalCharges(additionalCharges.filter(c => c.id !== chg.id))}
-                                                    className="text-gray-400 hover:text-red-500 transition-colors"
-                                                    title="Remove charge"
-                                                >
-                                                    <FiX size={16} />
-                                                </button>
+                                    {additionalCharges.map(chg => {
+                                        const chgAmt = Number(chg.amount) || 0;
+                                        const chgGst = Number(chg.gstRate) || 0;
+                                        const chgTaxAmt = chgAmt * (chgGst / 100);
+                                        return (
+                                            <div key={chg.id} className="space-y-1 py-1 border-b border-gray-100 last:border-0">
+                                                <div className="grid grid-cols-12 items-center gap-1.5">
+                                                    <div className="col-span-1 flex justify-center">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setAdditionalCharges(additionalCharges.filter(c => c.id !== chg.id))}
+                                                            className="text-gray-400 hover:text-red-500 transition-colors"
+                                                            title="Remove charge"
+                                                        >
+                                                            <FiX size={16} />
+                                                        </button>
+                                                    </div>
+                                                    <div className="col-span-5">
+                                                        <input
+                                                            type="text"
+                                                            value={chg.name}
+                                                            onChange={(e) => setAdditionalCharges(additionalCharges.map(c => c.id === chg.id ? { ...c, name: e.target.value } : c))}
+                                                            className="w-full px-1 py-1 border-b border-gray-300 focus:border-indigo-500 outline-none text-gray-800 text-sm font-medium transition-colors"
+                                                            placeholder="Charge name"
+                                                        />
+                                                    </div>
+                                                    <div className="col-span-3 flex items-center justify-end">
+                                                        <select
+                                                            value={chg.gstRate ?? 0}
+                                                            onChange={(e) => setAdditionalCharges(additionalCharges.map(c => c.id === chg.id ? { ...c, gstRate: Number(e.target.value) } : c))}
+                                                            className="text-xs bg-gray-50 border border-gray-300 rounded px-1.5 py-1 text-gray-700 font-medium focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer"
+                                                            title="GST Rate for this charge"
+                                                        >
+                                                            <option value={0}>0% GST</option>
+                                                            <option value={5}>5% GST</option>
+                                                            <option value={12}>12% GST</option>
+                                                            <option value={18}>18% GST</option>
+                                                            <option value={28}>28% GST</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="col-span-3 flex items-center justify-end border-b border-gray-300 py-1">
+                                                        <span className="text-gray-400 text-xs mr-1">₹</span>
+                                                        <input
+                                                            type="number"
+                                                            min="0"
+                                                            value={chg.amount}
+                                                            onChange={(e) => setAdditionalCharges(additionalCharges.map(c => c.id === chg.id ? { ...c, amount: Number(e.target.value) || 0 } : c))}
+                                                            className="w-16 text-right text-sm font-semibold text-gray-800 outline-none"
+                                                            placeholder="0"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                {chgGst > 0 && chgAmt > 0 && (
+                                                    <div className="flex justify-end text-[11px] text-indigo-600 font-medium pr-1">
+                                                        <span>+₹{chgTaxAmt.toFixed(2)} ({chgGst}% GST) | Total: ₹{(chgAmt + chgTaxAmt).toFixed(2)}</span>
+                                                    </div>
+                                                )}
                                             </div>
-                                            <div className="col-span-7">
-                                                <input
-                                                    type="text"
-                                                    value={chg.name}
-                                                    onChange={(e) => setAdditionalCharges(additionalCharges.map(c => c.id === chg.id ? { ...c, name: e.target.value } : c))}
-                                                    className="w-full px-1 py-1 border-b border-gray-300 focus:border-indigo-500 outline-none text-gray-800 text-sm font-medium transition-colors"
-                                                    placeholder="Charge name (e.g. Courier / Other)"
-                                                />
-                                            </div>
-                                            <div className="col-span-4 flex items-center justify-end border-b border-gray-300 py-1">
-                                                <span className="text-gray-400 text-xs mr-1">₹</span>
-                                                <input
-                                                    type="number"
-                                                    min="0"
-                                                    value={chg.amount}
-                                                    onChange={(e) => setAdditionalCharges(additionalCharges.map(c => c.id === chg.id ? { ...c, amount: Number(e.target.value) || 0 } : c))}
-                                                    className="w-20 text-right text-sm font-semibold text-gray-800 outline-none"
-                                                    placeholder="0"
-                                                />
-                                            </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
 
                                     {/* Discount After Tax */}
                                     <div className="grid grid-cols-12 items-center gap-1.5 pt-1 border-t border-gray-100">
@@ -768,6 +864,18 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                                         <span className="font-semibold text-indigo-700">₹{taxableSubtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                     </div>
                                 )}
+                                {totalAdditionalChargesBase > 0 && (
+                                    <div className="flex justify-between text-gray-600">
+                                        <span>Additional Charges (Base)</span>
+                                        <span className="font-semibold text-gray-900">+ ₹{totalAdditionalChargesBase.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                    </div>
+                                )}
+                                {totalAdditionalChargesTax > 0 && (
+                                    <div className="flex justify-between text-gray-600">
+                                        <span>Additional Charges GST</span>
+                                        <span className="font-semibold text-indigo-600">+ ₹{totalAdditionalChargesTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Total Amount */}
@@ -797,11 +905,20 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                         </button>
                         <button
                             type="submit"
-                            disabled={isSuccess}
-                            className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-md text-sm font-semibold hover:bg-indigo-700 shadow-sm transition-all focus:ring-4 focus:ring-indigo-500/30"
+                            disabled={isSubmitting || isSuccess}
+                            className={`flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-md text-sm font-semibold hover:bg-indigo-700 shadow-sm transition-all focus:ring-4 focus:ring-indigo-500/30 ${isSubmitting || isSuccess ? 'opacity-75 cursor-not-allowed' : ''}`}
                         >
-                            <FiCheckCircle size={16} />
-                            {editInvoiceId ? 'Update & Save Invoice' : 'Generate & Save Invoice'}
+                            {isSubmitting ? (
+                                <>
+                                    <FiLoader className="animate-spin" size={16} />
+                                    {editInvoiceId ? 'Updating Invoice...' : 'Generating & Saving Invoice...'}
+                                </>
+                            ) : (
+                                <>
+                                    <FiCheckCircle size={16} />
+                                    {editInvoiceId ? 'Update & Save Invoice' : 'Generate & Save Invoice'}
+                                </>
+                            )}
                         </button>
                     </div>
                 </form>
@@ -812,6 +929,14 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                 isOpen={isAddModalOpen}
                 onClose={() => setIsAddModalOpen(false)}
                 onSave={handleAddPartySave}
+            />
+
+            {/* Edit Party Modal */}
+            <AddRetailPartyModal
+                isOpen={isEditModalOpen}
+                onClose={() => setIsEditModalOpen(false)}
+                initialData={selectedParty}
+                onSave={handleEditPartySave}
             />
 
             {/* Select Medicine Modal */}

@@ -88,7 +88,8 @@ const defaultCCTemplate = [
     { id: "col-cc-quantity-notified", name: "Quantity to be Notified", type: "number" },
     { id: "col-cc-wholesale-profit", name: "W Profit", type: "number" },
     { id: "col-cc-wholesale-selling-rate", name: "W Selling Rate", type: "number" },
-    { id: "col-cc-wholesale-margin", name: "Margin", type: "number" }
+    { id: "col-cc-wholesale-margin", name: "Margin", type: "number" },
+    { id: "col-cc-wholesale-mrp", name: "MRP", type: "number" }
 ];
 
 const defaultColumns = [
@@ -103,7 +104,8 @@ const defaultColumns = [
         options: JSON.stringify({ isDetailedViewEnabled: true, ccTemplateColumns: defaultCCTemplate })
     },
     { id: "col-composition", name: "Composition", type: "text", width: 220, orderIndex: 3 },
-    { id: "col-company-name", name: "Company Name", type: "text", width: 220, orderIndex: 4 }
+    { id: "col-company-name", name: "Company Name", type: "text", width: 220, orderIndex: 4 },
+    { id: "col-rack-no", name: "Rack No", type: "text", width: 180, orderIndex: 5 }
 ];
 
 const defaultRows = Array.from({ length: 5 }).map((_, idx) => ({
@@ -114,7 +116,8 @@ const defaultRows = Array.from({ length: 5 }).map((_, idx) => ({
         { columnId: "col-product-name", rawValue: "", computedValue: "" },
         { columnId: "col-retail-inventory", rawValue: "", computedValue: "" },
         { columnId: "col-composition", rawValue: "", computedValue: "" },
-        { columnId: "col-company-name", rawValue: "", computedValue: "" }
+        { columnId: "col-company-name", rawValue: "", computedValue: "" },
+        { columnId: "col-rack-no", rawValue: "", computedValue: "" }
     ]
 }));
 
@@ -149,6 +152,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
     const [ccCompanyName, setCcCompanyName] = useState('');
     const [ccQuantity, setCcQuantity] = useState('');
     const [ccHsnCode, setCcHsnCode] = useState('');
+    const [ccRackNo, setCcRackNo] = useState('');
     const [nestedProductName, setNestedProductName] = useState('');
 
     const [addingMetaField, setAddingMetaField] = useState(null);
@@ -425,7 +429,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
         try {
             if (isNested) {
                 // Nested sub-spreadsheet (batches / CC View)
-                const cols = defaultCCTemplate;
+                let cols = defaultCCTemplate;
                 let ccRows = [];
                 try {
                     const ccRowsRes = await invSheetsApi.listCcRows(parentSheetId, docName);
@@ -437,6 +441,15 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                 try {
                     const parentRes = await invSheetsApi.get(parentSheetId);
                     const parentSheet = parentRes.data.data;
+                    const invCol = (parentSheet?.columns || []).find(c => c.id === "col-retail-inventory") || (parentSheet?.columns || []).find(c => c.options?.includes("ccTemplateColumns"));
+                    if (invCol && invCol.options) {
+                        const opts = parseOptions(invCol.options);
+                        if (opts.ccTemplateColumns && Array.isArray(opts.ccTemplateColumns) && opts.ccTemplateColumns.length > 0) {
+                            const existingIds = new Set(opts.ccTemplateColumns.map(c => c.id));
+                            const missingDefaults = defaultCCTemplate.filter(d => !existingIds.has(d.id));
+                            cols = [...opts.ccTemplateColumns, ...missingDefaults];
+                        }
+                    }
                     const parentRow = (parentSheet?.rows || []).find(r => r.id === docName);
                     if (parentRow) {
                         const nameCell = parentRow.cells?.find(c => c.columnId === "col-product-name");
@@ -451,14 +464,28 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                     const cellMap = new Map((ccRow.cells || []).map(c => [c.columnId, c]));
                     const ccCells = cols.map(col => {
                         const existing = cellMap.get(col.id);
-                        return existing ? {
+                        let rawValue = existing ? (existing.rawValue || "") : "";
+                        let computedValue = existing ? (existing.computedValue || "") : "";
+
+                        // Mirror MRP values between col-cc-mrp and col-cc-wholesale-mrp if one is not populated
+                        if (col.id === 'col-cc-wholesale-mrp' && !rawValue) {
+                            const retailMrpCell = cellMap.get('col-cc-mrp');
+                            if (retailMrpCell && retailMrpCell.rawValue) {
+                                rawValue = retailMrpCell.rawValue;
+                                computedValue = retailMrpCell.computedValue || retailMrpCell.rawValue;
+                            }
+                        } else if (col.id === 'col-cc-mrp' && !rawValue) {
+                            const wholesaleMrpCell = cellMap.get('col-cc-wholesale-mrp');
+                            if (wholesaleMrpCell && wholesaleMrpCell.rawValue) {
+                                rawValue = wholesaleMrpCell.rawValue;
+                                computedValue = wholesaleMrpCell.computedValue || wholesaleMrpCell.rawValue;
+                            }
+                        }
+
+                        return {
                             columnId: col.id,
-                            rawValue: existing.rawValue || "",
-                            computedValue: existing.computedValue || ""
-                        } : {
-                            columnId: col.id,
-                            rawValue: "",
-                            computedValue: ""
+                            rawValue,
+                            computedValue
                         };
                     });
                     return {
@@ -492,7 +519,8 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                             manufacturer: meta.manufacturer || localMeta.manufacturer || '',
                             companyName: meta.companyName || localMeta.companyName || '',
                             quantity: meta.quantity || localMeta.quantity || '',
-                            hsnCode: meta.hsnCode || localMeta.hsnCode || ''
+                            hsnCode: meta.hsnCode || localMeta.hsnCode || '',
+                            rackNo: meta.rackNo || localMeta.rackNo || ''
                         };
                     } catch (e) {
                         console.error("Error parsing localMeta:", e);
@@ -507,6 +535,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                 setCcCompanyName(meta.companyName || '');
                 setCcQuantity(meta.quantity || '');
                 setCcHsnCode(meta.hsnCode || '');
+                setCcRackNo(meta.rackNo || '');
 
                 setSheetData({
                     id: docName,
@@ -574,6 +603,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
         if (field === 'manufacturer') setCcManufacturer(value);
         if (field === 'companyName') setCcCompanyName(value);
         if (field === 'hsnCode') setCcHsnCode(value);
+        if (field === 'rackNo') setCcRackNo(value);
 
         const currentMeta = JSON.parse(localStorage.getItem(`cc_meta_${docName}`) || "{}");
         const updatedMeta = {
@@ -584,6 +614,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
             companyName: field === 'companyName' ? value : (ccCompanyName || currentMeta.companyName || ''),
             quantity: (field === 'quantity' || field === 'unit') ? value : (ccQuantity || currentMeta.quantity || ''),
             hsnCode: field === 'hsnCode' ? value : (ccHsnCode || currentMeta.hsnCode || ''),
+            rackNo: field === 'rackNo' ? value : (ccRackNo || currentMeta.rackNo || ''),
         };
         localStorage.setItem(`cc_meta_${docName}`, JSON.stringify(updatedMeta));
 
@@ -606,7 +637,8 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
             manufacturer: ccManufacturer || '',
             companyName: ccCompanyName || '',
             quantity: ccQuantity || '',
-            hsnCode: ccHsnCode || ''
+            hsnCode: ccHsnCode || '',
+            rackNo: ccRackNo || ''
         };
 
         localStorage.setItem(`cc_meta_${docName}`, JSON.stringify(updatedMeta));
@@ -1985,9 +2017,16 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                 }
                             }
 
+                            // Sync MRP values between col-cc-mrp and col-cc-wholesale-mrp
+                            if (columnId === 'col-cc-mrp') {
+                                setVal('col-cc-wholesale-mrp', newValue);
+                            } else if (columnId === 'col-cc-wholesale-mrp') {
+                                setVal('col-cc-mrp', newValue);
+                            }
+
                             // Discount % = ((MRP - R Selling Rate) / MRP) * 100
-                            if (['col-cc-mrp', 'col-cc-retail-selling-rate'].includes(columnId)) {
-                                const mrp = getVal('col-cc-mrp');
+                            if (['col-cc-mrp', 'col-cc-wholesale-mrp', 'col-cc-retail-selling-rate'].includes(columnId)) {
+                                const mrp = getVal('col-cc-mrp') || getVal('col-cc-wholesale-mrp');
                                 const rsl = getVal('col-cc-retail-selling-rate');
                                 if (mrp > 0) {
                                     const disc = ((mrp - rsl) / mrp) * 100;
@@ -1995,13 +2034,15 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                 }
                             }
 
-                            // Margin % = ((MRP - W Selling Rate) / MRP) * 100
-                            if (['col-cc-mrp', 'col-cc-wholesale-selling-rate'].includes(columnId)) {
-                                const mrp = getVal('col-cc-mrp');
+                            // Wholesale Margin % = ((W Selling Rate - Purchase Rate) / W Selling Rate) * 100
+                            if (['col-cc-purchase-rate', 'col-cc-wholesale-selling-rate'].includes(columnId)) {
+                                const pr = getVal('col-cc-purchase-rate');
                                 const wsl = getVal('col-cc-wholesale-selling-rate');
-                                if (mrp > 0) {
-                                    const margin = ((mrp - wsl) / mrp) * 100;
+                                if (wsl > 0) {
+                                    const margin = ((wsl - pr) / wsl) * 100;
                                     setVal('col-cc-wholesale-margin', margin > 0 ? margin.toFixed(2) : '0');
+                                } else {
+                                    setVal('col-cc-wholesale-margin', '0');
                                 }
                             }
 
@@ -2859,6 +2900,24 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                         <button onClick={() => setAddingMetaField('hsnCode')} title="Add HSN Code" className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors shrink-0">
                                             <FiPlus className="w-4 h-4" />
                                         </button>
+                                    </div>
+                                </div>
+                                {/* Rack No — free-text alphanumeric */}
+                                <div className="flex items-center gap-3">
+                                    <label className="text-sm text-gray-600 font-medium w-24 shrink-0">Rack No:</label>
+                                    <div className="flex flex-1 items-center gap-1">
+                                        <input
+                                            type="text"
+                                            placeholder="e.g. A-101, B-02"
+                                            value={ccRackNo}
+                                            onChange={(e) => {
+                                                // Allow only alphanumeric, dash, slash
+                                                const val = e.target.value.replace(/[^a-zA-Z0-9\-\/]/g, '');
+                                                handleCCMetaChange('rackNo', val);
+                                            }}
+                                            className="flex-1 border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 transition-colors"
+                                            maxLength={50}
+                                        />
                                     </div>
                                 </div>
                             </div>
@@ -5138,6 +5197,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                         } catch (err) {
                                             console.error("Save failed:", err);
                                         }
+                                        await fetchSheetData();
                                         Swal.fire({
                                             icon: 'success',
                                             title: 'Saved Successfully!',
