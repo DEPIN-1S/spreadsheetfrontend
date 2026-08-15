@@ -23,6 +23,7 @@ export default function BillingHistory({ setMobileOpen }) {
                 const itemGst = Number(inv.taxAmount) || 0;
                 const totalGst = itemGst + addlGst;
                 return {
+                    ...inv,
                     id: inv.id,
                     invoiceNo: inv.invoiceNo,
                     date: inv.invoiceDate,
@@ -33,9 +34,7 @@ export default function BillingHistory({ setMobileOpen }) {
                     paymentMethod: inv.paymentMethod,
                     type: inv.type === 'wholesale' ? 'Wholesale' : 'Retail',
                     status: inv.paymentStatus,
-                    pendingAmount: Number(inv.pendingAmount) || 0,
-                    ...inv,
-                    taxAmount: totalGst
+                    pendingAmount: Number(inv.pendingAmount) || 0
                 };
             });
             setInvoices(normalized);
@@ -56,6 +55,7 @@ export default function BillingHistory({ setMobileOpen }) {
                     const itemGst = Number(inv.taxAmount) || 0;
                     const totalGst = itemGst + addlGst;
                     return {
+                        ...inv,
                         id: inv.id,
                         invoiceNo: inv.invoiceNo,
                         date: inv.invoiceDate,
@@ -66,9 +66,7 @@ export default function BillingHistory({ setMobileOpen }) {
                         paymentMethod: inv.paymentMethod,
                         type: inv.type === 'wholesale' ? 'Wholesale' : 'Retail',
                         status: inv.paymentStatus,
-                        pendingAmount: Number(inv.pendingAmount) || 0,
-                        ...inv,
-                        taxAmount: totalGst
+                        pendingAmount: Number(inv.pendingAmount) || 0
                     };
                 });
                 setInvoices(normalized);

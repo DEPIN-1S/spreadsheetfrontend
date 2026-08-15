@@ -3,13 +3,24 @@ import { FiX, FiPrinter, FiDownload, FiCheckCircle, FiSettings } from 'react-ico
 import { invInvoicesApi } from '../api/inventoryApiClient';
 
 export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
-    if (!isOpen || !invoice) return null;
-
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const settingsRef = useRef(null);
 
     const [fullInvoiceData, setFullInvoiceData] = useState(invoice);
     const [loadingInvoice, setLoadingInvoice] = useState(false);
+
+    const [visibleColumns, setVisibleColumns] = useState({
+        slNo: true,
+        product: true,
+        qty: true,
+        batchNo: true,
+        expDate: true,
+        sellingRate: true,
+        disc: true,
+        mrp: true,
+        gst: true,
+        total: true
+    });
 
     useEffect(() => {
         setFullInvoiceData(invoice);
@@ -27,33 +38,16 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
         }
     }, [invoice]);
 
-    const [visibleColumns, setVisibleColumns] = useState({
-        slNo: true,
-        product: true,
-        qty: true,
-        batchNo: true,
-        expDate: true,
-        sellingRate: true,
-        disc: true,
-        mrp: true,
-        gst: true,
-        total: true
-    });
-
     useEffect(() => {
         const saved = localStorage.getItem('invoice_visible_columns');
         if (saved) {
             try {
                 setVisibleColumns(JSON.parse(saved));
-            } catch (e) { }
+            } catch (err) {
+                console.error("Failed to parse invoice visible columns:", err);
+            }
         }
     }, []);
-
-    const toggleColumn = (key) => {
-        const updated = { ...visibleColumns, [key]: !visibleColumns[key] };
-        setVisibleColumns(updated);
-        localStorage.setItem('invoice_visible_columns', JSON.stringify(updated));
-    };
 
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -64,6 +58,14 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    if (!isOpen || !invoice) return null;
+
+    const toggleColumn = (key) => {
+        const updated = { ...visibleColumns, [key]: !visibleColumns[key] };
+        setVisibleColumns(updated);
+        localStorage.setItem('invoice_visible_columns', JSON.stringify(updated));
+    };
 
     const safeNum = (val, fallback = 0) => {
         const n = Number(val);
@@ -171,6 +173,7 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                     <div className="flex items-center gap-2">
                         <span className="px-2.5 py-0.5 bg-indigo-600 text-xs font-bold rounded uppercase tracking-wider">Tax Invoice</span>
                         <h3 className="text-base font-semibold">Company Name Pharma Distribution Format</h3>
+                        {loadingInvoice && <span className="text-xs text-indigo-300 animate-pulse ml-2">Loading details...</span>}
                     </div>
                     <div className="flex items-center gap-3">
                         <button
