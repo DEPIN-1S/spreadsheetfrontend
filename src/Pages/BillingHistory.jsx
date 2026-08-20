@@ -234,7 +234,7 @@ export default function BillingHistory({ setMobileOpen }) {
         ]);
 
         autoTable(doc, {
-            head: [["#", "Invoice No", "Date", "Type", "Party / Customer Name", "Payment Method", "Status", "Subtotal", "GST (Cut)", "Grand Total"]],
+            head: [["#", "Invoice No", "Date", "Type", "Party / Customer Name", "Payment Method", "Status", "Subtotal", "GST ", "Grand Total"]],
             body: tableRows,
             startY: 36,
             styles: { fontSize: 8, cellPadding: 3, font: 'helvetica' },
@@ -316,7 +316,7 @@ export default function BillingHistory({ setMobileOpen }) {
 
                         <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
                             <div>
-                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total GST (Cut)</p>
+                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total GST </p>
                                 <p className="text-2xl font-black text-rose-600 mt-1">{formatCurrency(stats.totalGst)}</p>
                                 <p className="text-xs text-rose-500 font-medium mt-0.5">Tax deducted on bills</p>
                             </div>
@@ -420,7 +420,7 @@ export default function BillingHistory({ setMobileOpen }) {
                                         <th className="px-5 py-3.5">Payment</th>
                                         <th className="px-5 py-3.5">Status</th>
                                         <th className="px-5 py-3.5 text-right">Subtotal</th>
-                                        <th className="px-5 py-3.5 text-right text-rose-600">GST (Cut)</th>
+                                        <th className="px-5 py-3.5 text-right text-rose-600">GST </th>
                                         <th className="px-5 py-3.5 text-right">Grand Total</th>
                                         <th className="px-5 py-3.5 text-right">Actions</th>
                                     </tr>

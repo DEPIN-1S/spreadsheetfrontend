@@ -56,7 +56,7 @@ export default function Downloads({ setMobileOpen }) {
 
         autoTable(doc, {
             startY: 40,
-            head: [['#', 'Invoice No', 'Date', 'Party/Customer', 'Type', 'Payment', 'Subtotal', 'GST (Cut)', 'Grand Total']],
+            head: [['#', 'Invoice No', 'Date', 'Party/Customer', 'Type', 'Payment', 'Subtotal', 'GST ', 'Grand Total']],
             body: tableRows,
             theme: 'striped',
             headStyles: { fillColor: [79, 70, 229] }, // Indigo-600
@@ -72,7 +72,7 @@ export default function Downloads({ setMobileOpen }) {
         doc.setFontSize(10);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0);
-        doc.text(`Total Subtotal: Rs ${totalSubtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}   |   Total GST (Cut): Rs ${totalGstCut.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}   |   Grand Total: Rs ${totalGrandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 14, finalY + 10);
+        doc.text(`Total Subtotal: Rs ${totalSubtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}   |   Total GST : Rs ${totalGstCut.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}   |   Grand Total: Rs ${totalGrandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 14, finalY + 10);
         
         const fileName = `${title.replace(/\s+/g, '_').toLowerCase()}.pdf`;
         doc.save(fileName);

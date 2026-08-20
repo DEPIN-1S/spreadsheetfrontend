@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { FiBell, FiCheck, FiX, FiAlertTriangle, FiAlertCircle } from "react-icons/fi";
-import { invInvoicesApi } from "../api/inventoryApiClient";
+import { FiBell, FiCheck, FiX, FiAlertTriangle, FiAlertCircle, FiDollarSign, FiClock, FiUser, FiPhone } from "react-icons/fi";
 import axios from "axios";
 
 // Using the common base url from apiClient
@@ -8,7 +7,9 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:6041/api
 
 export default function NotificationBell({ isCollapsed }) {
     const [isOpen, setIsOpen] = useState(false);
-    const [notifications, setNotifications] = useState([]);
+    const [activeTab, setActiveTab] = useState("billing"); // 'stock' or 'billing'
+    const [stockNotifs, setStockNotifs] = useState([]);
+    const [billingNotifs, setBillingNotifs] = useState([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const dropdownRef = useRef(null);
 
@@ -25,10 +26,13 @@ export default function NotificationBell({ isCollapsed }) {
         try {
             const listRes = await axios.get(`${BASE_URL}/inv/notifications?isRead=false`, getHeaders());
             const rawNotifs = listRes.data.data || [];
-            // Filter to ONLY low stock and out of stock
-            const stockNotifs = rawNotifs.filter(n => n.type === 'out_of_stock' || n.type === 'low_stock');
-            setNotifications(stockNotifs);
-            setUnreadCount(stockNotifs.length);
+            
+            const stocks = rawNotifs.filter(n => n.type === 'out_of_stock' || n.type === 'low_stock');
+            const billings = rawNotifs.filter(n => n.type === 'pending_payment_alert');
+            
+            setStockNotifs(stocks);
+            setBillingNotifs(billings);
+            setUnreadCount(rawNotifs.length);
         } catch (error) {
             console.error("Error fetching notifications:", error);
         }
@@ -77,18 +81,7 @@ export default function NotificationBell({ isCollapsed }) {
         }
     };
 
-    const getTypeColor = (type) => {
-        switch (type) {
-            case "out_of_stock":
-                return "bg-red-500/10 text-red-500 border-red-500/20";
-            case "expiry_alert":
-                return "bg-amber-500/10 text-amber-500 border-amber-500/20";
-            case "low_stock":
-                return "bg-yellow-500/10 text-yellow-500 border-yellow-500/20";
-            default:
-                return "bg-indigo-500/10 text-indigo-500 border-indigo-500/20";
-        }
-    };
+    const currentNotifs = activeTab === "billing" ? billingNotifs : stockNotifs;
 
     return (
         <div className="relative" ref={dropdownRef}>
@@ -105,15 +98,22 @@ export default function NotificationBell({ isCollapsed }) {
                     )}
                 </div>
                 {!isCollapsed && (
-                    <span className="font-medium text-sm whitespace-nowrap">Notifications</span>
+                    <span className="font-medium text-sm whitespace-nowrap flex-1 text-left">Notifications</span>
+                )}
+                {!isCollapsed && unreadCount > 0 && (
+                    <span className="bg-rose-500/20 text-rose-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-rose-500/30">
+                        {unreadCount}
+                    </span>
                 )}
             </button>
 
             {/* Dropdown Panel */}
             {isOpen && (
-                <div className={`absolute bottom-12 left-4 w-80 bg-[#1e293b] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-100 flex flex-col transition-all duration-300 animate-in fade-in slide-in-from-bottom-2`}>
-                    <div className="p-4 border-b border-white/10 flex items-center justify-between bg-white/5">
-                        <span className="font-semibold text-sm text-white">Inventory Alerts</span>
+                <div className="absolute bottom-12 left-4 w-84 sm:w-96 bg-[#1e293b] border border-white/10 rounded-xl shadow-2xl overflow-hidden z-100 flex flex-col transition-all duration-300 animate-in fade-in slide-in-from-bottom-2">
+                    
+                    {/* Header */}
+                    <div className="p-3 border-b border-white/10 flex items-center justify-between bg-white/5">
+                        <span className="font-semibold text-sm text-white">Alert Notifications</span>
                         {unreadCount > 0 && (
                             <button
                                 onClick={markAllAsRead}
@@ -125,22 +125,54 @@ export default function NotificationBell({ isCollapsed }) {
                         )}
                     </div>
 
-                    <div className="max-h-72 overflow-y-auto divide-y divide-white/5 flex-1">
-                        {notifications.length === 0 ? (
+                    {/* Tabs */}
+                    <div className="flex border-b border-white/10 bg-slate-900/50 p-1 gap-1">
+                        <button
+                            onClick={() => setActiveTab("billing")}
+                            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                                activeTab === "billing"
+                                    ? "bg-indigo-600 text-white shadow-md"
+                                    : "text-gray-400 hover:text-white hover:bg-white/5"
+                            }`}
+                        >
+                            <FiDollarSign size={13} />
+                            Billing Pending ({billingNotifs.length})
+                        </button>
+                        <button
+                            onClick={() => setActiveTab("stock")}
+                            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                                activeTab === "stock"
+                                    ? "bg-indigo-600 text-white shadow-md"
+                                    : "text-gray-400 hover:text-white hover:bg-white/5"
+                            }`}
+                        >
+                            <FiAlertTriangle size={13} />
+                            Stock Alerts ({stockNotifs.length})
+                        </button>
+                    </div>
+
+                    {/* Notifications List */}
+                    <div className="max-h-80 overflow-y-auto divide-y divide-white/5 flex-1">
+                        {currentNotifs.length === 0 ? (
                             <div className="p-6 text-center text-xs text-gray-500 flex flex-col items-center gap-2">
                                 <FiAlertCircle size={24} className="text-gray-600" />
-                                No pending notifications.
+                                No pending {activeTab === "billing" ? "billing" : "stock"} notifications.
                             </div>
                         ) : (
-                            notifications.map((notif) => (
-                                <div key={notif.id} className="p-3 hover:bg-white/5 transition-colors flex gap-2.5 items-start group relative">
-                                    <div className={`mt-0.5 p-1 rounded-md border shrink-0 ${getTypeColor(notif.type)}`}>
-                                        <FiAlertTriangle size={14} />
-                                    </div>
-                                    <div className="flex-1 min-w-0 pr-6">
+                            currentNotifs.map((notif) => (
+                                <div key={notif.id} className="p-3.5 hover:bg-white/5 transition-colors flex gap-3 items-start group relative border-l-2 border-amber-500">
+                                    <div className="flex-1 min-w-0 pr-6 space-y-1">
                                         <div className="flex items-center justify-between gap-1.5">
-                                            <span className="font-semibold text-xs text-white truncate block">{notif.title}</span>
-                                            {notif.currentQty !== null && notif.currentQty !== undefined && (
+                                            <span className="font-bold text-xs text-white truncate block">{notif.title}</span>
+                                            {notif.type === "pending_payment_alert" ? (
+                                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
+                                                    notif.paymentStatus === 'Partially Paid'
+                                                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                                        : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                                }`}>
+                                                    {notif.paymentStatus || 'Pending'}
+                                                </span>
+                                            ) : (
                                                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
                                                     notif.type === 'out_of_stock'
                                                         ? 'bg-red-500/20 text-red-400 border border-red-500/30'
@@ -150,6 +182,25 @@ export default function NotificationBell({ isCollapsed }) {
                                                 </span>
                                             )}
                                         </div>
+
+                                        {/* Billing details */}
+                                        {notif.type === "pending_payment_alert" && (
+                                            <div className="space-y-0.5 text-[11px] text-gray-300 pt-0.5">
+                                                {notif.partyContact && (
+                                                    <div className="flex items-center gap-1 text-gray-400">
+                                                        <FiPhone size={11} />
+                                                        <span>{notif.partyContact}</span>
+                                                    </div>
+                                                )}
+                                                <div className="flex items-center justify-between pt-1">
+                                                    <span className="text-gray-400">Pending Amt:</span>
+                                                    <span className="font-mono font-bold text-red-400">
+                                                        ₹{Number(notif.pendingAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        )}
+
                                         <p className="text-[11px] text-gray-400 leading-normal mt-1 block pr-2 wrap-break-word">
                                             {notif.message}
                                         </p>

@@ -56,23 +56,27 @@ const CustomSelectOption = (props) => {
     );
 };
 
-const COLUMN_BORDER_CLASSES = [
-    "border-r-2 border-indigo-400/80",   // Col 0 - Indigo
-    "border-r-2 border-emerald-400/80",  // Col 1 - Emerald / Green
-    "border-r-2 border-amber-400/80",    // Col 2 - Amber / Yellow
-    "border-r-2 border-purple-400/80",   // Col 3 - Purple
-    "border-r-2 border-rose-400/80",     // Col 4 - Rose / Red
-    "border-r-2 border-teal-400/80",     // Col 5 - Teal
-    "border-r-2 border-sky-400/80",      // Col 6 - Sky Blue
-    "border-r-2 border-violet-400/80",   // Col 7 - Violet
-    "border-r-2 border-pink-400/80",     // Col 8 - Pink
-    "border-r-2 border-blue-400/80",     // Col 9 - Blue
-    "border-r-2 border-lime-400/80",     // Col 10 - Lime
-    "border-r-2 border-orange-400/80"    // Col 11 - Orange
+const FIXED_PASTEL_COLUMN_STYLES = [
+    { headerBg: "#f3e8ff", cellBg: "#faf5ff", border: "border-r border-purple-200", iconColor: "text-purple-600" }, // Col 0: Purple
+    { headerBg: "#dcfce7", cellBg: "#f0fdf4", border: "border-r border-emerald-200", iconColor: "text-emerald-600" }, // Col 1: Emerald/Green
+    { headerBg: "#fef3c7", cellBg: "#fffbeb", border: "border-r border-amber-200", iconColor: "text-amber-600" }, // Col 2: Amber/Yellow
+    { headerBg: "#e0f2fe", cellBg: "#f0f9ff", border: "border-r border-sky-200", iconColor: "text-sky-600" }, // Col 3: Sky Blue
+    { headerBg: "#ffe4e6", cellBg: "#fff1f2", border: "border-r border-rose-200", iconColor: "text-rose-600" }, // Col 4: Rose/Pink
+    { headerBg: "#ccfbf1", cellBg: "#f0fdfa", border: "border-r border-teal-200", iconColor: "text-teal-600" }, // Col 5: Teal
+    { headerBg: "#ffedd5", cellBg: "#fff7ed", border: "border-r border-orange-200", iconColor: "text-orange-600" }, // Col 6: Orange
+    { headerBg: "#cffafe", cellBg: "#ecfeff", border: "border-r border-cyan-200", iconColor: "text-cyan-600" }, // Col 7: Cyan
+    { headerBg: "#e0e7ff", cellBg: "#eef2ff", border: "border-r border-indigo-200", iconColor: "text-indigo-600" }, // Col 8: Indigo
+    { headerBg: "#ecfccb", cellBg: "#f7fee7", border: "border-r border-lime-200", iconColor: "text-lime-600" }, // Col 9: Lime
+    { headerBg: "#e9d5ff", cellBg: "#f3e8ff", border: "border-r border-violet-200", iconColor: "text-violet-600" }, // Col 10: Violet
+    { headerBg: "#fce7f3", cellBg: "#fdf2f8", border: "border-r border-pink-200", iconColor: "text-pink-600" }  // Col 11: Pink
 ];
 
+const getColumnStyle = (idx) => {
+    return FIXED_PASTEL_COLUMN_STYLES[idx % FIXED_PASTEL_COLUMN_STYLES.length];
+};
+
 const getColumnBorderClass = (idx) => {
-    return COLUMN_BORDER_CLASSES[idx % COLUMN_BORDER_CLASSES.length];
+    return getColumnStyle(idx).border;
 };
 
 const defaultCCTemplate = [
@@ -93,19 +97,19 @@ const defaultCCTemplate = [
 ];
 
 const defaultColumns = [
-    { id: "col-product-image", name: "Product Image", type: "multi_image", width: 220, orderIndex: 0 },
-    { id: "col-product-name", name: "Product name", type: "text", width: 280, orderIndex: 1 },
+    { id: "col-rack-no", name: "Rack No", type: "text", width: 180, orderIndex: 0 },
+    { id: "col-product-image", name: "Product Image", type: "multi_image", width: 220, orderIndex: 1 },
+    { id: "col-product-name", name: "Product name", type: "text", width: 280, orderIndex: 2 },
     { 
         id: "col-retail-inventory", 
         name: "Inventory", 
         type: "number", 
         width: 220, 
-        orderIndex: 2,
+        orderIndex: 3,
         options: JSON.stringify({ isDetailedViewEnabled: true, ccTemplateColumns: defaultCCTemplate })
     },
-    { id: "col-composition", name: "Composition", type: "text", width: 220, orderIndex: 3 },
-    { id: "col-company-name", name: "Company Name", type: "text", width: 220, orderIndex: 4 },
-    { id: "col-rack-no", name: "Rack No", type: "text", width: 180, orderIndex: 5 }
+    { id: "col-composition", name: "Composition", type: "text", width: 220, orderIndex: 4 },
+    { id: "col-company-name", name: "Company Name", type: "text", width: 220, orderIndex: 5 }
 ];
 
 const defaultRows = Array.from({ length: 5 }).map((_, idx) => ({
@@ -113,11 +117,12 @@ const defaultRows = Array.from({ length: 5 }).map((_, idx) => ({
     order: idx,
     cells: [
         { columnId: "col-sl-no", rawValue: `${idx + 1}`, computedValue: `${idx + 1}` },
+        { columnId: "col-rack-no", rawValue: "", computedValue: "" },
+        { columnId: "col-product-image", rawValue: "", computedValue: "" },
         { columnId: "col-product-name", rawValue: "", computedValue: "" },
         { columnId: "col-retail-inventory", rawValue: "", computedValue: "" },
         { columnId: "col-composition", rawValue: "", computedValue: "" },
-        { columnId: "col-company-name", rawValue: "", computedValue: "" },
-        { columnId: "col-rack-no", rawValue: "", computedValue: "" }
+        { columnId: "col-company-name", rawValue: "", computedValue: "" }
     ]
 }));
 
@@ -153,6 +158,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
     const [ccQuantity, setCcQuantity] = useState('');
     const [ccHsnCode, setCcHsnCode] = useState('');
     const [ccRackNo, setCcRackNo] = useState('');
+    const [ccComposition, setCcComposition] = useState('');
     const [nestedProductName, setNestedProductName] = useState('');
 
     const [addingMetaField, setAddingMetaField] = useState(null);
@@ -520,7 +526,8 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                             companyName: meta.companyName || localMeta.companyName || '',
                             quantity: meta.quantity || localMeta.quantity || '',
                             hsnCode: meta.hsnCode || localMeta.hsnCode || '',
-                            rackNo: meta.rackNo || localMeta.rackNo || ''
+                            rackNo: meta.rackNo || localMeta.rackNo || '',
+                            composition: meta.composition || localMeta.composition || ''
                         };
                     } catch (e) {
                         console.error("Error parsing localMeta:", e);
@@ -536,6 +543,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                 setCcQuantity(meta.quantity || '');
                 setCcHsnCode(meta.hsnCode || '');
                 setCcRackNo(meta.rackNo || '');
+                setCcComposition(meta.composition || '');
 
                 setSheetData({
                     id: docName,
@@ -604,6 +612,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
         if (field === 'companyName') setCcCompanyName(value);
         if (field === 'hsnCode') setCcHsnCode(value);
         if (field === 'rackNo') setCcRackNo(value);
+        if (field === 'composition') setCcComposition(value);
 
         const currentMeta = JSON.parse(localStorage.getItem(`cc_meta_${docName}`) || "{}");
         const updatedMeta = {
@@ -615,6 +624,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
             quantity: (field === 'quantity' || field === 'unit') ? value : (ccQuantity || currentMeta.quantity || ''),
             hsnCode: field === 'hsnCode' ? value : (ccHsnCode || currentMeta.hsnCode || ''),
             rackNo: field === 'rackNo' ? value : (ccRackNo || currentMeta.rackNo || ''),
+            composition: field === 'composition' ? value : (ccComposition || currentMeta.composition || ''),
         };
         localStorage.setItem(`cc_meta_${docName}`, JSON.stringify(updatedMeta));
 
@@ -638,7 +648,8 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
             companyName: ccCompanyName || '',
             quantity: ccQuantity || '',
             hsnCode: ccHsnCode || '',
-            rackNo: ccRackNo || ''
+            rackNo: ccRackNo || '',
+            composition: ccComposition || ''
         };
 
         localStorage.setItem(`cc_meta_${docName}`, JSON.stringify(updatedMeta));
@@ -2034,12 +2045,12 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                 }
                             }
 
-                            // Wholesale Margin % = ((W Selling Rate - Purchase Rate) / W Selling Rate) * 100
-                            if (['col-cc-purchase-rate', 'col-cc-wholesale-selling-rate'].includes(columnId)) {
-                                const pr = getVal('col-cc-purchase-rate');
+                            // Wholesale Margin % = ((MRP - W Selling Rate) / W Selling Rate) * 100 (Markup on W Selling Rate)
+                            if (['col-cc-mrp', 'col-cc-wholesale-mrp', 'col-cc-wholesale-selling-rate'].includes(columnId)) {
+                                const mrp = getVal('col-cc-mrp') || getVal('col-cc-wholesale-mrp');
                                 const wsl = getVal('col-cc-wholesale-selling-rate');
-                                if (wsl > 0) {
-                                    const margin = ((wsl - pr) / wsl) * 100;
+                                if (wsl > 0 && mrp > 0) {
+                                    const margin = ((mrp - wsl) / wsl) * 100;
                                     setVal('col-cc-wholesale-margin', margin > 0 ? margin.toFixed(2) : '0');
                                 } else {
                                     setVal('col-cc-wholesale-margin', '0');
@@ -2598,20 +2609,21 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
         setIsExportModalOpen(true);
     };
 
-    const renderColumnIcon = (type) => {
+    const renderColumnIcon = (type, colIdx = 0) => {
+        const iconColor = getColumnStyle(colIdx).iconColor;
         switch (type) {
             case 'image':
             case 'multi_image':
-                return <FiImage className="w-3.5 h-3.5 text-blue-400 shrink-0" />;
-            case 'number': return <span className="text-green-500 text-sm font-medium shrink-0">123</span>;
-            case 'currency': return <span className="text-blue-400 text-sm shrink-0">₹</span>;
-            case 'formula': return <span className="text-purple-400 text-sm italic font-serif shrink-0">fx</span>;
-            case 'date': return <FiCalendar className="w-3.5 h-3.5 text-blue-400 shrink-0" />;
-            case 'pdf': return <FiFileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />;
+                return <FiImage className={`w-3.5 h-3.5 ${iconColor} shrink-0`} />;
+            case 'number': return <span className={`${iconColor} text-sm font-medium shrink-0`}>123</span>;
+            case 'currency': return <span className={`${iconColor} text-sm shrink-0`}>₹</span>;
+            case 'formula': return <span className={`${iconColor} text-sm italic font-serif shrink-0`}>fx</span>;
+            case 'date': return <FiCalendar className={`w-3.5 h-3.5 ${iconColor} shrink-0`} />;
+            case 'pdf': return <FiFileText className={`w-3.5 h-3.5 ${iconColor} shrink-0`} />;
 
-            case 'comment': return <FiMessageSquare className="w-3.5 h-3.5 text-blue-400 shrink-0" />;
+            case 'comment': return <FiMessageSquare className={`w-3.5 h-3.5 ${iconColor} shrink-0`} />;
             case 'text':
-            default: return <span className="text-blue-400 font-serif text-sm shrink-0">T</span>;
+            default: return <span className={`${iconColor} font-serif text-sm shrink-0`}>T</span>;
         }
     };
 
@@ -2920,6 +2932,20 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                         />
                                     </div>
                                 </div>
+                                {/* Composition — free-text field */}
+                                <div className="flex items-center gap-3 md:col-span-2">
+                                    <label className="text-sm text-gray-600 font-medium w-24 shrink-0">Composition:</label>
+                                    <div className="flex flex-1 items-center gap-1">
+                                        <input
+                                            type="text"
+                                            placeholder="e.g. Paracetamol 500mg + Caffeine 30mg"
+                                            value={ccComposition}
+                                            onChange={(e) => handleCCMetaChange('composition', e.target.value)}
+                                            className="flex-1 border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 transition-colors"
+                                            maxLength={500}
+                                        />
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -3162,11 +3188,13 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                     <thead>
                         <tr className="bg-white sticky top-0 z-20 shadow-[0_1px_0_#9ca3af]">
                             <th className="w-12 min-w-12 border-b border-r-2 border-slate-300 text-center py-2 text-gray-400 font-normal sticky left-0 bg-white z-30"></th>
-                            {columns.map((col, colIdx) => (
+                            {columns.map((col, colIdx) => {
+                                const style = getColumnStyle(colIdx);
+                                return (
                                 <th
                                     key={col.id}
-                                    className={`border-b ${getColumnBorderClass(colIdx)} py-2 px-3 text-xs font-bold transition-colors relative group select-none ${resizingCol === col.id ? 'bg-blue-50/20' : (!col.bgColor ? 'bg-white hover:bg-gray-50 text-gray-800' : 'text-gray-800')}`}
-                                    style={{ width: col.width || 220, minWidth: col.width || 220, backgroundColor: col.bgColor || undefined }}
+                                    className={`border-b ${style.border} py-2 px-3 text-xs font-bold transition-colors relative group select-none text-gray-800`}
+                                    style={{ width: col.width || 220, minWidth: col.width || 220, backgroundColor: col.bgColor || style.headerBg }}
                                 >
                                     {/* Resize handle */}
                                     <div
@@ -3194,7 +3222,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                         }}
                                     >
                                         <div className="flex items-center gap-2 overflow-hidden flex-1 lg:opacity-80 lg:group-hover:opacity-100 opacity-100 transition-opacity">
-                                            {renderColumnIcon(col.type)}
+                                            {renderColumnIcon(col.type, colIdx)}
                                             <span className={`whitespace-pre-wrap break-all font-bold transition-colors ${col.permission !== 'view' ? 'group-hover:text-blue-600 cursor-pointer' : 'cursor-default'}`}>{(col.id === 'col-cc-quantity-stock' || (isNested && col.name === 'No')) ? 'Qty' : col.name}</span>
                                         </div>
                                         <div className="flex items-center gap-1 shrink-0">
@@ -3204,9 +3232,9 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                         </div>
                                     </div>
 
-                                    {/* Column Menu Dropdown moved to bottom of component for fixed positioning */}
                                 </th>
-                            ))}
+                                );
+                            })}
 
                         </tr>
                         {/* Filter Row — shown when any column has an active filter */}
@@ -3255,28 +3283,13 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                             </tr>
                         ) : (
                             sortedRows.map((row, index) => {
-                                // Determine row background color
-                                let computedRowBg = row.rowColor || null;
-                                const sourceCol = columns.find(c => {
-                                    const opts = parseOptions(c.options);
-                                    return opts.isRowColorSource && c.bgColor;
-                                });
-                                if (sourceCol) {
-                                    const sourceCell = row.cells?.find(c => c.columnId === sourceCol.id);
-                                    const val = sourceCell?.computedValue || sourceCell?.rawValue;
-                                    if (val !== null && val !== undefined && val !== '') {
-                                        computedRowBg = sourceCol.bgColor;
-                                    }
-                                }
-
                                 return (
                                     <tr
                                         key={row.id || index}
                                         className="hover:bg-blue-50/10 transition-colors group text-[#334155]"
-                                        style={{ backgroundColor: computedRowBg || 'transparent' }}
                                     >
                                         <td
-                                            className={`relative border-b border-r-2 border-slate-300 text-center py-2 text-[13px] text-gray-500 group-hover:bg-gray-100/50 transition-colors w-12 sticky left-0 z-10 min-w-12 font-medium ${!computedRowBg ? 'bg-gray-50/50' : ''} ${activeRowMenu?.rowIndex === index ? 'bg-blue-100' : ''}`}
+                                            className={`relative border-b border-r-2 border-slate-300 text-center py-2 text-[13px] text-gray-500 group-hover:bg-gray-100/50 transition-colors w-12 sticky left-0 z-10 min-w-12 font-medium bg-gray-50/50 ${activeRowMenu?.rowIndex === index ? 'bg-blue-100' : ''}`}
                                             onContextMenu={(e) => handleRowContextMenu(e, index)}
                                             onClick={(e) => handleRowContextMenu(e, index)}
                                         >
@@ -3352,14 +3365,15 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
 
                                             const cellCommentCount = cell?.id ? (commentCounts[cell.id] || 0) : 0;
 
+                                            const style = getColumnStyle(colIdx);
                                             return (
                                                 <td
                                                     key={col.id}
-                                                    className={`border-b ${getColumnBorderClass(colIdx)} p-0 relative min-h-9 h-auto ${resizingCol === col.id ? 'bg-blue-50/10' : ''} ${activeCellMenu?.rowIndex === index && activeCellMenu?.colId === col.id ? 'ring-2 ring-blue-500 z-10 bg-blue-50/10' : ''}`}
+                                                    className={`border-b ${style.border} p-0 relative min-h-9 h-auto ${resizingCol === col.id ? 'bg-blue-50/10' : ''} ${activeCellMenu?.rowIndex === index && activeCellMenu?.colId === col.id ? 'ring-2 ring-blue-500 z-10 bg-blue-50/10' : ''}`}
                                                     style={{
                                                         width: col.width || 220,
                                                         minWidth: col.width || 220,
-                                                        backgroundColor: cell?.bgColor || computedRowBg || col.bgColor || 'transparent'
+                                                        backgroundColor: cell?.bgColor || col.bgColor || style.cellBg
                                                     }}
                                                     onContextMenu={(e) => handleCellContextMenu(e, index, col.id)}
                                                 >
@@ -3798,6 +3812,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                 </div>
                             </td>
                             {columns.map((col, colIdx) => {
+                                const style = getColumnStyle(colIdx);
                                 const mode = columnCalcMode[col.id];
                                 const calcValue = mode ? getColumnCalcValue(col.id, mode) : null;
                                 const isNonCalcType = col.type === 'text' || col.type === 'multi_image' || col.type === 'comment' || col.type === 'image' || col.type === 'pdf' || col.type === 'date' || col.type === 'time';
@@ -3805,7 +3820,8 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                 return (
                                     <td
                                         key={col.id}
-                                        className={`${getColumnBorderClass(colIdx)} bg-[#f8fafc] relative p-0 ${resizingCol === col.id ? 'bg-blue-50/20' : ''}`}
+                                        className={`${style.border} relative p-0 ${resizingCol === col.id ? 'bg-blue-50/20' : ''}`}
+                                        style={{ backgroundColor: col.bgColor || style.cellBg }}
                                     >
                                         {isNonCalcType ? null : mode ? (
                                             /* Show calculated value */

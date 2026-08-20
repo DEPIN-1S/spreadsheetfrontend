@@ -39,7 +39,7 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
     const [discountPercent, setDiscountPercent] = useState('0');
     const [discountAmount, setDiscountAmount] = useState('0');
     const [roundOffType, setRoundOffType] = useState('+');
-    const [roundOffValue, setRoundOffValue] = useState(0);
+    const [roundOffValue, setRoundOffValue] = useState('0');
     const [isChargesExpanded, setIsChargesExpanded] = useState(true);
 
     // Line items state
@@ -67,6 +67,18 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
                         if (inv.paymentStatus === 'Partially Paid') {
                             setPartialAmount(String(parseFloat(inv.grandTotal || 0) - parseFloat(inv.pendingAmount || 0)));
                         }
+                        if (inv.discountAmount) setDiscountAmount(String(inv.discountAmount));
+                        if (inv.additionalCharges && Array.isArray(inv.additionalCharges)) setAdditionalCharges(inv.additionalCharges);
+                        if (inv.roundOffAmount !== undefined && inv.roundOffAmount !== null) {
+                            const ro = parseFloat(inv.roundOffAmount) || 0;
+                            if (ro < 0) {
+                                setRoundOffType('-');
+                                setRoundOffValue(String(Math.abs(ro)));
+                            } else {
+                                setRoundOffType('+');
+                                setRoundOffValue(String(ro));
+                            }
+                        }
                         if (inv.items && inv.items.length > 0) {
                             setItems(inv.items.map((item, idx) => ({
                                 id: idx + 1,
@@ -75,6 +87,7 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
                                 expiry: item.expiry || '',
                                 qty: parseFloat(item.qty || 0),
                                 price: parseFloat(item.price || 0),
+                                mrp: parseFloat(item.mrp || 0),
                                 invCcRowId: item.invCcRowId || null
                             })));
                         }
@@ -145,10 +158,10 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
             ));
         } else {
             if (items.length === 1 && items[0].description.trim() === '' && items[0].price === 0) {
-                setItems([{ id: items[0].id, description: medicine.name, batch: medicine.batch, expiry: medicine.expiry || '08/28', qty: 1, price: medicine.price, invCcRowId: medicine.ccRowId }]);
+                setItems([{ id: items[0].id, description: medicine.name, batch: medicine.batch, expiry: medicine.expiry || '08/28', qty: 1, price: medicine.price, mrp: medicine.mrp || 0, disPercent: medicine.wholesaleMargin || 0, marginPercent: medicine.wholesaleMargin || 0, invCcRowId: medicine.ccRowId }]);
             } else {
                 const newId = items.length > 0 ? Math.max(...items.map(i => i.id)) + 1 : 1;
-                setItems([...items, { id: newId, description: medicine.name, batch: medicine.batch, expiry: medicine.expiry || '08/28', qty: 1, price: medicine.price, invCcRowId: medicine.ccRowId }]);
+                setItems([...items, { id: newId, description: medicine.name, batch: medicine.batch, expiry: medicine.expiry || '08/28', qty: 1, price: medicine.price, mrp: medicine.mrp || 0, disPercent: medicine.wholesaleMargin || 0, marginPercent: medicine.wholesaleMargin || 0, invCcRowId: medicine.ccRowId }]);
             }
         }
     };
@@ -170,14 +183,19 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
     const itemSubtotal = items.reduce((acc, item) => acc + (item.qty * item.price), 0);
     const taxAmount = itemSubtotal * (gstRate / 100);
     const taxableSubtotal = Math.max(0, itemSubtotal - taxAmount);
-    const subtotal = taxableSubtotal;
-    const totalAdditionalChargesBase = additionalCharges.reduce((acc, chg) => acc + (Number(chg.amount) || 0), 0);
-    const totalAdditionalChargesTax = additionalCharges.reduce((acc, chg) => acc + ((Number(chg.amount) || 0) * ((Number(chg.gstRate) || 0) / 100)), 0);
-    const totalAdditionalCharges = totalAdditionalChargesBase + totalAdditionalChargesTax;
-    const subtotalWithCharges = taxableSubtotal + totalAdditionalCharges;
+    // Additional Charges (GST INCLUDED in amount)
+    const totalAdditionalCharges = additionalCharges.reduce((acc, chg) => acc + (Number(chg.amount) || 0), 0);
+    const totalAdditionalChargesTax = additionalCharges.reduce((acc, chg) => {
+        const amt = Number(chg.amount) || 0;
+        const rate = Number(chg.gstRate) || 0;
+        return acc + (rate > 0 ? (amt - (amt / (1 + rate / 100))) : 0);
+    }, 0);
+    const totalAdditionalChargesBase = totalAdditionalCharges - totalAdditionalChargesTax;
+
+    const subtotalWithCharges = itemSubtotal + totalAdditionalCharges;
     const effectiveDiscount = Number(discountAmount) || 0;
     const roundOffSign = roundOffType === '-' ? -1 : 1;
-    const effectiveRoundOff = (Number(roundOffValue) || 0) * roundOffSign;
+    const effectiveRoundOff = (parseFloat(roundOffValue) || 0) * roundOffSign;
     const grandTotal = Math.max(0, subtotalWithCharges - effectiveDiscount + effectiveRoundOff);
 
     const handleGenerateInvoice = async (e) => {
@@ -215,6 +233,8 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
             partyId: selectedPartyId,
             partyType: 'wholesale',
             partyName: selectedParty?.name || '',
+            billingAddress: selectedParty?.billingAddress || selectedParty?.address || '',
+            shippingAddress: selectedParty?.shippingAddress || selectedParty?.billingAddress || selectedParty?.address || '',
             invoiceDate,
             items: validItems,
             itemSubtotal,
@@ -446,7 +466,16 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-600 pt-1">
                                         <div><span className="font-semibold text-gray-700">Contact:</span> {selectedParty.contact}</div>
                                         <div><span className="font-semibold text-gray-700">Email:</span> {selectedParty.email || 'N/A'}</div>
-                                        <div className="sm:col-span-2"><span className="font-semibold text-gray-700">Address:</span> {selectedParty.address || 'N/A'}</div>
+                                        <div className="sm:col-span-2">
+                                            <span className="font-semibold text-gray-700">Billing Address:</span>{' '}
+                                            {selectedParty.billingAddress || selectedParty.address || 'N/A'}
+                                        </div>
+                                        {selectedParty.shippingAddress && selectedParty.shippingAddress !== (selectedParty.billingAddress || selectedParty.address) && (
+                                            <div className="sm:col-span-2">
+                                                <span className="font-semibold text-gray-700">Shipping Address:</span>{' '}
+                                                {selectedParty.shippingAddress}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}
@@ -688,7 +717,8 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
                                     {additionalCharges.map(chg => {
                                         const chgAmt = Number(chg.amount) || 0;
                                         const chgGst = Number(chg.gstRate) || 0;
-                                        const chgTaxAmt = chgAmt * (chgGst / 100);
+                                        const chgBase = chgGst > 0 ? (chgAmt / (1 + chgGst / 100)) : chgAmt;
+                                        const chgTaxAmt = chgAmt - chgBase;
                                         return (
                                             <div key={chg.id} className="space-y-1 py-1 border-b border-gray-100 last:border-0">
                                                 <div className="grid grid-cols-12 items-center gap-1.5">
@@ -713,16 +743,13 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
                                                     </div>
                                                     <div className="col-span-3 flex items-center justify-end">
                                                         <select
-                                                            value={chg.gstRate ?? 0}
+                                                            value={chg.gstRate ?? 18}
                                                             onChange={(e) => setAdditionalCharges(additionalCharges.map(c => c.id === chg.id ? { ...c, gstRate: Number(e.target.value) } : c))}
                                                             className="text-xs bg-gray-50 border border-gray-300 rounded px-1.5 py-1 text-gray-700 font-medium focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer"
                                                             title="GST Rate for this charge"
                                                         >
-                                                            <option value={0}>0% GST</option>
                                                             <option value={5}>5% GST</option>
-                                                            <option value={12}>12% GST</option>
                                                             <option value={18}>18% GST</option>
-                                                            <option value={28}>28% GST</option>
                                                         </select>
                                                     </div>
                                                     <div className="col-span-3 flex items-center justify-end border-b border-gray-300 py-1">
@@ -738,8 +765,9 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
                                                     </div>
                                                 </div>
                                                 {chgGst > 0 && chgAmt > 0 && (
-                                                    <div className="flex justify-end text-[11px] text-indigo-600 font-medium pr-1">
-                                                        <span>+₹{chgTaxAmt.toFixed(2)} ({chgGst}% GST) | Total: ₹{(chgAmt + chgTaxAmt).toFixed(2)}</span>
+                                                    <div className="flex justify-end text-[11px] font-medium pr-1 gap-2">
+                                                        <span className="text-red-600">(Deducted {chgGst}% GST: - ₹{chgTaxAmt.toFixed(2)})</span>
+                                                        <span className="text-gray-500">| Net Base: ₹{chgBase.toFixed(2)}</span>
                                                     </div>
                                                 )}
                                             </div>
@@ -837,9 +865,11 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
                                             <input
                                                 type="number"
                                                 min="0"
+                                                step="any"
                                                 value={roundOffValue}
                                                 onChange={(e) => setRoundOffValue(e.target.value)}
                                                 className="w-16 text-right text-sm font-semibold text-gray-800 outline-none"
+                                                placeholder="0"
                                             />
                                         </div>
                                     </div>
@@ -872,16 +902,22 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
                                         <span className="font-semibold text-indigo-700">₹{taxableSubtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                     </div>
                                 )}
-                                {totalAdditionalChargesBase > 0 && (
+                                {totalAdditionalCharges > 0 && (
                                     <div className="flex justify-between text-gray-600">
-                                        <span>Additional Charges (Base)</span>
-                                        <span className="font-semibold text-gray-900">+ ₹{totalAdditionalChargesBase.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                        <span>Additional Charges Total</span>
+                                        <span className="font-semibold text-gray-900">+ ₹{totalAdditionalCharges.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                     </div>
                                 )}
                                 {totalAdditionalChargesTax > 0 && (
-                                    <div className="flex justify-between text-gray-600">
-                                        <span>Additional Charges GST</span>
-                                        <span className="font-semibold text-indigo-600">+ ₹{totalAdditionalChargesTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                    <div className="flex justify-between items-center text-gray-600">
+                                        <span>Deducted Charges GST</span>
+                                        <span className="font-semibold text-red-600">- ₹{totalAdditionalChargesTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                    </div>
+                                )}
+                                {totalAdditionalChargesBase > 0 && (
+                                    <div className="flex justify-between text-gray-600 pt-1 border-t border-dashed border-gray-200">
+                                        <span>Net Charges Base</span>
+                                        <span className="font-semibold text-indigo-700">₹{totalAdditionalChargesBase.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                     </div>
                                 )}
                             </div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FiX, FiSave } from 'react-icons/fi';
+import { FiX, FiSave, FiCheckSquare, FiSquare } from 'react-icons/fi';
 
 export default function AddWholesalePartyModal({ isOpen, onClose, initialData, onSave }) {
     const currentYear = new Date().getFullYear();
@@ -13,9 +13,11 @@ export default function AddWholesalePartyModal({ isOpen, onClose, initialData, o
         dobYear: '',
         contact: '',
         email: '',
-        address: ''
+        billingAddress: '',
+        shippingAddress: ''
     });
 
+    const [sameAddress, setSameAddress] = useState(true);
     const [prevInitialData, setPrevInitialData] = useState(initialData);
     const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -29,6 +31,10 @@ export default function AddWholesalePartyModal({ isOpen, onClose, initialData, o
         if (isOpen && initialData) {
             const initAge = initialData.age ? String(initialData.age) : (initialData.dobYear ? String(currentYear - Number(initialData.dobYear)) : '');
             const initDobYear = initialData.dobYear ? String(initialData.dobYear) : (initialData.age ? String(currentYear - Number(initialData.age)) : '');
+            const billing = initialData.billingAddress || initialData.address || '';
+            const shipping = initialData.shippingAddress || initialData.address || '';
+            const isSame = billing === shipping;
+            setSameAddress(isSame);
             setFormData({
                 name: initialData.name || '',
                 dlNo: initialData.dlNo || '',
@@ -38,34 +44,41 @@ export default function AddWholesalePartyModal({ isOpen, onClose, initialData, o
                 dobYear: initDobYear,
                 contact: initialData.contact || '',
                 email: initialData.email || '',
-                address: initialData.address || ''
+                billingAddress: billing,
+                shippingAddress: shipping
             });
         } else if (isOpen && !initialData) {
-            setFormData({ name: '', dlNo: '', gstinNo: '', panNo: '', age: '', dobYear: '', contact: '', email: '', address: '' });
+            setSameAddress(true);
+            setFormData({ name: '', dlNo: '', gstinNo: '', panNo: '', age: '', dobYear: '', contact: '', email: '', billingAddress: '', shippingAddress: '' });
         }
     }
 
     if (!isOpen) return null;
 
     const handleChange = (e) => {
-        setFormData({ ...formData, [e.target.name]: e.target.value });
+        const { name, value } = e.target;
+        if (name === 'billingAddress' && sameAddress) {
+            setFormData(prev => ({ ...prev, billingAddress: value, shippingAddress: value }));
+        } else {
+            setFormData(prev => ({ ...prev, [name]: value }));
+        }
+    };
+
+    const handleSameAddressToggle = () => {
+        const next = !sameAddress;
+        setSameAddress(next);
+        if (next) {
+            setFormData(prev => ({ ...prev, shippingAddress: prev.billingAddress }));
+        }
     };
 
     const handleAgeChange = (e) => {
         const val = e.target.value;
         if (val !== '' && !isNaN(Number(val)) && Number(val) >= 0 && Number(val) <= 120) {
             const calculatedYear = currentYear - Number(val);
-            setFormData(prev => ({
-                ...prev,
-                age: val,
-                dobYear: String(calculatedYear)
-            }));
+            setFormData(prev => ({ ...prev, age: val, dobYear: String(calculatedYear) }));
         } else {
-            setFormData(prev => ({
-                ...prev,
-                age: val,
-                dobYear: ''
-            }));
+            setFormData(prev => ({ ...prev, age: val, dobYear: '' }));
         }
     };
 
@@ -76,14 +89,15 @@ export default function AddWholesalePartyModal({ isOpen, onClose, initialData, o
         const payload = {
             ...formData,
             age: formData.age ? Number(formData.age) : null,
-            dobYear: formData.dobYear ? Number(formData.dobYear) : null
+            dobYear: formData.dobYear ? Number(formData.dobYear) : null,
+            // Keep backward-compat 'address' field = billing address
+            address: formData.billingAddress
         };
         try {
-            if (onSave) {
-                await onSave(payload);
-            }
+            if (onSave) await onSave(payload);
             onClose();
-            setFormData({ name: '', dlNo: '', gstinNo: '', panNo: '', age: '', dobYear: '', contact: '', email: '', address: '' });
+            setSameAddress(true);
+            setFormData({ name: '', dlNo: '', gstinNo: '', panNo: '', age: '', dobYear: '', contact: '', email: '', billingAddress: '', shippingAddress: '' });
         } catch (err) {
             console.error("Error saving wholesale party modal:", err);
             setErrorMessage(err.response?.data?.message || err.message || "Failed to save wholesale party.");
@@ -101,10 +115,10 @@ export default function AddWholesalePartyModal({ isOpen, onClose, initialData, o
                             {initialData ? "Edit Party" : "Add New Party"}
                         </h2>
                         <p className="text-sm text-gray-500">
-                            {initialData ? "Update the wholesale party's information." : "Enter the wholesale party's information."}
+                            {initialData ? "Update the wholesale party's information." : "Enter the \u0060wholesale\u0060 party's information."}
                         </p>
                     </div>
-                    <button 
+                    <button
                         onClick={onClose}
                         disabled={isSubmitting}
                         className="text-gray-400 hover:text-gray-600 p-2 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
@@ -112,7 +126,7 @@ export default function AddWholesalePartyModal({ isOpen, onClose, initialData, o
                         <FiX size={20} />
                     </button>
                 </div>
-                
+
                 <div className="flex-1 overflow-y-auto p-6">
                     {errorMessage && (
                         <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">
@@ -123,112 +137,162 @@ export default function AddWholesalePartyModal({ isOpen, onClose, initialData, o
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Party Name <span className="text-red-500">*</span></label>
-                                <input 
-                                    type="text" 
+                                <input
+                                    type="text"
                                     name="name"
                                     required
                                     value={formData.name}
                                     onChange={handleChange}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors" 
-                                    placeholder="e.g. Acme Corp" 
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors"
+                                    placeholder="e.g. Acme Corp"
                                 />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Contact Number <span className="text-red-500">*</span></label>
-                                <input 
-                                    type="tel" 
+                                <input
+                                    type="tel"
                                     name="contact"
                                     required
                                     value={formData.contact}
                                     onChange={handleChange}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors" 
-                                    placeholder="10 digit number only " 
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors"
+                                    placeholder="10 digit number only "
                                 />
                             </div>
                             <div className="md:col-span-2">
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-                                <input 
-                                    type="email" 
+                                <input
+                                    type="email"
                                     name="email"
                                     value={formData.email}
                                     onChange={handleChange}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors" 
-                                    placeholder="contact@company.com (Optional)" 
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors"
+                                    placeholder="contact@company.com (Optional)"
                                 />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Drug License No. (DL No.)</label>
-                                <input 
-                                    type="text" 
+                                <input
+                                    type="text"
                                     name="dlNo"
                                     value={formData.dlNo}
                                     onChange={handleChange}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors" 
-                                    placeholder="e.g. DL-20B-123456" 
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors"
+                                    placeholder="e.g. DL-20B-123456"
                                 />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">GSTIN No.</label>
-                                <input 
-                                    type="text" 
+                                <input
+                                    type="text"
                                     name="gstinNo"
                                     value={formData.gstinNo}
                                     onChange={handleChange}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors" 
-                                    placeholder="e.g. 32AABCU9603R1ZM" 
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors"
+                                    placeholder="e.g. 32AABCU9603R1ZM"
                                 />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">PAN No.</label>
-                                <input 
-                                    type="text" 
+                                <input
+                                    type="text"
                                     name="panNo"
                                     value={formData.panNo}
                                     onChange={handleChange}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors" 
-                                    placeholder="e.g. ABCDE1234F" 
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors"
+                                    placeholder="e.g. ABCDE1234F"
                                 />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Age (in Years)</label>
-                                <input 
-                                    type="number" 
+                                <input
+                                    type="number"
                                     name="age"
                                     min="0"
                                     max="120"
                                     value={formData.age}
                                     onChange={handleAgeChange}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors" 
-                                    placeholder="e.g. 28" 
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors"
+                                    placeholder="e.g. 28"
                                 />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Calculated Birth Year (Auto)</label>
-                                <input 
-                                    type="text" 
+                                <input
+                                    type="text"
                                     readOnly
                                     value={formData.dobYear ? `${formData.dobYear}` : ''}
-                                    className="w-full px-4 py-2 border border-indigo-200 rounded-lg bg-indigo-50/50 font-bold text-indigo-700 outline-none cursor-default" 
-                                    placeholder="Auto-calculated" 
+                                    className="w-full px-4 py-2 border border-indigo-200 rounded-lg bg-indigo-50/50 font-bold text-indigo-700 outline-none cursor-default"
+                                    placeholder="Auto-calculated"
                                 />
                             </div>
+
+                            {/* ── Billing Address ── */}
                             <div className="md:col-span-2">
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
-                                <textarea 
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Billing Address
+                                </label>
+                                <textarea
                                     rows="3"
-                                    name="address"
-                                    value={formData.address}
+                                    name="billingAddress"
+                                    value={formData.billingAddress}
                                     onChange={handleChange}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors resize-none" 
-                                    placeholder="Enter full address here..." 
-                                ></textarea>
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors resize-none"
+                                    placeholder="Enter billing address here..."
+                                />
+                            </div>
+
+                            {/* ── Same as Billing checkbox ── */}
+                            <div className="md:col-span-2 flex items-center gap-2 -mt-3">
+                                <button
+                                    type="button"
+                                    onClick={handleSameAddressToggle}
+                                    className="flex items-center gap-2 group focus:outline-none"
+                                >
+                                    <span className={`w-5 h-5 flex items-center justify-center rounded border-2 transition-colors ${sameAddress ? 'bg-indigo-600 border-indigo-600' : 'border-gray-400 bg-white'}`}>
+                                        {sameAddress && (
+                                            <svg className="w-3 h-3 text-white" viewBox="0 0 12 12" fill="none">
+                                                <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                        )}
+                                    </span>
+                                    <span className="text-sm text-gray-600 group-hover:text-gray-900 select-none">
+                                        Shipping address same as billing address
+                                    </span>
+                                </button>
+                            </div>
+
+                            {/* ── Shipping Address ── */}
+                            <div className="md:col-span-2">
+                                <label className={`block text-sm font-medium mb-1 ${sameAddress ? 'text-gray-400' : 'text-gray-700'}`}>
+                                    Shipping Address
+                                </label>
+                                <textarea
+                                    rows="3"
+                                    name="shippingAddress"
+                                    value={formData.shippingAddress}
+                                    onChange={handleChange}
+                                    disabled={sameAddress}
+                                    className={`w-full px-4 py-2 border rounded-lg outline-none transition-colors resize-none ${
+                                        sameAddress
+                                            ? 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed'
+                                            : 'border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500'
+                                    }`}
+                                    placeholder={sameAddress ? "Same as billing address" : "Enter shipping address here..."}
+                                />
+                                {sameAddress && (
+                                    <p className="mt-1 text-xs text-indigo-500 flex items-center gap-1">
+                                        <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                                        Auto-filled from billing address
+                                    </p>
+                                )}
                             </div>
                         </div>
                     </form>
                 </div>
-                
+
                 <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
-                    <button 
+                    <button
                         type="button"
                         onClick={onClose}
                         disabled={isSubmitting}
@@ -236,7 +300,7 @@ export default function AddWholesalePartyModal({ isOpen, onClose, initialData, o
                     >
                         Cancel
                     </button>
-                    <button 
+                    <button
                         type="submit"
                         form="add-party-form"
                         disabled={isSubmitting}

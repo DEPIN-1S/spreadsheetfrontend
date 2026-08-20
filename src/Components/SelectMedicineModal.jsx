@@ -31,6 +31,9 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                 rackNo: item.rackNo || '',
                 // Pick retailPrice or wholesalePrice depending on type
                 price: inventoryType === 'retail' ? item.retailPrice : item.wholesalePrice,
+                mrp: item.mrp || 0,
+                discount: item.discount || 0,
+                wholesaleMargin: item.wholesaleMargin || 0,
                 ccRowId: item.ccRowId
             }));
             

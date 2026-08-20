@@ -76,17 +76,37 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
 
     // Extract invoice fields
     const invoiceNo = currentInv.invoiceNo || currentInv.id || 'BR-26-1025';
-    const date = currentInv.date || currentInv.invoiceDate || new Date().toISOString().split('T')[0];
+    const date = currentInv.invoiceDate || currentInv.date || new Date().toISOString().split('T')[0];
     const paymentMethod = currentInv.paymentMethod || 'CASH';
+
+    // Format Date & Time
+    const rawDateStr = currentInv.createdAt || currentInv.invoiceDate || currentInv.date;
+    let invDateObj = rawDateStr ? new Date(rawDateStr) : new Date();
+    if (isNaN(invDateObj.getTime())) {
+        invDateObj = new Date();
+    }
+
+    const formatTime = (d) => {
+        return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    };
+
+    const formattedInvDate = date;
+    const formattedInvTime = formatTime(invDateObj);
+    const formattedPrintTime = formatTime(new Date());
     
     // Extract customer / party details
     const partyName = currentInv.partyName || (currentInv.party && currentInv.party.name) || 'WALK-IN CUSTOMER';
-    const partyAddress = (currentInv.party && currentInv.party.address) || 'KILIMINOOR, THIRUVANANTHAPURAM - 695601';
+    const partyBillingAddress = (currentInv.party && (currentInv.party.billingAddress || currentInv.party.address)) || (currentInv.billingAddress) || 'KILIMINOOR, THIRUVANANTHAPURAM - 695601';
+    const partyShippingAddress = (currentInv.party && currentInv.party.shippingAddress) || (currentInv.shippingAddress) || '';
+    const partyAddress = partyBillingAddress; // kept for non-wholesale fallback
     const partyContact = (currentInv.party && currentInv.party.contact) || '';
     const partyCode = (currentInv.party && currentInv.party.id) ? `Code A30${currentInv.party.id}` : 'Code A373';
     const partyDl = (currentInv.party && currentInv.party.dlNo) || '';
-    const partyGstin = (currentInv.party && currentInv.party.gstin) || '';
-    const partyPan = (currentInv.party && currentInv.party.pan) || '';
+    const partyGstin = (currentInv.party && currentInv.party.gstin) || (currentInv.party && currentInv.party.gstinNo) || '';
+    const partyPan = (currentInv.party && currentInv.party.pan) || (currentInv.party && currentInv.party.panNo) || '';
+    const isWholesale = currentInv.type === 'Wholesale' || currentInv.type === 'wholesale';
+    // Show shipping section only if it exists and differs from billing
+    const showShipping = isWholesale && partyShippingAddress && partyShippingAddress !== partyBillingAddress;
 
     // Extract line items
     let rawItems = currentInv.items || [];
@@ -102,7 +122,21 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
     const items = rawItems.map((item, idx) => {
         const price = safeNum(item.price);
         const qty = safeNum(item.qty, 1);
+        const mrpVal = safeNum(item.mrp, price > 0 ? price * 1.25 : 0);
         const gstPercent = safeNum(item.gstPercent ?? item.gst ?? currentInv.gstRate ?? 5);
+
+        let disVal = safeNum(item.marginPercent || item.disPercent || item.discount || item.wholesaleMargin);
+        if (disVal === 0 && mrpVal > 0 && price > 0) {
+            if (isWholesale) {
+                // Wholesale Margin % = ((MRP - W Selling Rate) / W Selling Rate) * 100
+                disVal = ((mrpVal - price) / price) * 100;
+            } else {
+                // Retail Discount % = ((MRP - R Selling Rate) / MRP) * 100
+                disVal = ((mrpVal - price) / mrpVal) * 100;
+            }
+        }
+        disVal = Math.max(0, disVal);
+
         return {
             id: item.id || idx + 1,
             rack: item.rack || `R-${idx + 1}`,
@@ -113,10 +147,11 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
             scheme: item.scheme || '+0',
             batch: item.batch || `-`,
             expiry: item.expiry || item.expDate || `-`,
-            mrp: safeNum(item.mrp, price > 0 ? price * 1.25 : 0),
+            mrp: mrpVal,
             tradePrice: price,
             scmPercent: safeNum(item.scmPercent),
-            disPercent: safeNum(item.disPercent),
+            disPercent: disVal,
+            marginPercent: disVal,
             gstPercent: gstPercent,
             hsnCode: item.hsnCode || item.hsn || '30043110',
             value: qty * price
@@ -129,12 +164,35 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
     const taxAmount = safeNum(currentInv.taxAmount ?? (itemSubtotal * (gstRate / 100)));
     const taxableSubtotal = safeNum(currentInv.subtotal ?? Math.max(0, itemSubtotal - taxAmount));
 
-    const addlChargesList = Array.isArray(currentInv.additionalCharges) ? currentInv.additionalCharges : [];
-    const addlChargesBaseSum = addlChargesList.reduce((acc, c) => acc + safeNum(c.amount), 0);
-    const addlChargesTaxSum = addlChargesList.reduce((acc, c) => acc + (safeNum(c.amount) * (safeNum(c.gstRate) / 100)), 0);
-    const totalInvoiceGst = taxAmount + addlChargesTaxSum;
+    const rawAddlCharges = currentInv.additionalCharges || currentInv.additional_charges || [];
+    const addlChargesList = Array.isArray(rawAddlCharges) && rawAddlCharges.length > 0
+        ? rawAddlCharges.map(c => ({
+            name: c.name || 'Addl Chg',
+            amount: safeNum(c.amount),
+            gstRate: safeNum(c.gstRate ?? c.gst ?? 18)
+        }))
+        : (safeNum(currentInv.additionalChargesAmount) > 0 ? [{ name: 'Addl Chg', amount: safeNum(currentInv.additionalChargesAmount), gstRate: 18 }] : []);
 
-    const grandTotal = safeNum(currentInv.grandTotal ?? (taxableSubtotal + taxAmount + addlChargesBaseSum + addlChargesTaxSum));
+    const totalAddlChargesTotal = addlChargesList.reduce((acc, c) => acc + c.amount, 0);
+    const addlChargesTaxSum = addlChargesList.reduce((acc, c) => {
+        const amt = c.amount;
+        const rate = c.gstRate;
+        return acc + (rate > 0 ? (amt - (amt / (1 + rate / 100))) : 0);
+    }, 0);
+    const addlChargesBaseSum = totalAddlChargesTotal - addlChargesTaxSum;
+
+    // Calculate product items tax correctly (Inclusive of GST)
+    const productTaxSum = items.reduce((acc, item) => {
+        const rate = safeNum(item.gstPercent, 5);
+        const val = safeNum(item.value);
+        return acc + (rate > 0 ? (val - (val / (1 + rate / 100))) : 0);
+    }, 0);
+    const productBaseSum = itemSubtotal - productTaxSum;
+
+    const totalInvoiceGst = productTaxSum + addlChargesTaxSum;
+    const totalInvoiceTaxable = productBaseSum + addlChargesBaseSum;
+
+    const grandTotal = safeNum(currentInv.grandTotal ?? (productBaseSum + productTaxSum + totalAddlChargesTotal - safeNum(currentInv.discountAmount) + safeNum(currentInv.roundOffAmount)));
 
     const handlePrint = () => {
         window.print();
@@ -260,7 +318,8 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                     <div className="text-center font-black text-sm underline uppercase tracking-wide">TAX INVOICE</div>
                                     <div className="space-y-1 text-[11px] mt-2">
                                         <div><b>Tax Inv. No. :</b> {invoiceNo}</div>
-                                        <div><b>Inv. Date :</b> {date}</div>
+                                        <div><b>Inv. Date :</b> {formattedInvDate}</div>
+                                        <div><b>Inv. Time :</b> {formattedInvTime}</div>
                                     </div>
                                 </div>
                                 <div className="mt-3">
@@ -273,11 +332,21 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                             {/* Right Box: Buyer / Customer */}
                             <div className="col-span-4 p-2.5 space-y-1 text-[11px] flex flex-col justify-between">
                                 <div>
-                                    <div className="bg-black text-white px-2 py-0.5 inline-block font-bold text-[10px] mb-1">
-                                        {partyCode}
-                                    </div>
                                     <div className="font-extrabold text-xs uppercase leading-tight text-black">{partyName}</div>
-                                    <div className="leading-tight uppercase text-gray-800 pt-0.5">{partyAddress}</div>
+                                    {/* Billing Address */}
+                                    <div className="pt-0.5">
+                                        <span className="font-bold text-[10px] text-gray-600 uppercase tracking-wide">
+                                            {isWholesale ? 'Bill To: ' : ''}
+                                        </span>
+                                        <span className="leading-tight uppercase text-gray-800">{partyBillingAddress}</span>
+                                    </div>
+                                    {/* Shipping Address — only shown for wholesale when different */}
+                                    {showShipping && (
+                                        <div className="pt-0.5 border-t border-dashed border-gray-300 mt-1">
+                                            <span className="font-bold text-[10px] text-gray-600 uppercase tracking-wide">Ship To: </span>
+                                            <span className="leading-tight uppercase text-gray-800">{partyShippingAddress}</span>
+                                        </div>
+                                    )}
                                     <div className="pt-1"><b>Ph.:</b> {partyContact}</div>
                                     <div><b>D.L.No.:</b> {partyDl}</div>
                                     <div><b>GSTIN:</b> {partyGstin || 'N/A'}</div>
@@ -297,7 +366,7 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                         {visibleColumns.batchNo && <th className="border-r border-black py-1 px-1 text-center w-16">BATCH NO.</th>}
                                         {visibleColumns.expDate && <th className="border-r border-black py-1 px-1 text-center w-12">EXP. DATE</th>}
                                         {visibleColumns.sellingRate && <th className="border-r border-black py-1 px-1 text-right w-16">SELLING RATE</th>}
-                                        {visibleColumns.disc && invoice?.type !== 'Wholesale' && <th className="border-r border-black py-1 px-1 text-right w-12">DISC %</th>}
+                                        {visibleColumns.disc && <th className="border-r border-black py-1 px-1 text-right w-14">{isWholesale ? 'MARGIN %' : 'DISC %'}</th>}
                                         {visibleColumns.mrp && <th className="border-r border-black py-1 px-1 text-right w-14">MRP</th>}
                                         {visibleColumns.gst && <th className="border-r border-black py-1 px-1 text-center w-10">GST %</th>}
                                         {visibleColumns.total && <th className="py-1 px-2 text-right w-20">TOTAL</th>}
@@ -316,7 +385,7 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                             {visibleColumns.batchNo && <td className="border-r border-black py-1 px-1 text-center uppercase font-mono text-[9px]">{item.batch}</td>}
                                             {visibleColumns.expDate && <td className="border-r border-black py-1 px-1 text-center font-mono text-[9px]">{item.expiry}</td>}
                                             {visibleColumns.sellingRate && <td className="border-r border-black py-1 px-1 text-right font-mono">{Number(item.tradePrice).toFixed(2)}</td>}
-                                            {visibleColumns.disc && invoice?.type !== 'Wholesale' && <td className="border-r border-black py-1 px-1 text-right font-mono">{Number(item.disPercent).toFixed(2)}</td>}
+                                            {visibleColumns.disc && <td className="border-r border-black py-1 px-1 text-right font-mono">{Number(item.marginPercent || item.disPercent || 0).toFixed(2)}</td>}
                                             {visibleColumns.mrp && <td className="border-r border-black py-1 px-1 text-right font-mono">{Number(item.mrp).toFixed(2)}</td>}
                                             {visibleColumns.gst && <td className="border-r border-black py-1 px-1 text-center font-bold">{item.gstPercent}</td>}
                                             {visibleColumns.total && <td className="py-1 px-2 text-right font-bold font-mono">{Number(item.value).toFixed(2)}</td>}
@@ -331,7 +400,7 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                             {visibleColumns.batchNo && <td className="border-r border-black"></td>}
                                             {visibleColumns.expDate && <td className="border-r border-black"></td>}
                                             {visibleColumns.sellingRate && <td className="border-r border-black"></td>}
-                                            {visibleColumns.disc && invoice?.type !== 'Wholesale' && <td className="border-r border-black"></td>}
+                                            {visibleColumns.disc && <td className="border-r border-black"></td>}
                                             {visibleColumns.mrp && <td className="border-r border-black"></td>}
                                             {visibleColumns.gst && <td className="border-r border-black"></td>}
                                             {visibleColumns.total && <td></td>}
@@ -356,7 +425,7 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                 <div><b>Sort By :</b> NAME</div>
                                 <div><b>Checked By:</b> </div>
                                 <div><b>Route :</b> DIRECT</div>
-                                <div><b>Print Time:</b> 05:22Pm</div>
+                                <div><b>Print Time:</b> {formattedPrintTime}</div>
                                 <div className="pt-1"><b>IRN No.</b></div>
                             </div>
 
@@ -383,33 +452,24 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-200 font-mono text-[9px]">
-                                        {[18, 12, 5].map(rate => {
+                                        {[28, 18, 12, 5].map(rate => {
                                             const matchingItems = items.filter(i => Number(i.gstPercent) === rate);
-                                            const hasItems = matchingItems.length > 0;
-                                            const isMatch = hasItems || (items.length === 0 && Number(gstRate) === rate);
-                                            
-                                            let rowTaxable = 0;
-                                            let rowTax = 0;
-                                            if (hasItems) {
-                                                rowTaxable = matchingItems.reduce((acc, i) => acc + i.value, 0);
-                                                rowTax = rowTaxable * (rate / 100);
-                                            } else if (isMatch) {
-                                                rowTaxable = taxableSubtotal;
-                                                rowTax = taxAmount;
-                                            }
+                                            const itemValSum = matchingItems.reduce((acc, i) => acc + safeNum(i.value), 0);
+                                            const itemTaxable = rate > 0 ? (itemValSum / (1 + rate / 100)) : itemValSum;
+                                            const itemTax = itemValSum - itemTaxable;
 
-                                            // Add additional charges matching this GST rate
                                             const matchingAddlCharges = addlChargesList.filter(c => Number(c.gstRate) === rate);
-                                            const addlTaxable = matchingAddlCharges.reduce((acc, c) => acc + safeNum(c.amount), 0);
-                                            const addlTax = addlTaxable * (rate / 100);
+                                            const addlValSum = matchingAddlCharges.reduce((acc, c) => acc + c.amount, 0);
+                                            const addlTaxable = rate > 0 ? (addlValSum / (1 + rate / 100)) : addlValSum;
+                                            const addlTax = addlValSum - addlTaxable;
 
-                                            rowTaxable += addlTaxable;
-                                            rowTax += addlTax;
+                                            const rowTaxable = itemTaxable + addlTaxable;
+                                            const rowTax = itemTax + addlTax;
 
                                             if (rowTaxable === 0 && rowTax === 0) return null;
 
                                             return (
-                                                <tr key={rate} className={rowTaxable > 0 ? "bg-gray-50 font-bold" : ""}>
+                                                <tr key={rate} className="bg-gray-50 font-bold">
                                                     <td className="font-sans font-bold">{rate}%</td>
                                                     <td>{rowTaxable.toFixed(2)}</td>
                                                     <td>{(rowTax / 2).toFixed(2)}</td>
@@ -422,7 +482,7 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                     <tfoot>
                                         <tr className="border-t border-black font-bold font-mono">
                                             <td className="font-sans">Total</td>
-                                            <td>{(taxableSubtotal + addlChargesBaseSum).toFixed(2)}</td>
+                                            <td>{totalInvoiceTaxable.toFixed(2)}</td>
                                             <td>{(totalInvoiceGst / 2).toFixed(2)}</td>
                                             <td>{(totalInvoiceGst / 2).toFixed(2)}</td>
                                             <td>0.00</td>
