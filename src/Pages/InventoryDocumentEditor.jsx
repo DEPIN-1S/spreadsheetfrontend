@@ -301,6 +301,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
     const [activeQtyDropdown, setActiveQtyDropdown] = useState(null); // Quick Add Quantity dropdown
     const [nestedSheetsMapping, setNestedSheetsMapping] = useState({});
     const [activeNestedSheetId, setActiveNestedSheetId] = useState(null);
+    const [nestedSheetOpenKey, setNestedSheetOpenKey] = useState(0); // force remount on re-open
     const [isCreatingCC, setIsCreatingCC] = useState(false); // BUG #8: prevent double-click / show loading
     const { cellClipboard, setCellClipboard } = useClipboard();
     const [emojiPickerCell, setEmojiPickerCell] = useState(null); // { rowId, colId }
@@ -494,6 +495,55 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                             computedValue
                         };
                     });
+
+                    // ── Auto-compute formula columns on load ──────────────────
+                    const getCell = (colId) => {
+                        const c = ccCells.find(x => x.columnId === colId);
+                        return parseFloat(c?.rawValue || 0) || 0;
+                    };
+                    const setCell = (colId, val) => {
+                        const idx = ccCells.findIndex(x => x.columnId === colId);
+                        const strVal = String(val);
+                        if (idx > -1) {
+                            ccCells[idx] = { ...ccCells[idx], rawValue: strVal, computedValue: strVal };
+                        }
+                    };
+                    const pr  = getCell('col-cc-purchase-rate');
+                    const rsl = getCell('col-cc-retail-selling-rate');
+                    const wsl = getCell('col-cc-wholesale-selling-rate');
+                    const mrp = getCell('col-cc-mrp') || getCell('col-cc-wholesale-mrp');
+
+                    // R Profit % = ((R Selling Rate - Purchase Rate) / Purchase Rate) * 100
+                    if (pr > 0 && rsl > 0) {
+                        setCell('col-cc-retail-profit', ((rsl - pr) / pr * 100).toFixed(2));
+                    } else {
+                        setCell('col-cc-retail-profit', '0');
+                    }
+
+                    // W Profit % = ((W Selling Rate - Purchase Rate) / Purchase Rate) * 100
+                    if (pr > 0 && wsl > 0) {
+                        setCell('col-cc-wholesale-profit', ((wsl - pr) / pr * 100).toFixed(2));
+                    } else {
+                        setCell('col-cc-wholesale-profit', '0');
+                    }
+
+                    // Discount % = ((MRP - R Selling Rate) / MRP) * 100
+                    if (mrp > 0 && rsl > 0) {
+                        const disc = (mrp - rsl) / mrp * 100;
+                        setCell('col-cc-discount', disc > 0 ? disc.toFixed(2) : '0');
+                    } else {
+                        setCell('col-cc-discount', '0');
+                    }
+
+                    // W Margin % = ((MRP - W Selling Rate) / W Selling Rate) * 100
+                    if (wsl > 0 && mrp > 0) {
+                        const margin = (mrp - wsl) / wsl * 100;
+                        setCell('col-cc-wholesale-margin', margin > 0 ? margin.toFixed(2) : '0');
+                    } else {
+                        setCell('col-cc-wholesale-margin', '0');
+                    }
+                    // ── End auto-compute ──────────────────────────────────────
+
                     return {
                         id: ccRow.id,
                         orderIndex: ccRow.orderIndex,
@@ -544,6 +594,20 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                 setCcHsnCode(meta.hsnCode || '');
                 setCcRackNo(meta.rackNo || '');
                 setCcComposition(meta.composition || '');
+
+                // Persist loaded meta to localStorage so handleCCMetaChange
+                // can safely read it as baseline (avoids stale closure issues)
+                localStorage.setItem(`cc_meta_${docName}`, JSON.stringify({
+                    gst: meta.gst || '',
+                    category: meta.category || '',
+                    division: meta.division || '',
+                    manufacturer: meta.manufacturer || '',
+                    companyName: meta.companyName || '',
+                    quantity: meta.quantity || '',
+                    hsnCode: meta.hsnCode || '',
+                    rackNo: meta.rackNo || '',
+                    composition: meta.composition || '',
+                }));
 
                 setSheetData({
                     id: docName,
@@ -614,17 +678,21 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
         if (field === 'rackNo') setCcRackNo(value);
         if (field === 'composition') setCcComposition(value);
 
+        // Read the last-persisted values from localStorage as the source of truth
+        // (avoids stale React state closure — setState is async and hasn't re-rendered yet)
         const currentMeta = JSON.parse(localStorage.getItem(`cc_meta_${docName}`) || "{}");
         const updatedMeta = {
-            gst: field === 'gst' ? value : (ccGst || currentMeta.gst || ''),
-            category: field === 'category' ? value : (ccCategory || currentMeta.category || ''),
-            division: field === 'division' ? value : (ccDivision || currentMeta.division || ''),
-            manufacturer: field === 'manufacturer' ? value : (ccManufacturer || currentMeta.manufacturer || ''),
-            companyName: field === 'companyName' ? value : (ccCompanyName || currentMeta.companyName || ''),
-            quantity: (field === 'quantity' || field === 'unit') ? value : (ccQuantity || currentMeta.quantity || ''),
-            hsnCode: field === 'hsnCode' ? value : (ccHsnCode || currentMeta.hsnCode || ''),
-            rackNo: field === 'rackNo' ? value : (ccRackNo || currentMeta.rackNo || ''),
-            composition: field === 'composition' ? value : (ccComposition || currentMeta.composition || ''),
+            gst: currentMeta.gst || '',
+            category: currentMeta.category || '',
+            division: currentMeta.division || '',
+            manufacturer: currentMeta.manufacturer || '',
+            companyName: currentMeta.companyName || '',
+            quantity: currentMeta.quantity || '',
+            hsnCode: currentMeta.hsnCode || '',
+            rackNo: currentMeta.rackNo || '',
+            composition: currentMeta.composition || '',
+            // Override only the changed field with the new value
+            [field === 'unit' ? 'quantity' : field]: value,
         };
         localStorage.setItem(`cc_meta_${docName}`, JSON.stringify(updatedMeta));
 
@@ -636,6 +704,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
             }
         }
     };
+
 
     const handleSaveCCMeta = async () => {
         if (!isNested) return;
@@ -708,10 +777,15 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
         fetchSheetData();
     }, [fetchSheetData]);
 
-    // Real-time updates via Socket.IO (stubbed for offline/local mockup mode)
+    // Auto-refresh CC sub-spreadsheet only when tab/window regains focus (e.g. switching back from billing tab)
     useEffect(() => {
-        // Disabled for mockup editor
-    }, [docName]);
+        if (!isNested) return; // only for batch detail modal
+        const handleFocus = () => { fetchSheetData(); };
+        window.addEventListener('focus', handleFocus);
+        return () => {
+            window.removeEventListener('focus', handleFocus);
+        };
+    }, [isNested, fetchSheetData]);
 
     // Context Menu State
     const [activeColumnMenu, setActiveColumnMenu] = useState(null); // { id, x, y }
@@ -1444,6 +1518,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
     const handleOpenOrCreateDetails = async (row, col) => {
         if (row && row.id) {
             setActiveNestedSheetId(row.id);
+                setNestedSheetOpenKey(Date.now()); // force fresh load
         }
     };
 
@@ -2008,7 +2083,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                             if (['col-cc-purchase-rate', 'col-cc-retail-selling-rate'].includes(columnId)) {
                                 const pr = getVal('col-cc-purchase-rate');
                                 const rsl = getVal('col-cc-retail-selling-rate');
-                                if (pr > 0) {
+                                if (pr > 0 && rsl > 0) {
                                     const profit = ((rsl - pr) / pr) * 100;
                                     setVal('col-cc-retail-profit', profit.toFixed(2));
                                 } else {
@@ -2020,7 +2095,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                             if (['col-cc-purchase-rate', 'col-cc-wholesale-selling-rate'].includes(columnId)) {
                                 const pr = getVal('col-cc-purchase-rate');
                                 const wsl = getVal('col-cc-wholesale-selling-rate');
-                                if (pr > 0) {
+                                if (pr > 0 && wsl > 0) {
                                     const profit = ((wsl - pr) / pr) * 100;
                                     setVal('col-cc-wholesale-profit', profit.toFixed(2));
                                 } else {
@@ -2039,9 +2114,11 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                             if (['col-cc-mrp', 'col-cc-wholesale-mrp', 'col-cc-retail-selling-rate'].includes(columnId)) {
                                 const mrp = getVal('col-cc-mrp') || getVal('col-cc-wholesale-mrp');
                                 const rsl = getVal('col-cc-retail-selling-rate');
-                                if (mrp > 0) {
+                                if (mrp > 0 && rsl > 0) {
                                     const disc = ((mrp - rsl) / mrp) * 100;
                                     setVal('col-cc-discount', disc > 0 ? disc.toFixed(2) : '0');
+                                } else {
+                                    setVal('col-cc-discount', '0');
                                 }
                             }
 
@@ -3946,6 +4023,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                 <>
                                     <button onClick={() => {
                                         setActiveNestedSheetId(nestedSheetsMapping[`${filteredRows[activeCellMenu.rowIndex].id}_${activeCellMenu.colId}`]);
+                                        setNestedSheetOpenKey(Date.now()); // force fresh load
                                         setActiveCellMenu(null);
                                     }} className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors text-blue-600 font-medium">
                                         <FiColumns className="w-4 h-4" /> Open Cell Details
@@ -5242,7 +5320,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                     <FiX className="w-6 h-6" />
                                 </button>
                             </div>
-                            <InventoryDocumentEditor docName={activeNestedSheetId} parentSheetId={docName} isNested={true} setActivePath={setActivePath} returnPath={returnPath} />
+                            <InventoryDocumentEditor key={nestedSheetOpenKey} docName={activeNestedSheetId} parentSheetId={docName} isNested={true} setActivePath={setActivePath} returnPath={returnPath} />
                         </div>
                     </div>
                 </div>

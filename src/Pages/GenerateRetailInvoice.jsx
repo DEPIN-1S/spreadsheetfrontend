@@ -68,7 +68,18 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                             setPartialAmount(String(parseFloat(inv.grandTotal || 0) - parseFloat(inv.pendingAmount || 0)));
                         }
                         if (inv.discountAmount) setDiscountAmount(String(inv.discountAmount));
-                        if (inv.additionalCharges && Array.isArray(inv.additionalCharges)) setAdditionalCharges(inv.additionalCharges);
+                        // additionalCharges may come back as a JSON string from the API — parse it
+                        const parsedCharges = (() => {
+                            if (!inv.additionalCharges) return null;
+                            if (Array.isArray(inv.additionalCharges)) return inv.additionalCharges;
+                            try { return JSON.parse(inv.additionalCharges); } catch { return null; }
+                        })();
+                        if (parsedCharges && Array.isArray(parsedCharges) && parsedCharges.length > 0) setAdditionalCharges(parsedCharges);
+                        // Restore gstRate from saved tax/subtotal ratio
+                        if (inv.taxAmount && inv.itemSubtotal && parseFloat(inv.itemSubtotal) > 0) {
+                            const derivedRate = Math.round((parseFloat(inv.taxAmount) / parseFloat(inv.itemSubtotal)) * 100);
+                            if (derivedRate > 0) setGstRate(derivedRate);
+                        }
                         if (inv.roundOffAmount !== undefined && inv.roundOffAmount !== null) {
                             const ro = parseFloat(inv.roundOffAmount) || 0;
                             if (ro < 0) {
@@ -545,6 +556,14 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                                 Add Item
                             </button>
                         </div>
+                        {items.some(i => i.description && !i.invCcRowId) && (
+                            <div className="mx-6 mt-3 px-4 py-2.5 bg-orange-50 border border-orange-200 rounded-lg flex items-start gap-2 text-xs text-orange-700">
+                                <span className="mt-0.5">⚠️</span>
+                                <span>
+                                    <strong>Stock Warning:</strong> Items with an <span className="inline-block w-2 h-2 rounded-full bg-orange-400 mx-0.5 -mb-0.5" /> orange dot are <strong>not linked to inventory</strong> — their stock will NOT be automatically deducted. Use <strong>+ Add Item</strong> to select from inventory picker for proper stock tracking.
+                                </span>
+                            </div>
+                        )}
 
                         <div className="overflow-x-auto">
                             <table className="w-full text-left border-collapse">
@@ -579,9 +598,17 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                                         items.map((item, index) => (
                                             <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
                                                 <td className="px-6 py-3 text-gray-400 font-mono text-xs">{index + 1}</td>
-                                                <td className="px-6 py-3 font-medium text-gray-900">
-                                                    {item.description || <span className="text-gray-400 italic">Select item...</span>}
-                                                </td>
+                                                 <td className="px-6 py-3 font-medium text-gray-900">
+                                                     <div className="flex items-center gap-2">
+                                                         {item.description || <span className="text-gray-400 italic">Select item...</span>}
+                                                         {item.description && !item.invCcRowId && (
+                                                             <span title="Not linked to inventory — stock will NOT be deducted" className="flex-shrink-0 w-2 h-2 rounded-full bg-orange-400" />
+                                                         )}
+                                                         {item.description && item.invCcRowId && (
+                                                             <span title="Linked to inventory — stock will be deducted" className="flex-shrink-0 w-2 h-2 rounded-full bg-green-400" />
+                                                         )}
+                                                     </div>
+                                                 </td>
                                                 <td className="px-6 py-3">
                                                     <select
                                                         value={item.batch || ''}

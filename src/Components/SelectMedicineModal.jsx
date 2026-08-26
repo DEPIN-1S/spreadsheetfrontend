@@ -200,8 +200,9 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                                 ) : (
                                     sortedMedicines.map(med => {
                                         const isAlreadyAdded = existingItemNames.includes(med.name);
+                                        const noPrice = !med.price || med.price === 0;
                                         return (
-                                            <tr key={med.id} className="hover:bg-indigo-50/30 transition-colors">
+                                            <tr key={med.id} className={`transition-colors ${noPrice ? 'opacity-60 bg-gray-50/50 hover:bg-gray-100/50' : 'hover:bg-indigo-50/30'}`}>
                                                 <td className="px-4 py-3 font-medium text-gray-900">{med.name}</td>
                                                 <td className="px-4 py-3">
                                                     <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
@@ -246,7 +247,10 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                                                     {med.stock} units
                                                 </td>
                                                 <td className="px-4 py-3 text-right font-bold text-gray-900">
-                                                    ₹{med.price.toFixed(2)}
+                                                    {noPrice
+                                                        ? <span className="text-xs text-amber-600 font-medium bg-amber-50 px-2 py-0.5 rounded border border-amber-200">No Price</span>
+                                                        : <span>₹{med.price.toFixed(2)}</span>
+                                                    }
                                                 </td>
                                                 <td className="px-4 py-3 text-center">
                                                     <button
