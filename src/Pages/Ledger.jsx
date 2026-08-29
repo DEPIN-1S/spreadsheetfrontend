@@ -4,20 +4,16 @@ import Swal from 'sweetalert2';
 import Pagination from '../Components/Pagination';
 import { invLedgerApi } from '../api/inventoryApiClient';
 
-export default function Ledger({ setMobileOpen, setActivePath }) {
+export default function Ledger({ setMobileOpen }) {
     const [ledgerEntries, setLedgerEntries] = useState([]);
     const [searchQuery, setSearchQuery] = useState('');
-    const [filterType, setFilterType] = useState('ALL');
+    const [filterType, setFilterType] = useState('WH');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedEntry, setSelectedEntry] = useState(null);
     const [statusValue, setStatusValue] = useState('Pending');
     const [newPendingAmount, setNewPendingAmount] = useState('');
     const [proofUrl, setProofUrl] = useState('');
     const [viewingProofEntry, setViewingProofEntry] = useState(null);
-
-    useEffect(() => {
-        fetchLedger();
-    }, []);
 
     const fetchLedger = async () => {
         try {
@@ -27,6 +23,10 @@ export default function Ledger({ setMobileOpen, setActivePath }) {
             console.error("Failed to load ledger:", error);
         }
     };
+
+    useEffect(() => {
+        fetchLedger();
+    }, []);
 
     const filteredEntries = ledgerEntries.filter(entry => {
         const nameMatch = (entry.customerName || '').toLowerCase().includes(searchQuery.toLowerCase());
@@ -40,6 +40,7 @@ export default function Ledger({ setMobileOpen, setActivePath }) {
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10);
 
+    // Reset to page 1 when filters change
     useEffect(() => {
         setCurrentPage(1);
     }, [searchQuery, filterType]);
@@ -174,16 +175,6 @@ export default function Ledger({ setMobileOpen, setActivePath }) {
                     <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4">
                         <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg w-full sm:w-auto">
                             <button
-                                onClick={() => setFilterType('ALL')}
-                                className={`flex-1 sm:flex-initial px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                                    filterType === 'ALL'
-                                        ? 'bg-white text-indigo-600 shadow-sm'
-                                        : 'text-gray-600 hover:text-gray-900'
-                                }`}
-                            >
-                                All ({ledgerEntries.length})
-                            </button>
-                            <button
                                 onClick={() => setFilterType('WH')}
                                 className={`flex-1 sm:flex-initial px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${
                                     filterType === 'WH'
@@ -203,6 +194,16 @@ export default function Ledger({ setMobileOpen, setActivePath }) {
                             >
                                 RT ({ledgerEntries.filter(e => e.type === 'Retail').length})
                             </button>
+                            <button
+                                onClick={() => setFilterType('ALL')}
+                                className={`flex-1 sm:flex-initial px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                                    filterType === 'ALL'
+                                        ? 'bg-white text-indigo-600 shadow-sm'
+                                        : 'text-gray-600 hover:text-gray-900'
+                                }`}
+                            >
+                                All ({ledgerEntries.length})
+                            </button>
                         </div>
                         <div className="relative w-full sm:w-80">
                             <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
@@ -217,14 +218,26 @@ export default function Ledger({ setMobileOpen, setActivePath }) {
                     </div>
 
                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50/50 flex justify-between items-center">
+                        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50/50 flex flex-wrap justify-between items-center gap-3">
                             <div className="flex items-center gap-2">
                                 <FiBookOpen className="text-gray-500" />
                                 <h2 className="text-lg font-medium text-gray-900">Ledger Entries</h2>
                             </div>
-                            <span className="text-sm font-medium bg-gray-200 text-gray-700 px-2.5 py-1 rounded-full">
-                                {filteredEntries.length} records
-                            </span>
+
+                            {/* Top Section Color Meaning Legend */}
+                            <div className="flex flex-wrap items-center gap-3 text-xs">
+                                <div className="flex items-center gap-1.5 bg-[#dcfce7] text-emerald-800 border border-emerald-300 px-2.5 py-1 rounded-md font-semibold shadow-2xs" title="Green row color indicates bill is Paid / Settled (₹0.00 pending)">
+                                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border border-emerald-600 inline-block shrink-0"></span>
+                                    <span>Green = Paid / Settled</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 bg-white text-gray-700 border border-gray-300 px-2.5 py-1 rounded-md font-semibold shadow-2xs" title="White row color indicates bill is Unpaid or Partially Paid">
+                                    <span className="w-2.5 h-2.5 rounded-full bg-white border border-gray-400 inline-block shrink-0"></span>
+                                    <span>White = Unpaid &amp; Partially Paid</span>
+                                </div>
+                                <span className="text-sm font-medium bg-gray-200 text-gray-700 px-2.5 py-1 rounded-full">
+                                    {filteredEntries.length} records
+                                </span>
+                            </div>
                         </div>
                         
                         <div className="overflow-x-auto">
@@ -242,8 +255,17 @@ export default function Ledger({ setMobileOpen, setActivePath }) {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200 text-sm">
-                                    {paginatedEntries.map((entry) => (
-                                        <tr key={entry.id} className="hover:bg-gray-50 transition-colors">
+                                    {paginatedEntries.map((entry) => {
+                                        const isPaid = entry.status === 'Settled' || Number(entry.pendingAmount) <= 0;
+                                        return (
+                                        <tr
+                                            key={entry.id}
+                                            className={`transition-colors ${
+                                                isPaid 
+                                                    ? 'bg-[#dcfce7]/60 hover:bg-[#dcfce7]/80 text-gray-900 font-medium' 
+                                                    : 'bg-white hover:bg-gray-50 text-gray-900'
+                                            }`}
+                                        >
                                             <td className="px-6 py-4 text-gray-600">{entry.date}</td>
                                             <td className="px-6 py-4">
                                                 <span className={`px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${
@@ -257,7 +279,7 @@ export default function Ledger({ setMobileOpen, setActivePath }) {
                                             <td className="px-6 py-4 font-medium text-gray-900">{entry.customerName}</td>
                                             <td className="px-6 py-4 text-gray-600 text-xs font-mono">{entry.phone || 'N/A'}</td>
                                             <td className="px-6 py-4 text-indigo-600 font-mono text-xs">{entry.invoiceNo}</td>
-                                            <td className="px-6 py-4 text-right font-semibold font-mono text-red-600">
+                                            <td className={`px-6 py-4 text-right font-semibold font-mono ${isPaid ? 'text-emerald-700' : 'text-red-600'}`}>
                                                 {formatCurrency(entry.pendingAmount)}
                                             </td>
                                             <td className="px-6 py-4 text-center">
@@ -266,7 +288,7 @@ export default function Ledger({ setMobileOpen, setActivePath }) {
                                                     onChange={(e) => openManageModal(entry, e.target.value)}
                                                     className={`px-3 py-1.5 rounded-md text-xs font-semibold cursor-pointer border focus:outline-none focus:ring-2 transition-colors ${
                                                         entry.status === 'Settled' 
-                                                            ? 'bg-green-50 text-green-700 border-green-200 focus:ring-green-500/30' 
+                                                            ? 'bg-green-100 text-green-800 border-green-300 focus:ring-green-500/30' 
                                                             : entry.status === 'Partially Paid'
                                                                 ? 'bg-blue-50 text-blue-700 border-blue-200 focus:ring-blue-500/30'
                                                                 : 'bg-amber-50 text-amber-700 border-amber-200 focus:ring-amber-500/30'
@@ -303,7 +325,8 @@ export default function Ledger({ setMobileOpen, setActivePath }) {
                                                 )}
                                             </td>
                                         </tr>
-                                    ))}
+                                    );
+                                    })}
                                     {filteredEntries.length === 0 && (
                                         <tr>
                                             <td colSpan="8" className="px-6 py-8 text-center text-gray-500">

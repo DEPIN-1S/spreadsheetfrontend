@@ -8,10 +8,6 @@ export default function RetailParties({ setMobileOpen, setActivePath }) {
     const [editingParty, setEditingParty] = useState(null);
     const [allRetailParties, setAllRetailParties] = useState([]);
 
-    useEffect(() => {
-        fetchParties();
-    }, []);
-
     const fetchParties = async () => {
         try {
             const res = await invPartiesApi.list('retail');
@@ -20,6 +16,10 @@ export default function RetailParties({ setMobileOpen, setActivePath }) {
             console.error("Failed to load retail parties:", error);
         }
     };
+
+    useEffect(() => {
+        fetchParties();
+    }, []);
 
     const handleSaveParty = async (formData) => {
         try {

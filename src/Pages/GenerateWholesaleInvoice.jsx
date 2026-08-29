@@ -47,6 +47,15 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
         { id: 1, description: '', batch: '', qty: 0, price: 0, invCcRowId: null }
     ]);
 
+    const fetchParties = async () => {
+        try {
+            const res = await invPartiesApi.list('wholesale');
+            setParties(res.data.data || []);
+        } catch (error) {
+            console.error("Failed to load wholesale parties:", error);
+        }
+    };
+
     useEffect(() => {
         fetchParties();
 
@@ -114,15 +123,6 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
             localStorage.removeItem('edit_invoice_id');
         };
     }, []);
-
-    const fetchParties = async () => {
-        try {
-            const res = await invPartiesApi.list('wholesale');
-            setParties(res.data.data || []);
-        } catch (error) {
-            console.error("Failed to load wholesale parties:", error);
-        }
-    };
 
     // Filter parties based on search input
     const filteredParties = parties.filter(party => 

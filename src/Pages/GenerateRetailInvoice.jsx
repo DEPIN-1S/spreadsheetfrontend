@@ -47,6 +47,15 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
         { id: 1, description: '', batch: '', qty: 0, price: 0, invCcRowId: null }
     ]);
 
+    const fetchParties = async () => {
+        try {
+            const res = await invPartiesApi.list('retail');
+            setParties(res.data.data || []);
+        } catch (error) {
+            console.error("Failed to load retail parties:", error);
+        }
+    };
+
     useEffect(() => {
         fetchParties();
 
@@ -114,15 +123,6 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
             localStorage.removeItem('edit_invoice_id');
         };
     }, []);
-
-    const fetchParties = async () => {
-        try {
-            const res = await invPartiesApi.list('retail');
-            setParties(res.data.data || []);
-        } catch (error) {
-            console.error("Failed to load retail parties:", error);
-        }
-    };
 
     // Filter parties based on search input
     const filteredParties = parties.filter(party => 

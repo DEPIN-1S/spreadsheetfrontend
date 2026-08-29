@@ -62,6 +62,8 @@ export const invSheetsApi = {
     addCcRow: (sheetId, rowId) => inventoryApiClient.post(`/inv-sheets/${sheetId}/rows/${rowId}/cc-rows`),
     deleteCcRow: (sheetId, rowId, ccRowId) => inventoryApiClient.delete(`/inv-sheets/${sheetId}/rows/${rowId}/cc-rows/${ccRowId}`),
     updateCcCells: (sheetId, rowId, ccRowId, cells) => inventoryApiClient.put(`/inv-sheets/${sheetId}/rows/${rowId}/cc-rows/${ccRowId}/cells`, { cells }),
+    updateRowStyle: (sheetId, rowId, styles) => inventoryApiClient.patch(`/inv-sheets/${sheetId}/rows/${rowId}/style`, { styles }),
+    updateCcRowStyle: (sheetId, rowId, ccRowId, styles) => inventoryApiClient.patch(`/inv-sheets/${sheetId}/rows/${rowId}/cc-rows/${ccRowId}/style`, { styles }),
     listAllBatches: () => inventoryApiClient.get('/inv-sheets/batches')
 };
 
