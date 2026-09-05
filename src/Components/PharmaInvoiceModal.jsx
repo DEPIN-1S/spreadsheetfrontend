@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FiX, FiPrinter, FiDownload, FiCheckCircle, FiSettings } from 'react-icons/fi';
 import { invInvoicesApi } from '../api/inventoryApiClient';
+import { parseGstPercent } from '../utils/gst';
 
 export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -123,7 +124,7 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
         const price = safeNum(item.price);
         const qty = safeNum(item.qty, 1);
         const mrpVal = safeNum(item.mrp, price > 0 ? price * 1.25 : 0);
-        const gstPercent = safeNum(item.gstPercent ?? item.gst ?? currentInv.gstRate ?? 5);
+        const gstPercent = parseGstPercent(item.gstPercent ?? item.gst);
 
         let disVal = safeNum(item.marginPercent || item.disPercent || item.discount || item.wholesaleMargin);
         if (disVal === 0 && mrpVal > 0 && price > 0) {
@@ -183,7 +184,7 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
 
     // Calculate product items tax correctly (Inclusive of GST)
     const productTaxSum = items.reduce((acc, item) => {
-        const rate = safeNum(item.gstPercent, 5);
+        const rate = parseGstPercent(item.gstPercent);
         const val = safeNum(item.value);
         return acc + (rate > 0 ? (val - (val / (1 + rate / 100))) : 0);
     }, 0);
@@ -452,8 +453,8 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-200 font-mono text-[9px]">
-                                        {[28, 18, 12, 5].map(rate => {
-                                            const matchingItems = items.filter(i => Number(i.gstPercent) === rate);
+                                        {[...new Set([28, 18, 12, 5, ...items.map(i => parseGstPercent(i.gstPercent)).filter(r => r > 0)])].map(rate => {
+                                            const matchingItems = items.filter(i => parseGstPercent(i.gstPercent) === rate);
                                             const itemValSum = matchingItems.reduce((acc, i) => acc + safeNum(i.value), 0);
                                             const itemTaxable = rate > 0 ? (itemValSum / (1 + rate / 100)) : itemValSum;
                                             const itemTax = itemValSum - itemTaxable;

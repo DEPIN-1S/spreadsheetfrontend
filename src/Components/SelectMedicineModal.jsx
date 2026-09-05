@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FiX, FiSearch, FiPlus, FiCheck, FiPackage } from 'react-icons/fi';
 import { invSheetsApi } from '../api/inventoryApiClient';
+import { parseGstPercent, loadProductGstMap } from '../utils/gst';
 
 export default function SelectMedicineModal({ isOpen, onClose, onSelect, existingItemNames = [], inventoryType = 'wholesale' }) {
     const [searchQuery, setSearchQuery] = useState('');
@@ -19,9 +20,15 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
         try {
             const res = await invSheetsApi.listAllBatches();
             const fetched = res.data.data || [];
+            const missingGst = fetched.some(item => !parseGstPercent(item.gstPercent ?? item.gst));
+            const gstByName = missingGst ? await loadProductGstMap(invSheetsApi) : {};
             
             // Map the API fields to the format expected by the modal
-            const mapped = fetched.map(item => ({
+            const mapped = fetched.map(item => {
+                const gstPercent = parseGstPercent(item.gstPercent ?? item.gst)
+                    || gstByName[String(item.name || '').trim().toLowerCase()]
+                    || 0;
+                return {
                 id: item.ccRowId,
                 name: item.name,
                 category: item.category,
@@ -34,8 +41,11 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                 mrp: item.mrp || 0,
                 discount: item.discount || 0,
                 wholesaleMargin: item.wholesaleMargin || 0,
+                gst: item.gst || '',
+                gstPercent,
                 ccRowId: item.ccRowId
-            }));
+            };
+            });
             
             setMedicines(mapped);
         } catch (error) {
@@ -256,7 +266,10 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                                                     <button
                                                         type="button"
                                                         onClick={() => {
-                                                             onSelect(med);
+                                                            onSelect({
+                                                                ...med,
+                                                                gstPercent: parseGstPercent(med.gstPercent ?? med.gst)
+                                                            });
                                                             onClose();
                                                         }}
                                                         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${

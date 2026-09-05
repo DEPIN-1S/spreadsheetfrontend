@@ -114,6 +114,12 @@ const defaultCCTemplate = [
     { id: "col-cc-wholesale-mrp", name: "MRP", type: "number", width: 100 }
 ];
 
+const STAFF_HIDDEN_CC_IDS = new Set([
+    "col-cc-purchase-rate",
+    "col-cc-retail-profit",
+    "col-cc-wholesale-profit"
+]);
+
 const defaultColumns = [
     { id: "col-rack-no", name: "Rack No", type: "text", width: 180, orderIndex: 0 },
     { id: "col-product-image", name: "Product Image", type: "multi_image", width: 220, orderIndex: 1 },
@@ -146,6 +152,51 @@ const _defaultRows = Array.from({ length: 5 }).map((_, idx) => ({
     ]
 }));
 
+const COLUMN_STYLE_KEYS = ['bgColor', 'isBold', 'isItalic', 'isUnderline', 'isStrikethrough', 'alignment', 'fontFamily'];
+
+const applyColumnStyleMap = (cols, styleMap = {}) =>
+    cols.map(c => ({ ...c, ...(styleMap[c.id] || {}) }));
+
+const parseSheetSettings = (raw) => {
+    if (!raw) return {};
+    if (typeof raw === 'string') {
+        try { return JSON.parse(raw) || {}; } catch { return {}; }
+    }
+    return raw;
+};
+
+const readStoredInvColStyles = (sheetId) => {
+    if (!sheetId) return {};
+    try {
+        return JSON.parse(localStorage.getItem(`inv_col_styles_${sheetId}`) || '{}') || {};
+    } catch {
+        return {};
+    }
+};
+
+const writeStoredInvColStyles = (sheetId, stored) => {
+    if (!sheetId) return;
+    try {
+        localStorage.setItem(`inv_col_styles_${sheetId}`, JSON.stringify(stored || {}));
+    } catch {
+        /* ignore quota */
+    }
+};
+
+const mergeStyleMaps = (a = {}, b = {}) => {
+    const out = { ...a };
+    Object.keys(b || {}).forEach(id => {
+        out[id] = { ...(out[id] || {}), ...b[id] };
+    });
+    return out;
+};
+
+const resolveColumnStyleMap = (sheetId, settings, styleKey) => {
+    const fromApi = parseSheetSettings(settings)[styleKey] || {};
+    const fromLocal = readStoredInvColStyles(sheetId)[styleKey] || {};
+    return mergeStyleMaps(fromApi, fromLocal);
+};
+
 const parseRowStyles = (rawStyles) => {
     if (!rawStyles) return {};
     if (typeof rawStyles === 'object') return rawStyles;
@@ -165,6 +216,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
     const [accessError, setAccessError] = useState(false);
     const [rows, setRows] = useState([]);
     const [columns, setColumns] = useState([]);
+    const [sheetSettings, setSheetSettings] = useState({});
     const [isLoading, setIsLoading] = useState(true);
     const [inventoryCategories, _setInventoryCategories] = useState(() => {
         const stored = localStorage.getItem('inventory_categories');
@@ -489,6 +541,9 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                         }
                     }
 
+                    const parentSettings = parseSheetSettings(parentSheet?.settings);
+                    setSheetSettings(parentSettings);
+
                     // Apply default widths: batch, expiry date, status preserved; balance columns set to template width
                     cols = cols.map(c => {
                         const def = defaultCCTemplate.find(d => d.id === c.id);
@@ -500,6 +555,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                             width: def?.width || 120
                         };
                     });
+                    cols = applyColumnStyleMap(cols, resolveColumnStyleMap(parentSheetId, parentSettings, 'ccColumnStyles'));
 
                     const parentRow = (parentSheet?.rows || []).find(r => r.id === docName);
                     if (parentRow) {
@@ -670,7 +726,9 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                 // Main spreadsheet
                 const res = await invSheetsApi.get(docName);
                 const sheet = res.data.data;
-                const cols = defaultColumns;
+                const settings = parseSheetSettings(sheet?.settings);
+                setSheetSettings(settings);
+                const cols = applyColumnStyleMap(defaultColumns, resolveColumnStyleMap(docName, settings, 'columnStyles'));
                 const rws = (sheet?.rows || []).map(row => {
                     const cellMap = new Map((row.cells || []).map(c => [c.columnId, c]));
                     const mainCells = cols.map(col => {
@@ -1168,6 +1226,9 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
     };
 
     const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+    const displayColumns = (isNested && currentUser?.role === 'staff')
+        ? columns.filter(c => !STAFF_HIDDEN_CC_IDS.has(c.id))
+        : columns;
 
     // Fetch latest comment for tooltip preview
     const handleCommentHover = async (cellId) => {
@@ -1554,15 +1615,43 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
 
     const updateColumnStyle = async (colId, stylePatch) => {
         try {
-            // stylePatch = { bgColor, isBold, isItalic }
-            // Optimistic update
-            setColumns(currentCols => {
-                const updated = currentCols.map(col =>
-                    col.id === colId ? { ...col, ...stylePatch } : col
-                );
-                saveMockDataLocally(updated, rows);
-                return updated;
+            setColumns(currentCols => currentCols.map(col =>
+                col.id === colId ? { ...col, ...stylePatch } : col
+            ));
+
+            const visualPatch = {};
+            COLUMN_STYLE_KEYS.forEach(k => {
+                if (k in stylePatch) visualPatch[k] = stylePatch[k];
             });
+            if (Object.keys(visualPatch).length === 0) return;
+
+            const sheetId = isNested ? parentSheetId : docName;
+            const styleKey = isNested ? 'ccColumnStyles' : 'columnStyles';
+            const nextMap = {
+                ...(sheetSettings[styleKey] || {}),
+                ...(readStoredInvColStyles(sheetId)[styleKey] || {}),
+                [colId]: {
+                    ...(sheetSettings[styleKey]?.[colId] || {}),
+                    ...(readStoredInvColStyles(sheetId)[styleKey]?.[colId] || {}),
+                    ...visualPatch
+                }
+            };
+            const nextSettings = {
+                ...sheetSettings,
+                [styleKey]: nextMap
+            };
+            setSheetSettings(nextSettings);
+            writeStoredInvColStyles(sheetId, {
+                ...readStoredInvColStyles(sheetId),
+                [styleKey]: nextMap
+            });
+            if (sheetId) {
+                try {
+                    await invSheetsApi.update(sheetId, { settings: nextSettings });
+                } catch (apiErr) {
+                    console.error("Column style API save failed; kept local copy.", apiErr);
+                }
+            }
         } catch (error) {
             console.error("Error updating column style:", error);
         }
@@ -1570,17 +1659,17 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
 
     const getCellFormattingClasses = (cell, row, col, isFormula = false) => {
         const classes = [];
-        if (cell?.isBold || row?.isBold || col?.isBold) classes.push('font-bold');
-        if (cell?.isItalic || row?.isItalic || col?.isItalic) classes.push('italic');
-        if (cell?.isUnderline || row?.isUnderline || col?.isUnderline) classes.push('underline');
-        if (cell?.isStrikethrough || row?.isStrikethrough || col?.isStrikethrough) classes.push('line-through');
+        if (col?.isBold) classes.push('font-bold');
+        if (col?.isItalic) classes.push('italic');
+        if (col?.isUnderline) classes.push('underline');
+        if (col?.isStrikethrough) classes.push('line-through');
 
-        const family = cell?.fontFamily || row?.fontFamily || col?.fontFamily || 'sans';
+        const family = col?.fontFamily || 'sans';
         if (family === 'mono') classes.push('font-mono');
         else if (family === 'serif') classes.push('font-serif');
         else classes.push('font-sans');
 
-        const align = cell?.alignment || row?.alignment || col?.alignment || (col?.type === 'number' || col?.type === 'currency' || isFormula ? 'right' : 'left');
+        const align = col?.alignment || (col?.type === 'number' || col?.type === 'currency' || isFormula ? 'right' : 'left');
         if (align === 'right') classes.push('text-right');
         else if (align === 'center') classes.push('text-center');
         else classes.push('text-left');
@@ -2006,46 +2095,46 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                     }
                     break;
                 case 'toggle_bold':
-                    if (row && colId) {
-                        const cell = row.cells?.find(c => c.columnId === colId);
-                        await updateCellStyle(row.id, colId, { isBold: !cell?.isBold });
+                    if (colId) {
+                        const col = columns.find(c => c.id === colId);
+                        await updateColumnStyle(colId, { isBold: !col?.isBold });
                     }
                     break;
                 case 'toggle_italic':
-                    if (row && colId) {
-                        const cell = row.cells?.find(c => c.columnId === colId);
-                        await updateCellStyle(row.id, colId, { isItalic: !cell?.isItalic });
+                    if (colId) {
+                        const col = columns.find(c => c.id === colId);
+                        await updateColumnStyle(colId, { isItalic: !col?.isItalic });
                     }
                     break;
                 case 'toggle_underline':
-                    if (row && colId) {
-                        const cell = row.cells?.find(c => c.columnId === colId);
-                        await updateCellStyle(row.id, colId, { isUnderline: !cell?.isUnderline });
+                    if (colId) {
+                        const col = columns.find(c => c.id === colId);
+                        await updateColumnStyle(colId, { isUnderline: !col?.isUnderline });
                     }
                     break;
                 case 'toggle_strikethrough':
-                    if (row && colId) {
-                        const cell = row.cells?.find(c => c.columnId === colId);
-                        await updateCellStyle(row.id, colId, { isStrikethrough: !cell?.isStrikethrough });
+                    if (colId) {
+                        const col = columns.find(c => c.id === colId);
+                        await updateColumnStyle(colId, { isStrikethrough: !col?.isStrikethrough });
                     }
                     break;
                 case 'font_sans':
-                    if (row && colId) await updateCellStyle(row.id, colId, { fontFamily: 'sans' });
+                    if (colId) await updateColumnStyle(colId, { fontFamily: 'sans' });
                     break;
                 case 'font_serif':
-                    if (row && colId) await updateCellStyle(row.id, colId, { fontFamily: 'serif' });
+                    if (colId) await updateColumnStyle(colId, { fontFamily: 'serif' });
                     break;
                 case 'font_mono':
-                    if (row && colId) await updateCellStyle(row.id, colId, { fontFamily: 'mono' });
+                    if (colId) await updateColumnStyle(colId, { fontFamily: 'mono' });
                     break;
                 case 'align_left':
-                    if (row && colId) await updateCellStyle(row.id, colId, { alignment: 'left' });
+                    if (colId) await updateColumnStyle(colId, { alignment: 'left' });
                     break;
                 case 'align_center':
-                    if (row && colId) await updateCellStyle(row.id, colId, { alignment: 'center' });
+                    if (colId) await updateColumnStyle(colId, { alignment: 'center' });
                     break;
                 case 'align_right':
-                    if (row && colId) await updateCellStyle(row.id, colId, { alignment: 'right' });
+                    if (colId) await updateColumnStyle(colId, { alignment: 'right' });
                     break;
                 case 'copy':
                     if (row && colId) {
@@ -3353,7 +3442,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                     <thead>
                         <tr className="bg-white sticky top-0 z-20 shadow-[0_2px_0_#000000]">
                             <th className="w-12 min-w-12 border-b-2 border-r-2 border-black text-center py-2 text-gray-700 font-bold sticky left-0 bg-white z-30"></th>
-                            {columns.map((col, colIdx) => {
+                            {displayColumns.map((col, colIdx) => {
                                 const style = getColumnStyle(colIdx, col.id);
                                 return (
                                 <th
@@ -3408,7 +3497,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                 <th className="w-12 min-w-12 border-b border-r-2 border-black bg-blue-50/50 sticky left-0 z-30 text-center">
                                     <FiFilter className="w-3 h-3 text-blue-400 mx-auto" />
                                 </th>
-                                {columns.map(col => (
+                                {displayColumns.map(col => (
                                     <th key={`filter-${col.id}`} className="border-b border-r border-black p-1 bg-blue-50/50" style={{ width: col.width || 220, minWidth: col.width || 220 }}>
                                         {col.id in columnFilters ? (
                                             <div className="flex items-center gap-1">
@@ -3437,7 +3526,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                     <tbody>
                         {isLoading ? (
                             <tr>
-                                <td colSpan={columns.length + 2} className="text-center py-20 text-gray-500">
+                                <td colSpan={displayColumns.length + 2} className="text-center py-20 text-gray-500">
                                     <div className="flex justify-center items-center h-full">
                                         <svg className="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -3460,7 +3549,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                         >
                                             <span className="cursor-pointer">{index + 1}</span>
                                          </td>
-                                        {columns.map((col, colIdx) => {
+                                        {displayColumns.map((col, colIdx) => {
                                             const cell = row.cells?.find(c => c.columnId === col.id);
                                             const isFormula = col.type === 'formula';
                                             const val = isFormula
@@ -3538,7 +3627,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                                     style={{
                                                         width: col.width || 220,
                                                         minWidth: col.width || 220,
-                                                        backgroundColor: cell?.bgColor || row.rowColor || col.bgColor || style.cellBg
+                                                        backgroundColor: col.bgColor || style.cellBg
                                                     }}
                                                     onContextMenu={(e) => handleCellContextMenu(e, index, col.id)}
                                                 >
@@ -3976,7 +4065,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                     <FiPlus className="w-4 h-4 text-white" />
                                 </div>
                             </td>
-                            {columns.map((col, colIdx) => {
+                            {displayColumns.map((col, colIdx) => {
                                 const style = getColumnStyle(colIdx, col.id);
                                 const mode = columnCalcMode[col.id];
                                 const calcValue = mode ? getColumnCalcValue(col.id, mode) : null;
@@ -4136,16 +4225,13 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                     <div className="my-1 border-t border-gray-100"></div>
 
                     <div className="px-4 py-1.5">
-                        <span className="text-xs font-semibold text-gray-500 mb-2 block">Cell Color</span>
+                        <span className="text-xs font-semibold text-gray-500 mb-2 block">Column Color</span>
                         <div className="flex flex-wrap gap-1.5">
                             {COLOR_PALETTE.map((color) => (
                                 <button
                                     key={color.name}
                                     onClick={() => {
-                                        const rowId = filteredRows[activeCellMenu.rowIndex]?.id;
-                                        if (rowId) {
-                                            updateCellStyle(rowId, activeCellMenu.colId, { bgColor: color.value });
-                                        }
+                                        updateColumnStyle(activeCellMenu.colId, { bgColor: color.value });
                                         setActiveCellMenu(null);
                                     }}
                                     className="w-5 h-5 rounded hover:scale-110 transition-transform border border-gray-200"
@@ -4159,24 +4245,24 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                     </div>
 
                     {(() => {
-                        const targetCell = filteredRows[activeCellMenu.rowIndex]?.cells?.find(c => c.columnId === activeCellMenu.colId);
-                        const isUnderline = targetCell?.isUnderline || false;
-                        const isStrikethrough = targetCell?.isStrikethrough || false;
-                        const alignment = targetCell?.alignment || null;
-                        const fontFamily = targetCell?.fontFamily || 'sans';
+                        const targetCol = columns.find(c => c.id === activeCellMenu.colId);
+                        const isUnderline = targetCol?.isUnderline || false;
+                        const isStrikethrough = targetCol?.isStrikethrough || false;
+                        const alignment = targetCol?.alignment || null;
+                        const fontFamily = targetCol?.fontFamily || 'sans';
                         return (
                             <>
                                 <div className="px-4 py-1 flex flex-wrap gap-1 border-t border-gray-100 pt-2.5">
                                     <button
                                         onClick={() => handleCellAction('toggle_bold', activeCellMenu.rowIndex, activeCellMenu.colId)}
-                                        className={`p-1.5 rounded hover:bg-gray-100 border ${targetCell?.isBold ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border ${targetCol?.isBold ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
                                         title="Bold"
                                     >
                                         <FiBold className="w-3.5 h-3.5" />
                                     </button>
                                     <button
                                         onClick={() => handleCellAction('toggle_italic', activeCellMenu.rowIndex, activeCellMenu.colId)}
-                                        className={`p-1.5 rounded hover:bg-gray-100 border ${targetCell?.isItalic ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
+                                        className={`p-1.5 rounded hover:bg-gray-100 border ${targetCol?.isItalic ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
                                         title="Italic"
                                     >
                                         <FiItalic className="w-3.5 h-3.5" />
@@ -4285,131 +4371,6 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                         <FiCopy className="w-4 h-4 text-indigo-500" /> Duplicate Row
                     </button>
                     <div className="my-1 border-t border-gray-100"></div>
-
-                    <div className="px-4 py-1.5">
-                        <span className="text-xs font-semibold text-gray-500 mb-2 block">Row Color</span>
-                        <div className="flex flex-wrap gap-1.5">
-                            {COLOR_PALETTE.map((color) => (
-                                <button
-                                    key={color.name}
-                                    onClick={() => {
-                                        const rowId = filteredRows[activeRowMenu.rowIndex]?.id;
-                                        if (rowId) {
-                                            updateRowStyle(rowId, { rowColor: color.value });
-                                        }
-                                        setActiveRowMenu(null);
-                                    }}
-                                    className="w-5 h-5 rounded hover:scale-110 transition-transform border border-gray-200"
-                                    style={{ backgroundColor: color.value || '#fff' }}
-                                    title={color.name}
-                                >
-                                    {!color.value && <FiX className="w-3 h-3 text-gray-400 mx-auto" />}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {(() => {
-                        const targetRow = filteredRows[activeRowMenu.rowIndex];
-                        if (!targetRow) return null;
-                        const isUnderline = targetRow.isUnderline || false;
-                        const isStrikethrough = targetRow.isStrikethrough || false;
-                        const alignment = targetRow.alignment || '';
-                        const fontFamily = targetRow.fontFamily || 'sans';
-                        return (
-                            <>
-                                <div className="px-4 py-1.5 flex flex-wrap gap-1">
-                                    <button
-                                        onClick={() => {
-                                            updateRowStyle(targetRow.id, { isBold: !targetRow.isBold });
-                                            setActiveRowMenu(null);
-                                        }}
-                                        className={`p-1.5 rounded hover:bg-gray-100 border ${targetRow.isBold ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
-                                        title="Bold Row"
-                                    >
-                                        <FiBold className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            updateRowStyle(targetRow.id, { isItalic: !targetRow.isItalic });
-                                            setActiveRowMenu(null);
-                                        }}
-                                        className={`p-1.5 rounded hover:bg-gray-100 border ${targetRow.isItalic ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
-                                        title="Italic Row"
-                                    >
-                                        <FiItalic className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            updateRowStyle(targetRow.id, { isUnderline: !isUnderline });
-                                            setActiveRowMenu(null);
-                                        }}
-                                        className={`p-1.5 rounded hover:bg-gray-100 border ${isUnderline ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
-                                        title="Underline Row"
-                                    >
-                                        <FiUnderline className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            updateRowStyle(targetRow.id, { isStrikethrough: !isStrikethrough });
-                                            setActiveRowMenu(null);
-                                        }}
-                                        className={`p-1.5 rounded hover:bg-gray-100 border ${isStrikethrough ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
-                                        title="Strikethrough Row"
-                                    >
-                                        <BiStrikethrough className="w-3.5 h-3.5" />
-                                    </button>
-                                </div>
-                                <div className="px-4 py-1 flex gap-1">
-                                    <button
-                                        onClick={() => {
-                                            updateRowStyle(targetRow.id, { alignment: 'left' });
-                                            setActiveRowMenu(null);
-                                        }}
-                                        className={`p-1.5 rounded hover:bg-gray-100 border ${alignment === 'left' ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
-                                        title="Align Left Row"
-                                    >
-                                        <FiAlignLeft className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            updateRowStyle(targetRow.id, { alignment: 'center' });
-                                            setActiveRowMenu(null);
-                                        }}
-                                        className={`p-1.5 rounded hover:bg-gray-100 border ${alignment === 'center' ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
-                                        title="Align Center Row"
-                                    >
-                                        <FiAlignCenter className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            updateRowStyle(targetRow.id, { alignment: 'right' });
-                                            setActiveRowMenu(null);
-                                        }}
-                                        className={`p-1.5 rounded hover:bg-gray-100 border ${alignment === 'right' ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-200 text-gray-600'}`}
-                                        title="Align Right Row"
-                                    >
-                                        <FiAlignRight className="w-3.5 h-3.5" />
-                                    </button>
-                                </div>
-                                <div className="px-4 py-1.5">
-                                    <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">Font Family</span>
-                                    <select
-                                        value={fontFamily}
-                                        onChange={(e) => {
-                                            updateRowStyle(targetRow.id, { fontFamily: e.target.value });
-                                            setActiveRowMenu(null);
-                                        }}
-                                        className="w-full text-xs bg-gray-50 border border-gray-200 rounded p-1 outline-none text-gray-700"
-                                    >
-                                        <option value="sans">Sans-Serif</option>
-                                        <option value="serif">Serif</option>
-                                        <option value="mono">Monospace</option>
-                                    </select>
-                                </div>
-                            </>
-                        );
-                    })()}
 
                     {sheetData?.userPermission === 'admin' && (
                         <>

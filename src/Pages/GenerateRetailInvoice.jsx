@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { FiMenu, FiArrowLeft, FiPlus, FiTrash2, FiPrinter, FiCheckCircle, FiSearch, FiX, FiChevronDown, FiChevronUp, FiEdit, FiLoader } from 'react-icons/fi';
+import { FiMenu, FiArrowLeft, FiPlus, FiMinus, FiTrash2, FiPrinter, FiCheckCircle, FiSearch, FiX, FiChevronDown, FiChevronUp, FiEdit, FiLoader } from 'react-icons/fi';
 import Swal from 'sweetalert2';
 import AddRetailPartyModal from '../Components/AddRetailPartyModal';
 import SelectMedicineModal from '../Components/SelectMedicineModal';
 import PharmaInvoiceModal from '../Components/PharmaInvoiceModal';
-import { invPartiesApi, invInvoicesApi } from '../api/inventoryApiClient';
+import { invPartiesApi, invInvoicesApi, invSheetsApi } from '../api/inventoryApiClient';
+import { parseGstPercent, inclusiveGstAmount, loadProductGstMap } from '../utils/gst';
 
 export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) {
     const [parties, setParties] = useState([]);
@@ -29,7 +30,6 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
     const [combinedUpiAmount, setCombinedUpiAmount] = useState('');
     const [combinedCashAmount, setCombinedCashAmount] = useState('');
     const [partialAmount, setPartialAmount] = useState('');
-    const [gstRate, setGstRate] = useState(5);
     const [showSuggestions, setShowSuggestions] = useState(false);
 
     // Additional Charges state
@@ -84,11 +84,6 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                             try { return JSON.parse(inv.additionalCharges); } catch { return null; }
                         })();
                         if (parsedCharges && Array.isArray(parsedCharges) && parsedCharges.length > 0) setAdditionalCharges(parsedCharges);
-                        // Restore gstRate from saved tax/subtotal ratio
-                        if (inv.taxAmount && inv.itemSubtotal && parseFloat(inv.itemSubtotal) > 0) {
-                            const derivedRate = Math.round((parseFloat(inv.taxAmount) / parseFloat(inv.itemSubtotal)) * 100);
-                            if (derivedRate > 0) setGstRate(derivedRate);
-                        }
                         if (inv.roundOffAmount !== undefined && inv.roundOffAmount !== null) {
                             const ro = parseFloat(inv.roundOffAmount) || 0;
                             if (ro < 0) {
@@ -108,6 +103,8 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                                 qty: parseFloat(item.qty || 0),
                                 price: parseFloat(item.price || 0),
                                 mrp: parseFloat(item.mrp || 0),
+                                gstPercent: parseGstPercent(item.gstPercent ?? item.gst),
+                                disPercent: parseFloat(item.disPercent || item.discount || 0),
                                 invCcRowId: item.invCcRowId || null
                             })));
                         }
@@ -123,6 +120,31 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
             localStorage.removeItem('edit_invoice_id');
         };
     }, []);
+
+    useEffect(() => {
+        const needsGst = items.some(i => i.description && !parseGstPercent(i.gstPercent));
+        if (!needsGst) return;
+        Promise.all([invSheetsApi.listAllBatches(), loadProductGstMap(invSheetsApi)]).then(([res, gstByName]) => {
+            const batches = res.data.data || [];
+            setItems(prev => {
+                let changed = false;
+                const next = prev.map(item => {
+                    if (parseGstPercent(item.gstPercent) > 0) return item;
+                    const match = batches.find(b =>
+                        b.ccRowId === item.invCcRowId
+                        || (b.name?.trim() === item.description?.trim() && String(b.batch || '').trim() === String(item.batch || '').trim())
+                    );
+                    const gstPercent = parseGstPercent(match?.gstPercent ?? match?.gst)
+                        || gstByName[String(item.description || '').trim().toLowerCase()]
+                        || 0;
+                    if (!gstPercent) return item;
+                    changed = true;
+                    return { ...item, gstPercent };
+                });
+                return changed ? next : prev;
+            });
+        }).catch(() => {});
+    }, [items]);
 
     // Filter parties based on search input
     const filteredParties = parties.filter(party => 
@@ -161,17 +183,20 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
     };
 
     const handleMedicineSelect = (medicine) => {
+        const gstPercent = parseGstPercent(medicine.gstPercent ?? medicine.gst);
         const existingItemIndex = items.findIndex(i => i.description === medicine.name && i.batch === medicine.batch);
         if (existingItemIndex > -1) {
             setItems(items.map((item, idx) => 
-                idx === existingItemIndex ? { ...item, qty: item.qty + 1 } : item
+                idx === existingItemIndex
+                    ? { ...item, qty: Number(item.qty || 0) + 1, gstPercent: parseGstPercent(item.gstPercent) || gstPercent }
+                    : item
             ));
         } else {
             if (items.length === 1 && items[0].description.trim() === '' && items[0].price === 0) {
-                setItems([{ id: items[0].id, description: medicine.name, batch: medicine.batch, expiry: medicine.expiry || '08/28', qty: 1, price: medicine.price, mrp: medicine.mrp || 0, disPercent: medicine.discount || 0, invCcRowId: medicine.ccRowId }]);
+                setItems([{ id: items[0].id, description: medicine.name, batch: medicine.batch, expiry: medicine.expiry || '08/28', qty: 1, price: medicine.price, mrp: medicine.mrp || 0, gstPercent, disPercent: medicine.discount || 0, invCcRowId: medicine.ccRowId }]);
             } else {
                 const newId = items.length > 0 ? Math.max(...items.map(i => i.id)) + 1 : 1;
-                setItems([...items, { id: newId, description: medicine.name, batch: medicine.batch, expiry: medicine.expiry || '08/28', qty: 1, price: medicine.price, mrp: medicine.mrp || 0, disPercent: medicine.discount || 0, invCcRowId: medicine.ccRowId }]);
+                setItems([...items, { id: newId, description: medicine.name, batch: medicine.batch, expiry: medicine.expiry || '08/28', qty: 1, price: medicine.price, mrp: medicine.mrp || 0, gstPercent, disPercent: medicine.discount || 0, invCcRowId: medicine.ccRowId }]);
             }
         }
     };
@@ -191,8 +216,9 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
     };
 
     const itemSubtotal = items.reduce((acc, item) => acc + (item.qty * item.price), 0);
-    const taxAmount = itemSubtotal * (gstRate / 100);
+    const taxAmount = items.reduce((acc, item) => acc + inclusiveGstAmount(item.qty * item.price, parseGstPercent(item.gstPercent)), 0);
     const taxableSubtotal = Math.max(0, itemSubtotal - taxAmount);
+    const gstRate = parseGstPercent(items.find(i => i.description && parseGstPercent(i.gstPercent) > 0)?.gstPercent);
     // Additional Charges (GST INCLUDED in amount)
     const totalAdditionalCharges = additionalCharges.reduce((acc, chg) => acc + (Number(chg.amount) || 0), 0);
     const totalAdditionalChargesTax = additionalCharges.reduce((acc, chg) => {
@@ -571,9 +597,11 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                                     <tr className="bg-gray-50 border-b border-gray-200 text-xs uppercase tracking-wider text-gray-500 font-semibold">
                                         <th className="px-6 py-3 w-12">#</th>
                                         <th className="px-6 py-3">Item Description</th>
-                                        <th className="px-6 py-3 w-32">Batch No.</th>
-                                        <th className="px-6 py-3 w-28">Exp. Date</th>
-                                        <th className="px-6 py-3 w-24">No</th>
+                                        <th className="px-4 py-3 w-32">Batch No.</th>
+                                        <th className="px-4 py-3 w-36">Exp. Date</th>
+                                        <th className="px-3 py-3 w-32 text-center">No</th>
+                                        <th className="px-3 py-3 w-20 text-center">GST %</th>
+                                        <th className="px-3 py-3 w-28 text-red-600">GST (₹)</th>
                                         <th className="px-6 py-3 w-36">Unit Price (₹)</th>
                                         <th className="px-6 py-3 w-36 text-right">Total (₹)</th>
                                         <th className="px-6 py-3 w-16 text-center">Action</th>
@@ -582,7 +610,7 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                                 <tbody className="divide-y divide-gray-200 text-sm">
                                     {items.length === 0 ? (
                                         <tr>
-                                            <td colSpan="8" className="px-6 py-8 text-center text-gray-400">
+                                            <td colSpan="10" className="px-6 py-8 text-center text-gray-400">
                                                 No items added yet.{' '}
                                                 <button
                                                     type="button"
@@ -620,24 +648,48 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                                                         {item.batch && <option value={`${item.batch}-B3`}>{item.batch}-B3</option>}
                                                     </select>
                                                 </td>
-                                                <td className="px-6 py-3">
+                                                <td className="px-4 py-3">
                                                     <input
                                                         type="text"
                                                         placeholder="MM/YY"
                                                         value={item.expiry || ''}
                                                         onChange={(e) => handleItemChange(item.id, 'expiry', e.target.value)}
-                                                        className="w-full px-2 py-1.5 bg-white border border-gray-300 text-gray-700 font-mono text-xs rounded focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                        className="w-full min-w-[6.5rem] px-2 py-1.5 bg-white border border-gray-300 text-gray-800 font-mono text-xs rounded focus:ring-2 focus:ring-indigo-500 outline-none"
                                                     />
                                                 </td>
-                                                <td className="px-6 py-3">
-                                                    <input
-                                                        type="number"
-                                                        required
-                                                        min="1"
-                                                        value={item.qty}
-                                                        onChange={(e) => handleItemChange(item.id, 'qty', e.target.value)}
-                                                        className="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                                                    />
+                                                <td className="px-3 py-3 text-center">
+                                                    <div className="inline-flex items-center border border-gray-300 rounded-md overflow-hidden bg-white">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleItemChange(item.id, 'qty', Math.max(1, (Number(item.qty) || 1) - 1))}
+                                                            className="px-1.5 py-1.5 text-gray-500 hover:bg-gray-100 hover:text-indigo-600 transition-colors"
+                                                            title="Decrease qty"
+                                                        >
+                                                            <FiMinus size={14} />
+                                                        </button>
+                                                        <input
+                                                            type="number"
+                                                            required
+                                                            min="1"
+                                                            value={item.qty ?? ''}
+                                                            onChange={(e) => handleItemChange(item.id, 'qty', e.target.value)}
+                                                            className="w-10 px-0.5 py-1.5 border-0 border-x border-gray-200 text-sm text-center text-gray-900 font-semibold tabular-nums focus:ring-0 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleItemChange(item.id, 'qty', (Number(item.qty) || 0) + 1)}
+                                                            className="px-1.5 py-1.5 text-gray-500 hover:bg-gray-100 hover:text-indigo-600 transition-colors"
+                                                            title="Increase qty"
+                                                        >
+                                                            <FiPlus size={14} />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                                <td className="px-3 py-3 text-center text-gray-900 font-semibold">
+                                                    {parseGstPercent(item.gstPercent) > 0 ? `${parseGstPercent(item.gstPercent)}%` : '—'}
+                                                </td>
+                                                <td className="px-3 py-3 text-red-600 font-semibold">
+                                                    ₹{inclusiveGstAmount(item.qty * item.price, parseGstPercent(item.gstPercent)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                 </td>
                                                 <td className="px-6 py-3 font-medium text-gray-700">
                                                     ₹{item.price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -884,29 +936,19 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                                 </div>
                             )}
 
-                            {/* Item Subtotal & Deducted GST Summary */}
+                            {/* Item Subtotal & per-product GST Summary */}
                             <div className="space-y-2 pt-2 border-t border-gray-100 text-xs sm:text-sm">
                                 <div className="flex justify-between text-gray-600">
                                     <span>Item Subtotal</span>
                                     <span className="font-semibold text-gray-900">₹{itemSubtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                 </div>
-                                <div className="flex justify-between items-center text-gray-600">
-                                    <div className="flex items-center gap-2">
-                                        <span>Deducted GST:</span>
-                                        <select
-                                            value={gstRate}
-                                            onChange={(e) => setGstRate(Number(e.target.value))}
-                                            className="text-xs bg-gray-50 border border-gray-300 rounded px-2 py-0.5 font-medium text-gray-700 focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer"
-                                        >
-                                            <option value={5}>5%</option>
-                                            <option value={18}>18%</option>
-                                        </select>
-                                    </div>
-                                    <span className="font-semibold text-red-600">- ₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                <div className="flex justify-between items-center text-red-600">
+                                    <span>Total GST (included)</span>
+                                    <span className="font-semibold">₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                 </div>
-                                {gstRate > 0 && (
+                                {taxAmount > 0 && (
                                     <div className="flex justify-between text-gray-600 pt-1 border-t border-dashed border-gray-200">
-                                        <span>Net Taxable Subtotal</span>
+                                        <span>Taxable value</span>
                                         <span className="font-semibold text-indigo-700">₹{taxableSubtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                     </div>
                                 )}
