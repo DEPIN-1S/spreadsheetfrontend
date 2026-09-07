@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FiX, FiSearch, FiPlus, FiCheck, FiPackage } from 'react-icons/fi';
 import { invSheetsApi } from '../api/inventoryApiClient';
 import { parseGstPercent, loadProductGstMap } from '../utils/gst';
+import { hasSellableStock, parseStockQty } from '../utils/stock';
 
 export default function SelectMedicineModal({ isOpen, onClose, onSelect, existingItemNames = [], inventoryType = 'wholesale' }) {
     const [searchQuery, setSearchQuery] = useState('');
@@ -34,7 +35,7 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                 category: item.category,
                 batch: item.batch,
                 expiry: item.expiry,
-                stock: item.stock,
+                stock: parseStockQty(item.stock),
                 rackNo: item.rackNo || '',
                 // Pick retailPrice or wholesalePrice depending on type
                 price: inventoryType === 'retail' ? item.retailPrice : item.wholesalePrice,
@@ -100,6 +101,9 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
 
         // Exclude expired batches
         if (isExpiredBatch(med.expiry)) return false;
+
+        // Exclude batches with no remaining quantity
+        if (!hasSellableStock(med.stock)) return false;
 
         const nameVal = med.name || '';
         const batchVal = med.batch || '';
@@ -211,8 +215,10 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                                     sortedMedicines.map(med => {
                                         const isAlreadyAdded = existingItemNames.includes(med.name);
                                         const noPrice = !med.price || med.price === 0;
+                                        const outOfStock = !hasSellableStock(med.stock);
+                                        const addDisabled = noPrice || outOfStock;
                                         return (
-                                            <tr key={med.id} className={`transition-colors ${noPrice ? 'opacity-60 bg-gray-50/50 hover:bg-gray-100/50' : 'hover:bg-indigo-50/30'}`}>
+                                            <tr key={med.id} className={`transition-colors ${addDisabled ? 'opacity-60 bg-gray-50/50 hover:bg-gray-100/50' : 'hover:bg-indigo-50/30'}`}>
                                                 <td className="px-4 py-3 font-medium text-gray-900">{med.name}</td>
                                                 <td className="px-4 py-3">
                                                     <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
@@ -253,7 +259,7 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                                                         return med.expiry;
                                                     })()}
                                                 </td>
-                                                <td className="px-4 py-3 text-right font-medium text-emerald-600">
+                                                <td className={`px-4 py-3 text-right font-medium ${outOfStock ? 'text-red-600' : 'text-emerald-600'}`}>
                                                     {med.stock} units
                                                 </td>
                                                 <td className="px-4 py-3 text-right font-bold text-gray-900">
@@ -265,7 +271,9 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                                                 <td className="px-4 py-3 text-center">
                                                     <button
                                                         type="button"
+                                                        disabled={addDisabled}
                                                         onClick={() => {
+                                                            if (addDisabled) return;
                                                             onSelect({
                                                                 ...med,
                                                                 gstPercent: parseGstPercent(med.gstPercent ?? med.gst)
@@ -273,7 +281,9 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                                                             onClose();
                                                         }}
                                                         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                                                            isAlreadyAdded
+                                                            addDisabled
+                                                                ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                                                                : isAlreadyAdded
                                                                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
                                                                 : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
                                                         }`}
@@ -298,7 +308,9 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
                                 {!isLoading && sortedMedicines.length === 0 && (
                                     <tr>
                                         <td colSpan="8" className="px-6 py-8 text-center text-gray-500">
-                                            No medicines found matching "{searchQuery}".
+                                            {searchQuery
+                                                ? `No medicines with available stock matching "${searchQuery}".`
+                                                : 'No medicines with available stock.'}
                                         </td>
                                     </tr>
                                 )}

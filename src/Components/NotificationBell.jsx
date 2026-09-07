@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { FiBell, FiCheck, FiX, FiAlertTriangle, FiAlertCircle, FiDollarSign, FiClock, FiUser, FiPhone } from "react-icons/fi";
+import { FiBell, FiCheck, FiX, FiAlertTriangle, FiAlertCircle, FiDollarSign, FiClock, FiCalendar, FiPhone } from "react-icons/fi";
 import axios from "axios";
 
 // Using the common base url from apiClient
@@ -27,7 +27,7 @@ export default function NotificationBell({ isCollapsed }) {
             const listRes = await axios.get(`${BASE_URL}/inv/notifications?isRead=false`, getHeaders());
             const rawNotifs = listRes.data.data || [];
             
-            const stocks = rawNotifs.filter(n => n.type === 'out_of_stock' || n.type === 'low_stock');
+            const stocks = rawNotifs.filter(n => n.type === 'out_of_stock' || n.type === 'low_stock' || n.type === 'expiry_alert');
             const billings = rawNotifs.filter(n => n.type === 'pending_payment_alert');
             
             setStockNotifs(stocks);
@@ -82,6 +82,52 @@ export default function NotificationBell({ isCollapsed }) {
     };
 
     const currentNotifs = activeTab === "billing" ? billingNotifs : stockNotifs;
+
+    const parseDateValue = (value) => {
+        if (!value) return null;
+        const raw = String(value).trim();
+        if (!raw) return null;
+        let d = new Date(raw);
+        if (Number.isNaN(d.getTime()) && /^\d{4}-\d{2}$/.test(raw)) {
+            const [y, m] = raw.split('-').map(Number);
+            d = new Date(y, m - 1, 1);
+        }
+        if (Number.isNaN(d.getTime()) && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+            const [y, m, day] = raw.split('-').map(Number);
+            d = new Date(y, m - 1, day);
+        }
+        return Number.isNaN(d.getTime()) ? null : d;
+    };
+
+    const formatFullDateTime = (value) => {
+        const d = parseDateValue(value);
+        if (!d) return null;
+        const date = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        const time = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        return `${date}, ${time}`;
+    };
+
+    const formatFullDate = (value) => {
+        const d = parseDateValue(value);
+        if (!d) return null;
+        return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    };
+
+    const relativeDayLabel = (value) => {
+        const d = parseDateValue(value);
+        if (!d) return null;
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const startOfAlert = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        const dayDiff = Math.round((startOfAlert - startOfToday) / 86400000);
+        if (dayDiff === 0) return 'Today';
+        if (dayDiff === 1) return 'Tomorrow';
+        if (dayDiff === -1) return 'Yesterday';
+        if (dayDiff > 1) return `In ${dayDiff} days`;
+        return `${Math.abs(dayDiff)} days ago`;
+    };
+
+    const getAlertedAt = (notif) => notif.createdAt || notif.created_at || notif.updatedAt || notif.updated_at;
 
     return (
         <div className="relative" ref={dropdownRef}>
@@ -172,6 +218,10 @@ export default function NotificationBell({ isCollapsed }) {
                                                 }`}>
                                                     {notif.paymentStatus || 'Pending'}
                                                 </span>
+                                            ) : notif.type === "expiry_alert" ? (
+                                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 bg-orange-500/20 text-orange-300 border border-orange-500/30">
+                                                    {formatFullDate(notif.expiryDate) || 'Expiry'}
+                                                </span>
                                             ) : (
                                                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
                                                     notif.type === 'out_of_stock'
@@ -180,6 +230,38 @@ export default function NotificationBell({ isCollapsed }) {
                                                 }`}>
                                                     {notif.currentQty} Left
                                                 </span>
+                                            )}
+                                        </div>
+
+                                        <div className="flex flex-col gap-1 pt-1">
+                                            <div className="inline-flex items-center gap-1.5 w-fit max-w-full rounded-md bg-indigo-500/15 border border-indigo-400/30 px-2 py-0.5 text-[11px] text-indigo-200">
+                                                <FiClock size={12} className="text-indigo-300 shrink-0" />
+                                                <span className="font-semibold">Received</span>
+                                                <span className="font-mono text-white">
+                                                    {formatFullDateTime(getAlertedAt(notif)) || 'Date unavailable'}
+                                                </span>
+                                                {relativeDayLabel(getAlertedAt(notif)) && (
+                                                    <span className="text-indigo-300">({relativeDayLabel(getAlertedAt(notif))})</span>
+                                                )}
+                                            </div>
+                                            {notif.expiryDate && (
+                                                <div className="inline-flex items-center gap-1.5 w-fit rounded-md bg-orange-500/15 border border-orange-400/30 px-2 py-0.5 text-[11px] text-orange-200">
+                                                    <FiCalendar size={12} className="text-orange-300 shrink-0" />
+                                                    <span className="font-semibold">
+                                                        {parseDateValue(notif.expiryDate) && parseDateValue(notif.expiryDate) > new Date() ? 'Expires' : 'Expiry'}
+                                                    </span>
+                                                    <span className="font-mono text-white">{formatFullDate(notif.expiryDate)}</span>
+                                                    {relativeDayLabel(notif.expiryDate) && (
+                                                        <span className="text-orange-300">({relativeDayLabel(notif.expiryDate)})</span>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {notif.type === 'pending_payment_alert' && (notif.invoiceDate || notif.invoice_date) && (
+                                                <div className="inline-flex items-center gap-1.5 w-fit rounded-md bg-slate-500/15 border border-slate-400/30 px-2 py-0.5 text-[11px] text-slate-200">
+                                                    <FiCalendar size={12} className="text-slate-300 shrink-0" />
+                                                    <span className="font-semibold">Invoice</span>
+                                                    <span className="font-mono text-white">{formatFullDate(notif.invoiceDate || notif.invoice_date)}</span>
+                                                </div>
                                             )}
                                         </div>
 

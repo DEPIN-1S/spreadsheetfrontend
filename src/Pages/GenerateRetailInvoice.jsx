@@ -6,6 +6,7 @@ import SelectMedicineModal from '../Components/SelectMedicineModal';
 import PharmaInvoiceModal from '../Components/PharmaInvoiceModal';
 import { invPartiesApi, invInvoicesApi, invSheetsApi } from '../api/inventoryApiClient';
 import { parseGstPercent, inclusiveGstAmount, loadProductGstMap } from '../utils/gst';
+import { clampBillQty, hasSellableStock, parseStockQty } from '../utils/stock';
 
 export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) {
     const [parties, setParties] = useState([]);
@@ -183,20 +184,55 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
     };
 
     const handleMedicineSelect = (medicine) => {
+        const availableStock = parseStockQty(medicine.stock);
+        if (!hasSellableStock(availableStock)) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Out of Stock',
+                text: `${medicine.name} has 0 units and cannot be added to the bill.`,
+                confirmButtonColor: '#4F46E5',
+                customClass: { popup: 'rounded-2xl' }
+            });
+            return;
+        }
         const gstPercent = parseGstPercent(medicine.gstPercent ?? medicine.gst);
         const existingItemIndex = items.findIndex(i => i.description === medicine.name && i.batch === medicine.batch);
         if (existingItemIndex > -1) {
+            const existing = items[existingItemIndex];
+            const nextQty = Number(existing.qty || 0) + 1;
+            if (nextQty > availableStock) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Not enough stock',
+                    text: `Only ${availableStock} unit(s) available for ${medicine.name} (batch ${medicine.batch}).`,
+                    confirmButtonColor: '#4F46E5',
+                    customClass: { popup: 'rounded-2xl' }
+                });
+                return;
+            }
             setItems(items.map((item, idx) => 
                 idx === existingItemIndex
-                    ? { ...item, qty: Number(item.qty || 0) + 1, gstPercent: parseGstPercent(item.gstPercent) || gstPercent }
+                    ? { ...item, qty: nextQty, availableStock, gstPercent: parseGstPercent(item.gstPercent) || gstPercent }
                     : item
             ));
         } else {
+            const newItem = {
+                description: medicine.name,
+                batch: medicine.batch,
+                expiry: medicine.expiry || '08/28',
+                qty: 1,
+                price: medicine.price,
+                mrp: medicine.mrp || 0,
+                gstPercent,
+                disPercent: medicine.discount || 0,
+                invCcRowId: medicine.ccRowId,
+                availableStock
+            };
             if (items.length === 1 && items[0].description.trim() === '' && items[0].price === 0) {
-                setItems([{ id: items[0].id, description: medicine.name, batch: medicine.batch, expiry: medicine.expiry || '08/28', qty: 1, price: medicine.price, mrp: medicine.mrp || 0, gstPercent, disPercent: medicine.discount || 0, invCcRowId: medicine.ccRowId }]);
+                setItems([{ id: items[0].id, ...newItem }]);
             } else {
                 const newId = items.length > 0 ? Math.max(...items.map(i => i.id)) + 1 : 1;
-                setItems([...items, { id: newId, description: medicine.name, batch: medicine.batch, expiry: medicine.expiry || '08/28', qty: 1, price: medicine.price, mrp: medicine.mrp || 0, gstPercent, disPercent: medicine.discount || 0, invCcRowId: medicine.ccRowId }]);
+                setItems([...items, { id: newId, ...newItem }]);
             }
         }
     };
@@ -206,12 +242,27 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
     };
 
     const handleItemChange = (id, field, value) => {
-        setItems(items.map(item => {
-            if (item.id === id) {
-                const updatedVal = (field === 'description' || field === 'batch' || field === 'expiry') ? value : Number(value) || 0;
-                return { ...item, [field]: updatedVal };
+        if (field === 'qty') {
+            const current = items.find(item => item.id === id);
+            if (!current) return;
+            const requested = parseStockQty(value);
+            const nextQty = clampBillQty(requested, current.availableStock);
+            if (current.availableStock != null && requested > parseStockQty(current.availableStock)) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Not enough stock',
+                    text: `Only ${current.availableStock} unit(s) available for ${current.description} (batch ${current.batch}).`,
+                    confirmButtonColor: '#4F46E5',
+                    customClass: { popup: 'rounded-2xl' }
+                });
             }
-            return item;
+            setItems(items.map(item => item.id === id ? { ...item, qty: nextQty } : item));
+            return;
+        }
+        setItems(items.map(item => {
+            if (item.id !== id) return item;
+            const updatedVal = (field === 'description' || field === 'batch' || field === 'expiry') ? value : Number(value) || 0;
+            return { ...item, [field]: updatedVal };
         }));
     };
 
@@ -255,6 +306,34 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                 icon: 'warning',
                 title: 'Items Required',
                 text: 'Please add at least one item to the invoice.',
+                confirmButtonColor: '#4F46E5',
+                customClass: { popup: 'rounded-2xl' }
+            });
+            return;
+        }
+
+        const outOfStockItem = validItems.find(i => i.invCcRowId && (
+            (i.availableStock != null && parseStockQty(i.availableStock) <= 0)
+            || parseStockQty(i.qty) <= 0
+        ));
+        if (outOfStockItem) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Out of Stock',
+                text: `${outOfStockItem.description} has no available quantity and cannot be billed.`,
+                confirmButtonColor: '#4F46E5',
+                customClass: { popup: 'rounded-2xl' }
+            });
+            return;
+        }
+        const oversoldItem = validItems.find(i =>
+            i.availableStock != null && parseStockQty(i.qty) > parseStockQty(i.availableStock)
+        );
+        if (oversoldItem) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Not enough stock',
+                text: `Only ${oversoldItem.availableStock} unit(s) available for ${oversoldItem.description} (batch ${oversoldItem.batch}).`,
                 confirmButtonColor: '#4F46E5',
                 customClass: { popup: 'rounded-2xl' }
             });
@@ -671,15 +750,17 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                                                             type="number"
                                                             required
                                                             min="1"
+                                                            max={item.availableStock != null ? item.availableStock : undefined}
                                                             value={item.qty ?? ''}
                                                             onChange={(e) => handleItemChange(item.id, 'qty', e.target.value)}
                                                             className="w-10 px-0.5 py-1.5 border-0 border-x border-gray-200 text-sm text-center text-gray-900 font-semibold tabular-nums focus:ring-0 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                                         />
                                                         <button
                                                             type="button"
+                                                            disabled={item.availableStock != null && Number(item.qty) >= parseStockQty(item.availableStock)}
                                                             onClick={() => handleItemChange(item.id, 'qty', (Number(item.qty) || 0) + 1)}
-                                                            className="px-1.5 py-1.5 text-gray-500 hover:bg-gray-100 hover:text-indigo-600 transition-colors"
-                                                            title="Increase qty"
+                                                            className="px-1.5 py-1.5 text-gray-500 hover:bg-gray-100 hover:text-indigo-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                                            title={item.availableStock != null ? `Max ${item.availableStock} in stock` : 'Increase qty'}
                                                         >
                                                             <FiPlus size={14} />
                                                         </button>

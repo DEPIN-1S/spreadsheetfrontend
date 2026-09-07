@@ -17,6 +17,7 @@ import { invMastersApi, invSheetsApi } from "../api/inventoryApiClient";
 import inventoryApiClient from "../api/inventoryApiClient";
 import { getMediaUrl } from "../utils/media";
 import { formatCurrency, parseCurrencyInput, SUPPORTED_CURRENCIES, getCurrencySymbol } from "../utils/currencyUtils";
+import { batchStatusFromQty } from "../utils/stock";
 import ShareModal from "../Components/ShareModal";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -206,6 +207,39 @@ const parseRowStyles = (rawStyles) => {
         return {};
     }
 };
+
+function CcStatusBadge({ status }) {
+    const lower = String(status || '').toLowerCase();
+    if (lower === 'out of stock' || lower.includes('out') || lower.includes('empty')) {
+        return (
+            <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-red-100 text-red-700 border border-red-200 inline-flex items-center gap-1.5 shadow-xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
+                Out of Stock
+            </span>
+        );
+    }
+    if (lower === 'low stock' || lower.includes('low')) {
+        return (
+            <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-700 border border-amber-200 inline-flex items-center gap-1.5 shadow-xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                Low Stock
+            </span>
+        );
+    }
+    if (lower === 'stock available' || lower.includes('available') || lower.includes('in stock')) {
+        return (
+            <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1.5 shadow-xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                Stock Available
+            </span>
+        );
+    }
+    return (
+        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-gray-100 text-gray-700 border border-gray-200 inline-flex items-center gap-1.5">
+            {status || 'N/A'}
+        </span>
+    );
+}
 
 export default function InventoryDocumentEditor({ docName, parentSheetId, setActivePath, returnPath, isNested = false }) {
     // eslint-disable-next-line no-unused-vars
@@ -2315,13 +2349,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                 const qty = getVal('col-cc-quantity-stock');
                                 const notifiedStr = getValStr('col-cc-quantity-notified');
                                 const notifiedQty = notifiedStr === "" ? 0 : parseFloat(notifiedStr);
-                                let status = "Stock Available";
-                                if (qty <= 0) {
-                                    status = "Out of Stock";
-                                } else if (qty < notifiedQty) {
-                                    status = "Low Stock";
-                                }
-                                setVal('col-cc-status', status);
+                                setVal('col-cc-status', batchStatusFromQty(qty, notifiedQty));
                             }
                         }
 
@@ -3559,6 +3587,11 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                             const isFocused = focusedCell?.rowId === row.id && focusedCell?.colId === col.id;
                                             const isReadOnly = cell?.permission === 'view' || isFormula || (isNested && ['col-cc-retail-profit', 'col-cc-wholesale-profit', 'col-cc-status'].includes(col.id));
                                             let displayVal = val;
+                                            const liveQtyCell = isNested ? row.cells?.find(c => c.columnId === 'col-cc-quantity-stock') : null;
+                                            const liveNotifiedCell = isNested ? row.cells?.find(c => c.columnId === 'col-cc-quantity-notified') : null;
+                                            const ccStatusValue = isNested
+                                                ? batchStatusFromQty(liveQtyCell?.rawValue ?? liveQtyCell?.computedValue, liveNotifiedCell?.rawValue ?? liveNotifiedCell?.computedValue)
+                                                : displayVal;
                                             
                                             // Determine if formula should be formatted as currency
                                             let isCurrencyFormula = false;
@@ -3879,39 +3912,8 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                                          </div>
                                                      ) : (col.id === 'col-cc-status' || (isNested && col.name?.toLowerCase().includes('status'))) ? (
                                                          <div className="min-h-9 flex items-center px-3 w-full">
-                                                             {(() => {
-                                                                 const statusStr = String(displayVal || '').trim();
-                                                                 const lower = statusStr.toLowerCase();
-                                                                 if (lower === 'out of stock' || lower.includes('out') || lower.includes('empty')) {
-                                                                     return (
-                                                                         <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-red-100 text-red-700 border border-red-200 inline-flex items-center gap-1.5 shadow-xs">
-                                                                             <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
-                                                                             Out of Stock
-                                                                         </span>
-                                                                     );
-                                                                 } else if (lower === 'low stock' || lower.includes('low')) {
-                                                                     return (
-                                                                         <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-700 border border-amber-200 inline-flex items-center gap-1.5 shadow-xs">
-                                                                             <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                                                                             Low Stock
-                                                                         </span>
-                                                                     );
-                                                                 } else if (lower === 'stock available' || lower.includes('available') || lower.includes('in stock')) {
-                                                                     return (
-                                                                         <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1.5 shadow-xs">
-                                                                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                                                             Stock Available
-                                                                         </span>
-                                                                     );
-                                                                 } else {
-                                                                     return (
-                                                                         <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-gray-100 text-gray-700 border border-gray-200 inline-flex items-center gap-1.5">
-                                                                             {displayVal || 'N/A'}
-                                                                         </span>
-                                                                     );
-                                                                }
-                                                            })()}
-                                                        </div>
+                                                             <CcStatusBadge status={ccStatusValue} />
+                                                         </div>
                                                     ) : col.type === 'date' ? (
                                                         <div className="min-h-9 flex items-center w-full relative">
                                                             {((col.id === 'col-cc-expiry-date' || (isNested && col.name?.toLowerCase().includes('expiry'))) && !isFocused) ? (
