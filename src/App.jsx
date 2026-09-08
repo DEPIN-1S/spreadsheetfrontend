@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Sidebar from "./Components/Sidebar";
 import MyFiles from "./Pages/MyFiles";
 import SharedWithMe from "./Pages/SharedWithMe";
@@ -25,20 +25,45 @@ import { ClipboardProvider } from "./context/ClipboardContext";
 
 
 
+const NAV_STORAGE_KEY = "datsheets_nav";
+
+const readStoredNav = () => {
+    try {
+        return JSON.parse(sessionStorage.getItem(NAV_STORAGE_KEY) || "{}");
+    } catch {
+        return {};
+    }
+};
+
 function App() {
+    const storedNav = readStoredNav();
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
     const [activePath, setActivePath] = useState(() => {
-        // If user has a valid token, go to my-files; otherwise show login
-        return localStorage.getItem('accessToken') ? '/my-files' : '/login';
+        if (!localStorage.getItem("accessToken")) return "/login";
+        return storedNav.activePath || "/my-files";
     });
-    const [currentDocName, setCurrentDocName] = useState("");
-    const [returnPath, setReturnPath] = useState('/my-files');
-    const [myFilesCurrentFolderId, setMyFilesCurrentFolderId] = useState(null);
-    const [myFilesPath, setMyFilesPath] = useState([{ id: null, title: "My Files" }]);
+    const [currentDocName, setCurrentDocName] = useState(() => storedNav.currentDocName || "");
+    const [returnPath, setReturnPath] = useState(() => storedNav.returnPath || "/my-files");
+    const [myFilesCurrentFolderId, setMyFilesCurrentFolderId] = useState(storedNav.myFilesCurrentFolderId ?? null);
+    const [myFilesPath, setMyFilesPath] = useState(() => storedNav.myFilesPath || [{ id: null, title: "My Files" }]);
     // BUG #12: lift SharedWithMe folder state so it persists on tab switch
     const [sharedCurrentFolderId, setSharedCurrentFolderId] = useState(null);
     const [sharedPath, setSharedPath] = useState([{ id: null, title: "Shared with me" }]);
+
+    useEffect(() => {
+        if (activePath === "/login") {
+            sessionStorage.removeItem(NAV_STORAGE_KEY);
+            return;
+        }
+        sessionStorage.setItem(NAV_STORAGE_KEY, JSON.stringify({
+            activePath,
+            currentDocName,
+            returnPath,
+            myFilesCurrentFolderId,
+            myFilesPath
+        }));
+    }, [activePath, currentDocName, returnPath, myFilesCurrentFolderId, myFilesPath]);
 
     const toggleCollapse = () => setIsCollapsed((prev) => !prev);
 

@@ -39,6 +39,7 @@ const forceLogout = () => {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
+    sessionStorage.removeItem('datsheets_nav');
     if (window.location.pathname !== '/login') {
         window.location.href = '/login';
     }

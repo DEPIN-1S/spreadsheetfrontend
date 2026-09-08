@@ -12,6 +12,23 @@ const getBaseUrl = (urlStr) => {
 const SOCKET_URL = getBaseUrl(rawUrl);
 
 let socketInstance = null;
+let visibilityBound = false;
+
+const bindVisibilityReconnect = () => {
+  if (visibilityBound || typeof document === "undefined") return;
+  visibilityBound = true;
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible" || !socketInstance) return;
+    if (!socketInstance.connected) {
+      socketInstance.connect();
+    }
+  });
+  window.addEventListener("online", () => {
+    if (socketInstance && !socketInstance.connected) {
+      socketInstance.connect();
+    }
+  });
+};
 
 export const getSocket = (token) => {
   if (!socketInstance) {
@@ -24,18 +41,22 @@ export const getSocket = (token) => {
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
+      pingInterval: 25000,
+      pingTimeout: 60000,
+      rememberUpgrade: true
     });
 
     socketInstance.on("connect_error", (err) => {
       console.warn("Socket connection error:", err.message);
     });
+    bindVisibilityReconnect();
   } else if (token && socketInstance.auth.token !== token) {
-    // If token changed (e.g. user logged in as someone else), reconnect with new token
     socketInstance.auth.token = token;
     socketInstance.disconnect();
     socketInstance.connect();
   } else if (!socketInstance.connected) {
-    // Ensure it connects if it was disconnected
     socketInstance.connect();
   }
 

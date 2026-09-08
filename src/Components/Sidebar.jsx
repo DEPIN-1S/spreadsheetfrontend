@@ -69,6 +69,7 @@ export default function Sidebar({ isCollapsed, toggleCollapse, mobileOpen, setMo
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
         localStorage.removeItem('user');
+        sessionStorage.removeItem('datsheets_nav');
         setActivePath('/login');
         setShowLogoutPrompt(false);
     };
