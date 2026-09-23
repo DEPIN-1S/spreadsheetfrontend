@@ -1270,6 +1270,45 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         setCcTemplateColumns([{ name: '', type: 'text' }]);
     };
 
+    const toggleInvoiceGeneratorVisibility = async () => {
+        const newValue = !sheetData.visibleOnInvoiceGenerator;
+        
+        const result = await Swal.fire({
+            title: newValue ? 'Enable for Invoice Generator?' : 'Disable for Invoice Generator?',
+            text: newValue 
+                ? 'This document will be available as a database source in Invoice Templates.' 
+                : 'This document will be hidden from Invoice Templates.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#4f46e5',
+            cancelButtonColor: '#9ca3af',
+            confirmButtonText: 'Yes, proceed',
+            customClass: { popup: 'rounded-2xl' }
+        });
+
+        if (result.isConfirmed) {
+            try {
+                await apiClient.put(`/sheets/${docName}`, { visibleOnInvoiceGenerator: newValue });
+                setSheetData(prev => ({
+                    ...prev,
+                    visibleOnInvoiceGenerator: newValue
+                }));
+                Swal.fire({
+                    title: newValue ? 'Visible' : 'Hidden',
+                    text: newValue ? 'This document is now visible in the Invoice Generator.' : 'This document is now hidden from the Invoice Generator.',
+                    icon: 'success',
+                    timer: 2000,
+                    showConfirmButton: false,
+                    customClass: { popup: 'rounded-2xl' }
+                });
+            } catch (error) {
+                console.error("Failed to toggle visibility:", error);
+                const errorMsg = error.response?.data?.message || error.message || "Failed to update visibility setting.";
+                Swal.fire('Error', errorMsg, 'error');
+            }
+        }
+    };
+
     const performRenameSubSheet = async () => {
         if (!renamingSubSheetId || !renamingSubSheetName.trim()) return;
         try {
@@ -2267,6 +2306,18 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                 title="Download PDF"
                             >
                                 <FiDownload className="w-4 h-4 text-white" />
+                            </button>
+                        )}
+                        {(sheetData?.userPermission === 'admin' || sheetData?.userPermission === 'editor') && (
+                            <button
+                                onClick={toggleInvoiceGeneratorVisibility}
+                                className="flex items-center gap-2.5 px-3 sm:px-4 py-1.5 bg-white/10 hover:bg-white/20 rounded-full text-sm font-medium transition-colors text-white"
+                                title="Toggle visibility in Invoice Generator templates"
+                            >
+                                <span className="hidden sm:block">Inv. Gen.</span>
+                                <div className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${sheetData?.visibleOnInvoiceGenerator ? 'bg-indigo-500' : 'bg-gray-500'}`}>
+                                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${sheetData?.visibleOnInvoiceGenerator ? 'translate-x-[18px]' : 'translate-x-1'}`} />
+                                </div>
                             </button>
                         )}
                         {(sheetData?.userPermission === 'admin') && (

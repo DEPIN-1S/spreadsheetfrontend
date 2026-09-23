@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { FiX, FiPrinter, FiDownload, FiCheckCircle, FiSettings } from 'react-icons/fi';
 import { invInvoicesApi } from '../api/inventoryApiClient';
 import { parseGstPercent } from '../utils/gst';
+import rxLogo from '../assets/RX-pharma-logo.png';
 
 export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -105,6 +106,8 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
     const partyDl = (currentInv.party && currentInv.party.dlNo) || '';
     const partyGstin = (currentInv.party && currentInv.party.gstin) || (currentInv.party && currentInv.party.gstinNo) || '';
     const partyPan = (currentInv.party && currentInv.party.pan) || (currentInv.party && currentInv.party.panNo) || '';
+    const partyAge = currentInv.partyAge || (currentInv.party && currentInv.party.age) || '';
+    const partyAdditionalData = (currentInv.party && currentInv.party.additionalData) || [];
     const isWholesale = currentInv.type === 'Wholesale' || currentInv.type === 'wholesale';
     // Show shipping section only if it exists and differs from billing
     const showShipping = isWholesale && partyShippingAddress && partyShippingAddress !== partyBillingAddress;
@@ -230,7 +233,7 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                 {/* Modal Action Bar (Hidden in Print) */}
                 <div className="px-6 py-4 bg-gray-900 text-white flex items-center justify-between no-print border-b border-gray-800">
                     <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-0.5 bg-indigo-600 text-xs font-bold rounded uppercase tracking-wider">Tax Invoice</span>
+                        <span className="px-2.5 py-0.5 bg-indigo-600 text-xs font-bold rounded uppercase tracking-wider">Tax Invoice </span>
                         <h3 className="text-base font-semibold">Company Name Pharma Distribution Format</h3>
                         {loadingInvoice && <span className="text-xs text-indigo-300 animate-pulse ml-2">Loading details...</span>}
                     </div>
@@ -262,7 +265,7 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                             { key: 'batchNo', label: 'Batch No.' },
                                             { key: 'expDate', label: 'Exp. Date' },
                                             { key: 'sellingRate', label: 'Selling Rate' },
-                                            ...(invoice?.type !== 'Wholesale' ? [{ key: 'disc', label: 'Disc %' }] : []),
+                                            { key: 'disc', label: isWholesale ? 'Margin %' : 'Disc %' },
                                             { key: 'mrp', label: 'MRP' },
                                             { key: 'gst', label: 'GST %' },
                                             { key: 'total', label: 'Total' }
@@ -299,24 +302,44 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                         <div className="grid grid-cols-12 border-b-2 border-black">
                             
                             {/* Left Box: Seller */}
-                            <div className="col-span-5 border-r-2 border-black p-2.5 space-y-1">
-                                <div className="font-extrabold text-base uppercase tracking-tight text-black">COMPANY NAME</div>
-                                <div className="font-bold text-[10px] uppercase text-gray-800">(A UNIT OF EMMARLINK DISTRIBUTORS PVT.LTD.)</div>
-                                <div className="text-[11px] leading-tight text-gray-900 pt-0.5">
-                                    82/5201, KARTHIKA<br />
-                                    AMBUJAVILASAM ROAD, TRIVANDRUM - 695001
+                            <div className="col-span-5 border-r-2 border-black p-2.5 space-y-1.5">
+                                <div className="flex items-center gap-2">
+                                    <img src={rxLogo} alt="RX Pharma Logo" className="h-12 object-contain" />
+                                    {isWholesale && (
+                                        <span className="border border-black px-1.5 py-0.5 text-[15px] font-bold tracking-wide ">B 2 B</span>
+                                    )}
                                 </div>
-                                <div className="text-[11px] pt-1"><b>Mobile :</b> 04714066607 / 09,8139827221</div>
-                                <div className="text-[11px]"><b>FSSAI.No :</b> 11325001000553</div>
-                                <div className="text-[11px]"><b>GSTIN :</b> 32AAGCE9732J8ZA</div>
-                                <div className="text-[11px] leading-tight"><b>DL No. :</b> WLF20B2025KL001291, WLF21B2025KL001276</div>
-                                <div className="text-[11px]"><b>Mail id :</b> br_oxigen@yahoo.com</div>
+                                {isWholesale ? (
+                                    <>
+                                        <div className="text-[11px] leading-tight text-gray-900 pt-0.5">
+                                            SH1, Kilimanoor, Thiruvananthapuram, Kerala - 695601<br />
+                                            Landmark : Opposite Canara Bank
+                                        </div>
+                                        <div className="text-[11px] pt-1"><b>Ph No :</b> 8848804828</div>
+                                        <div className="text-[11px]"><b>Email ID :</b> rxpharma27@gmail.com</div>
+                                        <div className="text-[11px]"><b>GST No :</b> 32ACAFM5688A1ZH</div>
+                                        <div className="text-[11px] leading-tight pt-0.5">
+                                            <b>DL No [w] :</b> WLF20B2026KL001073 , WLF21B2026KL001054
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="text-[11px] leading-tight text-gray-900 pt-0.5">
+                                            SH1, Kilimanoor, Thiruvananthapuram, Kerala - 695601
+                                        </div>
+                                        <div className="text-[11px] pt-1"><b>Email ID :</b> rxpharma27@gmail.com</div>
+                                        <div className="text-[11px]"><b>GST No :</b> 32ACAFM5688A1ZH</div>
+                                        <div className="text-[11px] leading-tight pt-0.5">
+                                            <b>DL No [R] :</b> RLF20KL2026002461 , RLF21KL2026002472
+                                        </div>
+                                    </>
+                                )}
                             </div>
 
                             {/* Middle Box: Invoice Info */}
                             <div className="col-span-3 border-r-2 border-black p-2.5 flex flex-col justify-between">
                                 <div>
-                                    <div className="text-center font-black text-sm underline uppercase tracking-wide">TAX INVOICE</div>
+                                    <div className="text-center font-black text-sm underline uppercase tracking-wide">TAX INVOICE </div>
                                     <div className="space-y-1 text-[11px] mt-2">
                                         <div><b>Tax Inv. No. :</b> {invoiceNo}</div>
                                         <div><b>Inv. Date :</b> {formattedInvDate}</div>
@@ -324,7 +347,7 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                     </div>
                                 </div>
                                 <div className="mt-3">
-                                    <span className="bg-black text-white font-bold px-2.5 py-0.5 text-xs tracking-wider uppercase inline-block border border-black">
+                                    <span className="bg-white text-black font-bold px-2.5 py-0.5 text-xs tracking-wider uppercase inline-block border-2 border-black">
                                         {paymentMethod}
                                     </span>
                                 </div>
@@ -332,26 +355,70 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
 
                             {/* Right Box: Buyer / Customer */}
                             <div className="col-span-4 p-2.5 space-y-1 text-[11px] flex flex-col justify-between">
-                                <div>
-                                    <div className="font-extrabold text-xs uppercase leading-tight text-black">{partyName}</div>
-                                    {/* Billing Address */}
-                                    <div className="pt-0.5">
-                                        <span className="font-bold text-[10px] text-gray-600 uppercase tracking-wide">
-                                            {isWholesale ? 'Bill To: ' : ''}
-                                        </span>
-                                        <span className="leading-tight uppercase text-gray-800">{partyBillingAddress}</span>
+                                <div className="space-y-1.5">
+                                    <div className="font-extrabold text-xs uppercase leading-tight text-black">
+                                        {partyName}
                                     </div>
-                                    {/* Shipping Address — only shown for wholesale when different */}
-                                    {showShipping && (
-                                        <div className="pt-0.5 border-t border-dashed border-gray-300 mt-1">
-                                            <span className="font-bold text-[10px] text-gray-600 uppercase tracking-wide">Ship To: </span>
-                                            <span className="leading-tight uppercase text-gray-800">{partyShippingAddress}</span>
+                                    {partyContact && (
+                                        <div className="text-gray-800 leading-tight">
+                                            <b>Phone : </b>
+                                            <span>{partyContact}</span>
                                         </div>
                                     )}
-                                    <div className="pt-1"><b>Ph.:</b> {partyContact}</div>
-                                    <div><b>D.L.No.:</b> {partyDl}</div>
-                                    <div><b>GSTIN:</b> {partyGstin || 'N/A'}</div>
-                                    <div><b>PAN :</b> {partyPan || 'N/A'}</div>
+                                    {(partyAge || (currentInv.party && currentInv.party.gender)) && (
+                                        <div className="text-gray-800 leading-tight">
+                                            {partyAge && <span><b>Age : </b>{partyAge}</span>}
+                                            {partyAge && currentInv.party?.gender && <span> &nbsp;|&nbsp; </span>}
+                                            {currentInv.party?.gender && <span><b>Gender : </b>{currentInv.party.gender}</span>}
+                                        </div>
+                                    )}
+                                    
+                                    {/* Additional Data or Fallbacks */}
+                                    {(() => {
+                                        let pData = partyAdditionalData;
+                                        if (typeof pData === 'string') {
+                                            try { pData = JSON.parse(pData); } catch (e) { pData = []; }
+                                        }
+                                        if (Array.isArray(pData) && pData.length > 0) {
+                                            return pData.map((data, idx) => {
+                                                const isObj = typeof data === 'object' && data !== null;
+                                                const key = isObj ? data.key : (typeof data === 'string' && data.includes(':') ? data.split(':')[0].trim() : '');
+                                                const val = isObj ? data.value : (typeof data === 'string' && data.includes(':') ? data.split(':').slice(1).join(':').trim() : data);
+                                                if (!val && !key) return null;
+                                                const displayKey = key ? (key.trim().endsWith(':') ? key.trim().slice(0, -1).trim() : key.trim()) : '';
+                                                return (
+                                                    <div key={idx} className="text-gray-800 leading-tight">
+                                                        {displayKey ? <b>{displayKey} : </b> : null}
+                                                        <span>{val}</span>
+                                                    </div>
+                                                );
+                                            });
+                                        }
+                                        return (
+                                            <>
+                                                {/* Billing Address */}
+                                                {partyBillingAddress && (
+                                                    <div className="leading-tight uppercase text-gray-800">
+                                                        {partyBillingAddress}
+                                                    </div>
+                                                )}
+                                                {/* Shipping Address - only shown for wholesale when different */}
+                                                {showShipping && (
+                                                    <div className="pt-1 mt-1 border-t border-dashed border-gray-300 leading-tight uppercase text-gray-800">
+                                                        {partyShippingAddress}
+                                                    </div>
+                                                )}
+                                                {!isWholesale && partyAge && <div className="text-gray-800">{partyAge}</div>}
+                                                {isWholesale && (
+                                                    <>
+                                                        {partyDl && <div className="text-gray-800">{partyDl}</div>}
+                                                        {partyGstin && <div className="text-gray-800">{partyGstin}</div>}
+                                                    </>
+                                                )}
+                                                {partyPan && <div className="text-gray-800">{partyPan}</div>}
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             </div>
                         </div>
@@ -411,27 +478,12 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                             </table>
                         </div>
 
-                        {/* 3. Note Banner */}
-                        <div className="bg-gray-800 text-white font-bold text-[10px] px-2 py-1 uppercase tracking-tight border-b-2 border-black">
-                            NOTE:- NEW- LUPIN, ARISTO, J.B CHEMICALS, LIVIDUS, LIVINOR, P&G, H&H, SUN PHARMA, DR.REDDYS, USV, INTAS, ALKEM, FOURRTS INDIA
-                        </div>
 
                         {/* 4. Calculation Grid */}
                         <div className="grid grid-cols-12 border-b-2 border-black text-[11px]">
                             
-                            {/* Col 1: Prep & Route */}
-                            <div className="col-span-2 border-r-2 border-black p-1.5 space-y-0.5">
-                                <div><b>Prep By :</b> ABILASH</div>
-                                <div><b>No of Cs. :</b> 1</div>
-                                <div><b>Sort By :</b> NAME</div>
-                                <div><b>Checked By:</b> </div>
-                                <div><b>Route :</b> DIRECT</div>
-                                <div><b>Print Time:</b> {formattedPrintTime}</div>
-                                <div className="pt-1"><b>IRN No.</b></div>
-                            </div>
-
-                            {/* Col 2: Totals summary */}
-                            <div className="col-span-2 border-r-2 border-black p-1.5 space-y-0.5">
+                            {/* Col 1: Totals summary */}
+                            <div className="col-span-3 border-r-2 border-black p-1.5 space-y-0.5">
                                 <div><b>Total Items :</b> {items.length}</div>
                                 <div><b>Total No :</b> {totalQty}</div>
                                 <div><b>SchDiscGiven:</b> 0.00</div>
@@ -440,8 +492,8 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                 <div><b>Total GST :</b> {totalInvoiceGst.toFixed(2)}</div>
                             </div>
 
-                            {/* Col 3: GST Tax Breakdown Table */}
-                            <div className="col-span-5 border-r-2 border-black p-1 text-[10px]">
+                            {/* Col 2: GST Tax Breakdown Table */}
+                            <div className="col-span-6 border-r-2 border-black p-1 text-[10px]">
                                 <table className="w-full text-center border-collapse">
                                     <thead>
                                         <tr className="border-b border-gray-400 font-bold">
@@ -511,21 +563,15 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                         </div>
                                     )}
                                     <div className="flex justify-between font-sans"><span>GST Amt</span><span className="font-mono">{totalInvoiceGst.toFixed(2)}</span></div>
-                                    <div className="flex justify-between font-sans"><span>Cr No.</span><span>0.00</span></div>
-                                    <div className="flex justify-between font-sans"><span>Db No.</span><span>0.00</span></div>
-                                    <div className="flex justify-between font-sans"><span>TCS% 0.000</span><span>0.00</span></div>
                                     <div className="flex justify-between font-sans"><span>R.off</span><span>{safeNum(currentInv.roundOffAmount).toFixed(2)}</span></div>
                                 </div>
-                                <div className="bg-gray-900 text-white font-black text-sm px-2.5 py-1.5 flex justify-between items-center tracking-wide">
+                                <div className="bg-white text-black border-y-2 border-black font-black text-sm px-2.5 py-1.5 flex justify-between items-center tracking-wide">
                                     <span>Grand Total</span>
                                     <span className="font-mono">{grandTotal.toFixed(2)}</span>
                                 </div>
                                 <div className="p-1.5 text-[10px] space-y-0.5">
-                                    <div><b>Ewb No. :</b></div>
-                                    <div><b>Ewb DT. :</b></div>
-                                    <div className="mt-4 text-right pt-2 border-t border-gray-200">
-                                        <b>For : B.R ASSOCIATES</b><br/>
-                                        <span className="text-[8px] text-gray-700">(A UNIT OF EMMARLINK DISTRIBUTORS PVT.LTD.)</span>
+                                    <div className="text-right">
+                                        <b>For : Rx Pharma</b><br/>
                                         <div className="h-6"></div>
                                         <b className="border-t border-black px-2 pt-0.5 inline-block">Authorised Signatory</b>
                                     </div>
@@ -533,45 +579,7 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                             </div>
                         </div>
 
-                        {/* 5. Bottom Footer Grid */}
-                        <div className="grid grid-cols-12 text-[10px] bg-gray-50/50">
-                            
-                            {/* Declaration */}
-                            <div className="col-span-5 border-r-2 border-black p-2 space-y-1">
-                                <div className="font-bold underline text-black">Declaration</div>
-                                <p className="text-[9px] leading-relaxed text-gray-800">
-                                    We Hereby warranty that the medicine purchased under this invoice do not contravene in any way the provision of section.18 of the Drugs & Cosmetics Act 1940.
-                                </p>
-                                <p className="text-[9px] leading-relaxed text-gray-800">
-                                    For the purpose of Jurisdiction the cause of action for this transaction shall be deemed to have been made in Kannur and it is agreed by and between parties hereto that Courts in Kannur will have exclusive Jurisdiction E.&.O.E
-                                </p>
-                            </div>
 
-                            {/* QR Code */}
-                            <div className="col-span-3 border-r-2 border-black p-2 flex flex-col items-center justify-center">
-                                <div className="w-24 h-24 border-2 border-black p-1.5 bg-white flex flex-col items-center justify-center text-center shadow-inner">
-                                    <div className="w-full h-full border border-dashed border-gray-800 grid grid-cols-4 grid-rows-4 gap-0.5 p-1">
-                                        <div className="bg-black col-span-2 row-span-2"></div>
-                                        <div className="bg-black col-span-1"></div>
-                                        <div className="bg-black row-span-1 col-span-1"></div>
-                                        <div className="bg-black col-span-1 row-span-2"></div>
-                                        <div className="bg-black col-span-2 row-span-1"></div>
-                                        <div className="bg-black col-span-1"></div>
-                                        <div className="bg-black col-span-2 row-span-1"></div>
-                                    </div>
-                                    <span className="text-[7px] font-mono mt-0.5 text-gray-600 font-bold">UPI / IRN QR</span>
-                                </div>
-                            </div>
-
-                            {/* Bank Details */}
-                            <div className="col-span-4 p-2 space-y-1 font-mono text-[11px]">
-                                <div className="font-bold underline font-sans text-black">BANK DETAILS</div>
-                                <div><b className="font-sans">BANK     :</b> HDFC BANK</div>
-                                <div><b className="font-sans">BANK A/C :</b> 57500001846910</div>
-                                <div><b className="font-sans">BRANCH   :</b> MG ROAD</div>
-                                <div><b className="font-sans">IFSC     :</b> HDFC0001496</div>
-                            </div>
-                        </div>
 
                     </div>
                 </div>

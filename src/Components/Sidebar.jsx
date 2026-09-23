@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FiFolder, FiUsers, FiShare2, FiChevronLeft, FiChevronRight, FiChevronDown, FiLogOut, FiActivity, FiAlertTriangle, FiX, FiBox } from "react-icons/fi";
+import { FiFolder, FiUsers, FiShare2, FiChevronLeft, FiChevronRight, FiChevronDown, FiLogOut, FiActivity, FiAlertTriangle, FiX, FiBox, FiFileText } from "react-icons/fi";
 import { PiPaperPlaneTiltBold } from "react-icons/pi";
 import { LuFileSpreadsheet } from "react-icons/lu";
 import apiClient from "../api/apiClient";
@@ -25,6 +25,7 @@ const navItems = [
             { name: "Ledger", path: "/inventory/ledger" }
         ]
     },
+    { name: "Invoice Generator", icon: FiFileText, path: "/invoice-generator" },
 ];
 
 

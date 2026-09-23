@@ -21,6 +21,8 @@ import GenerateWholesaleInvoice from "./Pages/GenerateWholesaleInvoice";
 import BillingHistory from "./Pages/BillingHistory";
 import InvoiceList from "./Pages/InvoiceList";
 import Ledger from "./Pages/Ledger";
+import InvoiceGenerator from "./Pages/InvoiceGenerator";
+import BusinessDetails from "./Pages/BusinessDetails";
 import { ClipboardProvider } from "./context/ClipboardContext";
 
 
@@ -50,6 +52,7 @@ function App() {
     // BUG #12: lift SharedWithMe folder state so it persists on tab switch
     const [sharedCurrentFolderId, setSharedCurrentFolderId] = useState(null);
     const [sharedPath, setSharedPath] = useState([{ id: null, title: "Shared with me" }]);
+    const [currentBusiness, setCurrentBusiness] = useState(() => storedNav.currentBusiness || null);
 
     useEffect(() => {
         if (activePath === "/login") {
@@ -61,9 +64,10 @@ function App() {
             currentDocName,
             returnPath,
             myFilesCurrentFolderId,
-            myFilesPath
+            myFilesPath,
+            currentBusiness
         }));
-    }, [activePath, currentDocName, returnPath, myFilesCurrentFolderId, myFilesPath]);
+    }, [activePath, currentDocName, returnPath, myFilesCurrentFolderId, myFilesPath, currentBusiness]);
 
     const toggleCollapse = () => setIsCollapsed((prev) => !prev);
 
@@ -161,6 +165,12 @@ function App() {
                     )}
                     {activePath === "/inventory/ledger" && (
                         <Ledger setMobileOpen={setMobileOpen} setActivePath={setActivePath} />
+                    )}
+                    {activePath === "/invoice-generator" && (
+                        <InvoiceGenerator setMobileOpen={setMobileOpen} setActivePath={setActivePath} setCurrentBusiness={setCurrentBusiness} />
+                    )}
+                    {activePath === "/business-details" && (
+                        <BusinessDetails business={currentBusiness} setActivePath={setActivePath} setMobileOpen={setMobileOpen} setCurrentBusiness={setCurrentBusiness} />
                     )}
                     {activePath === "/messages" && (
                         <Messages setMobileOpen={setMobileOpen} />

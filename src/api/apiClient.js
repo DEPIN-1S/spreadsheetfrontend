@@ -108,4 +108,17 @@ apiClient.interceptors.response.use(
     }
 );
 
+export const businessApi = {
+    updateBusiness: (id, payload) => apiClient.put(`/business/${id}`, payload),
+    listParties: (businessId, page = 1, limit = 10, search = '') => apiClient.get(`/business/${businessId}/parties?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&t=${Date.now()}`),
+    addParty: (businessId, data) => apiClient.post(`/business/${businessId}/parties`, data),
+    deleteParty: (businessId, partyId) => apiClient.delete(`/business/${businessId}/parties/${partyId}`),
+    
+    // Templates
+    getTemplates: (businessId) => apiClient.get(`/templates/business/${businessId}`),
+    createTemplate: (data) => apiClient.post(`/templates`, data),
+    updateTemplate: (templateId, data) => apiClient.put(`/templates/${templateId}`, data),
+    deleteTemplate: (templateId) => apiClient.delete(`/templates/${templateId}`)
+};
+
 export default apiClient;
