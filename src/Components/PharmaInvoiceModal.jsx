@@ -547,7 +547,7 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                             {/* Col 4: Final Financials & Sign */}
                             <div className="col-span-3 flex flex-col justify-between text-[11px]">
                                 <div className="p-1.5 space-y-0.5 font-mono">
-                                    <div className="flex justify-between font-sans"><span>Gross Amt</span><span className="font-mono font-bold">{safeNum(currentInv.itemSubtotal, itemSubtotal).toFixed(2)}</span></div>
+                                    <div className="flex justify-between font-sans"><span>Gross Amt</span><span className="font-mono font-bold">{(safeNum(currentInv.itemSubtotal, itemSubtotal) - totalInvoiceGst).toFixed(2)}</span></div>
                                     <div className="flex justify-between font-sans"><span>Dis Amt</span><span>{safeNum(currentInv.discountAmount).toFixed(2)}</span></div>
                                     {addlChargesList.length > 0 ? (
                                         addlChargesList.map((chg, cIdx) => (

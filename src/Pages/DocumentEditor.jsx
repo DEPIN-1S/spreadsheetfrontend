@@ -1270,11 +1270,42 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         setCcTemplateColumns([{ name: '', type: 'text' }]);
     };
 
-    const toggleInvoiceGeneratorVisibility = async () => {
+        const toggleInvoiceGeneratorVisibility = async () => {
         const newValue = !sheetData.visibleOnInvoiceGenerator;
         
+        if (newValue) {
+            const requiredColumns = [
+                { name: "Product Name", type: "text" },
+                { name: "Selling Rate", type: "number" },
+                { name: "Discount", type: "formula" },
+                { name: "MRP", type: "number" },
+                { name: "GST", type: "number" }
+            ];
+            
+            const missingOrWrongTypeColumns = requiredColumns.filter(req => {
+                const col = columns.find(c => {
+                    const cName = (typeof c === 'string' ? c : c.name) || '';
+                    return cName.trim().toLowerCase() === req.name.toLowerCase();
+                });
+                if (!col) return true;
+                return col.type !== req.type;
+            });
+            
+            if (missingOrWrongTypeColumns.length > 0) {
+                const errorMessages = missingOrWrongTypeColumns.map(req => `${req.name} (needs to be ${req.type})`);
+                Swal.fire({
+                    title: 'Cannot Enable Invoice Generation',
+                    text: `This document is missing required columns or has incorrect types: ${errorMessages.join(', ')}. Please update your columns to match the standard format before enabling.`,
+                    icon: 'warning',
+                    confirmButtonColor: '#4f46e5',
+                    customClass: { popup: 'rounded-2xl' }
+                });
+                return;
+            }
+        }
+
         const result = await Swal.fire({
-            title: newValue ? 'Enable for Invoice Generator?' : 'Disable for Invoice Generator?',
+              title: newValue ? 'Enable for Invoice Generator?' : 'Disable for Invoice Generator?',
             text: newValue 
                 ? 'This document will be available as a database source in Invoice Templates.' 
                 : 'This document will be hidden from Invoice Templates.',
@@ -5110,3 +5141,8 @@ const CommentDeleteConfirmModal = ({ isOpen, onClose, onConfirm }) => {
         </div>
     );
 };
+
+
+
+
+

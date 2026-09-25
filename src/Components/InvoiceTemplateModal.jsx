@@ -7,27 +7,27 @@ export default function InvoiceTemplateModal({ isOpen, onClose, business, templa
 
     let cols = [];
     if (template?.columns) {
-        if (typeof template.columns === 'string') {
+        let rawCols = [];
+        if (typeof template.columns === "string") {
             try {
                 let parsed = JSON.parse(template.columns);
-                if (typeof parsed === 'string') {
-                    parsed = JSON.parse(parsed); // Handle double stringified
-                }
-                if (Array.isArray(parsed)) {
-                    cols = parsed;
-                }
+                if (typeof parsed === "string") parsed = JSON.parse(parsed);
+                if (Array.isArray(parsed)) rawCols = parsed;
             } catch(e) {
-                if (template.columns.includes(',')) {
-                    cols = template.columns.split(',').map(s => s.trim()).filter(Boolean);
-                } else if (template.columns.trim() && !template.columns.startsWith('[')) {
-                    cols = [template.columns.trim()];
-                }
+                if (template.columns.includes(",")) rawCols = template.columns.split(",").map(s => s.trim()).filter(Boolean);
+                else if (template.columns.trim() && !template.columns.startsWith("[")) rawCols = [template.columns.trim()];
             }
         } else if (Array.isArray(template.columns)) {
-            cols = template.columns;
+            rawCols = template.columns;
         }
+        rawCols.forEach(c => {
+            if (typeof c === "object" && c !== null) {
+                if (c.name) cols.push(c.name);
+            } else if (typeof c === "string") {
+                cols.push(c);
+            }
+        });
     }
-    
     if (!Array.isArray(cols)) cols = [];
         
     const defaultCols = ["Product Name", "Qty", "Selling Rate", "Discount", "MRP", "GST", "Total"];

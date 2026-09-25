@@ -311,7 +311,7 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                             return (
                                                 <>
                                                     {cols.slice(0,3).map((col, idx) => (
-                                                        <span key={idx} className="text-[10px] px-2 py-1 bg-white border border-gray-200 rounded-md text-gray-600">{col}</span>
+                                                        <span key={idx} className="text-[10px] px-2 py-1 bg-white border border-gray-200 rounded-md text-gray-600">{typeof col === "string" ? col : col.name}</span>
                                                     ))}
                                                     {cols.length > 3 && <span className="text-[10px] px-2 py-1 bg-white border border-gray-200 rounded-md text-gray-600">+{cols.length - 3}</span>}
                                                 </>

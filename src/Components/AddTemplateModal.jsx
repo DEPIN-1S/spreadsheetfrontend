@@ -5,10 +5,26 @@ import apiClient from '../api/apiClient';
 export default function AddTemplateModal({ isOpen, onClose, onSave, initialData }) {
     const defaultCols = ["Product Name", "Qty", "Selling Rate", "Discount", "MRP", "GST", "Total"];
     
-    const getInitialColumns = () => {
-        let savedCols = [];
+            const getInitialSpreadsheetIds = (data) => {
+        if (!data) return [];
+        if (data.spreadsheetIds) {
+            try {
+                const parsed = JSON.parse(data.spreadsheetIds);
+                if (Array.isArray(parsed)) return parsed;
+            } catch(e) { }
+        }
+        if (data.spreadsheetId) return [data.spreadsheetId];
+        return [];
+    };
+
+    const getInitialCustomColumns = () => {
         if (!initialData?.columns) {
-            savedCols = defaultCols;
+            return [];
+        }
+        
+        let savedCols = [];
+        if (initialData?.name === 'General') {
+            // General template fallback logic if needed
         } else if (Array.isArray(initialData.columns)) {
             savedCols = initialData.columns;
         } else if (typeof initialData.columns === 'string') {
@@ -19,54 +35,34 @@ export default function AddTemplateModal({ isOpen, onClose, onSave, initialData 
                 }
                 if (Array.isArray(parsed)) {
                     savedCols = parsed;
-                } else {
-                    savedCols = defaultCols;
                 }
             } catch (e) {
-                if (initialData.columns.includes(',')) {
-                    savedCols = initialData.columns.split(',').map(s => s.trim()).filter(Boolean);
-                } else if (initialData.columns.trim() && !initialData.columns.startsWith('[')) {
-                    savedCols = [initialData.columns.trim()];
-                } else {
-                    savedCols = defaultCols;
-                }
+                // Ignore
             }
         }
         
-        if (!Array.isArray(savedCols)) savedCols = defaultCols;
-        
-        // Ensure default columns are always in state so they can be shown if isProductBased is toggled ON
-        return [...new Set([...defaultCols, ...savedCols])];
-    };
-
-    const getInitialSpreadsheetIds = (data) => {
-        if (!data) return [];
-        if (Array.isArray(data.spreadsheetIds)) return data.spreadsheetIds;
-        if (typeof data.spreadsheetIds === 'string') {
-            try {
-                const parsed = JSON.parse(data.spreadsheetIds);
-                if (Array.isArray(parsed)) return parsed;
-            } catch (e) {
-                if (data.spreadsheetIds.includes(',')) {
-                    return data.spreadsheetIds.split(',').map(s => s.trim()).filter(Boolean);
-                } else if (data.spreadsheetIds.trim() && !data.spreadsheetIds.startsWith('[')) {
-                    return [data.spreadsheetIds.trim()];
-                }
-            }
+        if (initialData.isProductBased === false) {
+            return savedCols;
+        } else {
+            const defaultColsUpper = defaultCols.map(c => c.toUpperCase());
+            return savedCols.filter(col => {
+                const name = typeof col === "string" ? col : col.name;
+                return !defaultColsUpper.includes(name.toUpperCase());
+            });
         }
-        if (data.spreadsheetId) return [data.spreadsheetId];
-        return [];
     };
 
     const [isProductBased, setIsProductBased] = useState(initialData?.isProductBased ?? true);
     const [isB2B, setIsB2B] = useState(initialData?.isB2B ?? false);
-    const [columns, setColumns] = useState(getInitialColumns());
+    const [columns, setColumns] = useState(getInitialCustomColumns());
     const [newColumnName, setNewColumnName] = useState("");
+    const [newColumnType, setNewColumnType] = useState("text");
     const [templateName, setTemplateName] = useState(initialData?.name || "");
     const [spreadsheetIds, setSpreadsheetIds] = useState(getInitialSpreadsheetIds(initialData));
     const [sheetSearch, setSheetSearch] = useState("");
     const [sheets, setSheets] = useState([]);
     const [signatureImage, setSignatureImage] = useState(initialData?.signatureImage || null);
+    const [grandTotalCol, setGrandTotalCol] = useState("");
 
     useEffect(() => {
         if (isOpen) {
@@ -82,31 +78,42 @@ export default function AddTemplateModal({ isOpen, onClose, onSave, initialData 
         if (isOpen && initialData) {
             setIsProductBased(initialData.isProductBased ?? true);
             setIsB2B(initialData.isB2B ?? false);
-            setColumns(getInitialColumns());
+            setColumns(getInitialCustomColumns());
             setTemplateName(initialData.name || "");
             setSpreadsheetIds(getInitialSpreadsheetIds(initialData));
             setSheetSearch("");
             setSignatureImage(initialData.signatureImage || null);
+            let gtCol = "";
+            getInitialCustomColumns().forEach(c => { if (typeof c === "object" && c.isGrandTotal) gtCol = c.name; });
+            setGrandTotalCol(gtCol);
         } else if (isOpen && !initialData) {
             setIsProductBased(true);
             setIsB2B(false);
-            setColumns(defaultCols);
+            setColumns([]);
             setTemplateName("");
             setSpreadsheetIds([]);
             setSheetSearch("");
             setSignatureImage(null);
+            setGrandTotalCol("");
         }
     }, [isOpen, initialData]);
 
     const defaultColsUpper = defaultCols.map(c => c.toUpperCase());
-    const hasCustomColumn = columns.some(col => !defaultColsUpper.includes(col.toUpperCase()));
+        const hasCustomColumn = columns.length > 0;
     const isSaveValid = templateName.trim().length > 0 && (isProductBased || hasCustomColumn);
 
-    const handleAddColumn = () => {
-        if (newColumnName.trim() && !columns.includes(newColumnName.trim())) {
-            setColumns([...columns, newColumnName.trim()]);
-            setNewColumnName("");
+            const handleAddColumn = () => {
+        const name = newColumnName.trim();
+        if (!name) return;
+        const existsInCustom = columns.some(c => (typeof c === "string" ? c : c.name).toUpperCase() === name.toUpperCase());
+        const existsInDefault = isProductBased && defaultColsUpper.includes(name.toUpperCase());
+        if (existsInCustom || existsInDefault) {
+            alert("A column with this name already exists in this template.");
+            return;
         }
+        setColumns([...columns, { name, type: newColumnType }]);
+        setNewColumnName("");
+        setNewColumnType("text");
     };
 
     const handleRemoveColumn = (colToRemove) => {
@@ -364,37 +371,54 @@ export default function AddTemplateModal({ isOpen, onClose, onSave, initialData 
                                 These columns will be included in invoices generated using this template.
                             </p>
                             
-                            <div className="flex flex-wrap gap-3 mt-4 mb-4">
-                                {columns.filter(col => isProductBased || !defaultColsUpper.includes(col.toUpperCase())).map((col, idx) => {
-                                    const isDefault = defaultColsUpper.includes(col.toUpperCase());
+                                                                                    <div className="flex flex-wrap gap-3 mt-4 mb-4">
+                                {isProductBased && defaultCols.map((col, idx) => (
+                                    <div key={`def-${idx}`} className="flex items-center gap-2 px-3 py-2 border rounded-lg text-sm font-medium bg-teal-50 border-teal-100 text-teal-800">
+                                        <FiCheckCircle className="text-teal-500" />
+                                        {col}
+                                    </div>
+                                ))}
+                                {columns.map((col, idx) => {
+                                    const colName = typeof col === "string" ? col : col.name;
+                                    const colType = typeof col === "string" ? null : col.type;
+                                    const typeColors = { text: "bg-gray-100 text-gray-500", number: "bg-blue-100 text-blue-600", date: "bg-orange-100 text-orange-600" };
                                     return (
-                                        <div key={idx} className={`flex items-center gap-2 px-3 py-2 border rounded-lg text-sm font-medium ${isDefault ? 'bg-teal-50 border-teal-100 text-teal-800' : 'bg-indigo-50 border-indigo-100 text-indigo-800'}`}>
-                                            <FiCheckCircle className={isDefault ? 'text-teal-500' : 'text-indigo-500'} />
-                                            {col}
-                                            {!isDefault && (
-                                                <button 
-                                                    type="button" 
-                                                    onClick={() => handleRemoveColumn(col)} 
-                                                    className="ml-1 text-indigo-400 hover:text-indigo-600 transition-colors focus:outline-none"
-                                                    title="Remove custom column"
-                                                >
-                                                    <FiX size={14} />
-                                                </button>
+                                        <div key={`cust-${idx}`} className="flex items-center gap-2 px-3 py-2 border rounded-lg text-sm font-medium bg-indigo-50 border-indigo-100 text-indigo-800">
+                                            <FiCheckCircle className="text-indigo-500" />
+                                            {colName}
+                                            {colType && (
+                                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md uppercase ${typeColors[colType] || typeColors.text}`}>{colType}</span>
                                             )}
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRemoveColumn(col)}
+                                                className="ml-1 text-indigo-400 hover:text-indigo-600 transition-colors focus:outline-none"
+                                                title="Remove custom column"
+                                            >
+                                                <FiX size={14} />
+                                            </button>
                                         </div>
                                     );
                                 })}
                             </div>
-                            
-                            <div className="flex items-center gap-3 mt-4">
+                              <div className="flex flex-wrap items-center gap-3 mt-4">
                                 <input 
                                     type="text" 
                                     value={newColumnName}
                                     onChange={(e) => setNewColumnName(e.target.value)}
                                     onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddColumn())}
                                     placeholder="Custom column name..."
-                                    className="flex-1 max-w-xs px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                                    className="flex-1 min-w-[160px] max-w-xs px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
                                 />
+                                <select
+                                    value={newColumnType}
+                                    onChange={(e) => setNewColumnType(e.target.value)}
+                                    className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer text-gray-700"
+                                >
+                                    <option value="text">Text</option>
+                                    <option value="number">Number</option>
+                                    <option value="date">Date</option>
+                                </select>
                                 <button 
                                     type="button"
                                     onClick={handleAddColumn}
@@ -404,7 +428,27 @@ export default function AddTemplateModal({ isOpen, onClose, onSave, initialData 
                                     Add Column
                                 </button>
                             </div>
-                        </section>
+                                                </section>
+
+                        {/* Grand Total Selector */}
+                        {!isProductBased && (
+                            <section className="bg-white border border-gray-100 rounded-2xl p-6 shadow-sm mb-6">
+                                <h3 className="text-sm font-bold uppercase tracking-wider text-gray-400 flex items-center gap-2 mb-2">
+                                    Grand Total Of
+                                </h3>
+                                <p className="text-xs text-gray-500 mb-4">Select a numeric column to calculate the grand total automatically.</p>
+                                <select 
+                                    value={grandTotalCol} 
+                                    onChange={(e) => setGrandTotalCol(e.target.value)}
+                                    className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer text-gray-700 w-full max-w-xs"
+                                >
+                                    <option value="">None</option>
+                                    {columns.filter(col => (typeof col !== "string" && col.type === "number") && !defaultColsUpper.includes((col.name || "").toUpperCase())).map((col, idx) => (
+                                        <option key={idx} value={col.name}>{col.name}</option>
+                                    ))}
+                                </select>
+                            </section>
+                        )}
 
                     </div>
                 </div>
@@ -418,7 +462,12 @@ export default function AddTemplateModal({ isOpen, onClose, onSave, initialData 
                     </button>
                     <button 
                         onClick={() => {
-                            const finalColumns = isProductBased ? columns : columns.filter(col => !defaultColsUpper.includes(col.toUpperCase()));
+                                                                                    const baseFinalColumns = isProductBased ? [...defaultCols, ...columns] : columns;
+                            const finalColumns = baseFinalColumns.map(c => {
+                                if (typeof c === "string") return c;
+                                if (c.name === grandTotalCol && !isProductBased) return { ...c, isGrandTotal: true };
+                                else { const { isGrandTotal, ...rest } = c; return rest; }
+                            });
                             onSave({ 
                                 name: templateName, 
                                 isProductBased, 
@@ -443,3 +492,10 @@ export default function AddTemplateModal({ isOpen, onClose, onSave, initialData 
         </div>
     );
 }
+
+
+
+
+
+
+

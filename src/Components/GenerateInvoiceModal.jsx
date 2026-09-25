@@ -6,7 +6,8 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const settingsRef = useRef(null);
     const [inventoryData, setInventoryData] = useState([]);
-    const [selectedSeal, setSelectedSeal] = useState(null);
+    const [selectedSeals, setSelectedSeals] = useState([]);
+    const [isSealDropdownOpen, setIsSealDropdownOpen] = useState(false);
     const [activeDropdownRow, setActiveDropdownRow] = useState(null);
     const [previewProduct, setPreviewProduct] = useState(null);
 
@@ -48,36 +49,43 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                 console.error("Failed to fetch sheets list:", err);
             }
         };
-        if (isOpen) {
+
+        if (isOpen) {
             fetchSheetsList();
             setInventoryData([]);
         }
     }, [isOpen, template]);
 
     let cols = [];
+    let colTypes = {};
+    let grandTotalColumn = null;
     if (template?.columns) {
-        if (typeof template.columns === 'string') {
+        let rawCols = [];
+        if (typeof template.columns === "string") {
             try {
                 let parsed = JSON.parse(template.columns);
-                if (typeof parsed === 'string') {
-                    parsed = JSON.parse(parsed); // Handle double stringified
-                }
-                if (Array.isArray(parsed)) {
-                    cols = parsed;
-                }
+                if (typeof parsed === "string") parsed = JSON.parse(parsed);
+                if (Array.isArray(parsed)) rawCols = parsed;
             } catch(e) {
-                if (template.columns.includes(',')) {
-                    cols = template.columns.split(',').map(s => s.trim()).filter(Boolean);
-                } else if (template.columns.trim() && !template.columns.startsWith('[')) {
-                    cols = [template.columns.trim()];
-                }
+                if (template.columns.includes(",")) rawCols = template.columns.split(",").map(s => s.trim()).filter(Boolean);
+                else if (template.columns.trim() && !template.columns.startsWith("[")) rawCols = [template.columns.trim()];
             }
         } else if (Array.isArray(template.columns)) {
-            cols = template.columns;
+            rawCols = template.columns;
         }
+        rawCols.forEach(c => {
+            if (typeof c === "object" && c !== null) {
+                if (c.name) {
+                    cols.push(c.name);
+                    if (c.type) colTypes[c.name] = c.type;
+                    if (c.isGrandTotal) grandTotalColumn = c.name;
+                }
+            } else if (typeof c === "string") {
+                cols.push(c);
+            }
+        });
     }
     if (!Array.isArray(cols)) cols = [];
-        
     const defaultCols = ["Product Name", "Qty", "Selling Rate", "Discount", "MRP", "GST", "Total"];
     const defaultColsUpper = defaultCols.map(c => c.toUpperCase());
         
@@ -95,6 +103,9 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
         day: '2-digit'
     });
     const formattedInvTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    const todayIso = new Date().toISOString().split('T')[0];
+    const [invoiceDate, setInvoiceDate] = useState(todayIso);
+    const formatDateDMY = (iso) => { if (!iso) return ''; const [y, m, d] = iso.split('-'); return d + '/' + m + '/' + y; };
     const isWholesale = template?.isProductBased; 
 
     // visible columns state for the settings dropdown
@@ -103,6 +114,13 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
     };
     cols.forEach(c => initialCols[c] = true);
     
+        const getCalculatingColumn = () => {
+        if (template && template.isProductBased === false && grandTotalColumn) return grandTotalColumn;
+        if (template?.isProductBased !== false && cols.includes("Total")) return "Total";
+        return null;
+    };
+    const calcCol = getCalculatingColumn();
+
     const [visibleColumns, setVisibleColumns] = useState(initialCols);
 
     useEffect(() => {
@@ -261,27 +279,32 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
 
         const totalNoCalc = items.reduce((sum, item) => sum + (parseFloat(item.Qty) || 0), 0);
     const totalItemsCount = items.filter(it => it['Product Name'] && it['Product Name'].trim()).length || items.length;
-    const totalGrossCalc = items.reduce((sum, item) => {
+        const totalGrossCalc = items.reduce((sum, item) => {
+        if (template && template.isProductBased === false && grandTotalColumn) {
+            const val = parseFloat(item[grandTotalColumn]);
+            if (!isNaN(val)) return sum + val;
+            return sum;
+        }
         const totalVal = parseFloat(item.Total);
         if (!isNaN(totalVal)) return sum + totalVal;
         const qty = parseFloat(item.Qty) || 0;
         const rate = parseFloat(item['Selling Rate']) || parseFloat(item['MRP']) || 0;
         return sum + (qty * rate);
     }, 0);
-    const grossVal = parseFloat(totals.grossAmt !== '' ? totals.grossAmt : totalGrossCalc) || 0;
-    const disVal = parseFloat(totals.disAmt) || 0;
-    const addlVal = parseFloat(totals.addlChg) || 0;
     const totalGstCalc = items.reduce((sum, item) => {
         const gstPercent = parseFloat(item.GST) || 0;
         const lineTotal = parseFloat(item.Total) || ((parseFloat(item.Qty) || 0) * (parseFloat(item['Selling Rate']) || parseFloat(item['MRP']) || 0));
         return sum + (lineTotal * gstPercent / 100);
     }, 0);
     const gstVal = parseFloat(totals.totalGst !== '' ? totals.totalGst : (totalGstCalc > 0 ? totalGstCalc : 0)) || 0;
+    const grossVal = parseFloat(totals.grossAmt !== '' ? totals.grossAmt : (totalGrossCalc - gstVal)) || 0;
+    const disVal = parseFloat(totals.disAmt) || 0;
+    const addlVal = parseFloat(totals.addlChg) || 0;
     const roffVal = parseFloat(totals.rOff) || 0;
     const computedGrandTotal = (grossVal - disVal + addlVal + gstVal + roffVal).toFixed(2);
 
 
-    return (
+    return ( <React.Fragment>
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
             <style>{`
                 @media print {
@@ -317,10 +340,35 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                     </div>
                     <div className="flex items-center gap-3">
 
-                        <button
-                            onClick={onClose}
-                            className="p-1.5 text-gray-400 hover:text-white rounded-lg transition-colors"
-                            title="Close"
+                                                <div className="relative" ref={settingsRef}>
+                            <button
+                                onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+                                className={`flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-lg transition-colors border ${isSettingsOpen ? 'bg-gray-800 text-white border-gray-700' : 'bg-transparent text-gray-300 border-gray-700 hover:bg-gray-800 hover:text-white'}`}
+                                title="Customize Columns"
+                            >
+                                <FiSettings size={15} />
+                                Columns
+                            </button>
+                            {isSettingsOpen && (
+                                <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-200 p-3 z-50 animate-fade-in text-gray-900">
+                                    <h4 className="text-xs font-bold uppercase text-gray-500 mb-2 border-b pb-1">Visible Columns</h4>
+                                    <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                                        <label className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 p-1 rounded">
+                                            <input type="checkbox" checked={visibleColumns.slNo || false} onChange={() => toggleColumn('slNo')} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                                            <span className="font-medium text-gray-700">Sl No.</span>
+                                        </label>
+                                        {cols.filter(col => col !== calcCol).map(col => (
+                                            <label key={col} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 p-1 rounded">
+                                                <input type="checkbox" checked={visibleColumns[col] || false} onChange={() => toggleColumn(col)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                                                <span className="font-medium text-gray-700">{col}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-white rounded-lg transition-colors" title="Close"
                         >
                             <FiX size={20} />
                         </button>
@@ -363,14 +411,14 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                                         });
                                     })()}
                                     {(!business.additionalData || business.additionalData.length === 0) && (
-                                        <>
+                                        <React.Fragment>
                                             <div className="text-[11px] leading-tight text-gray-900 pt-0.5">SH1, Kilimanoor, Thiruvananthapuram, Kerala - 695601</div>
                                             <div className="text-[11px] pt-1"><b>Email ID :</b> rxpharma27@gmail.com</div>
                                             <div className="text-[11px]"><b>GST No :</b> 32ACAFM5688A1ZH</div>
                                             <div className="text-[11px] leading-tight pt-0.5">
                                                 <b>DL No :</b> RLF20KL2026002461 , RLF21KL2026002472
                                             </div>
-                                        </>
+                                        </React.Fragment>
                                     )}
                                 </div>
                             </div>
@@ -381,7 +429,7 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                                     <div className="text-center font-black text-sm underline uppercase tracking-wide">TAX INVOICE </div>
                                     <div className="space-y-1 text-[11px] mt-2">
                                         <div><b>Tax Inv. No. :</b> INV-2026-001</div>
-                                        <div><b>Inv. Date :</b> {today}</div>
+                                        <div className="flex items-center gap-1"><b>Inv. Date :</b> <span className="relative">{formatDateDMY(invoiceDate)}<input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} onFocus={(e) => e.target.showPicker && e.target.showPicker()} className="absolute left-0 top-0 w-full h-full opacity-0 cursor-pointer" /></span></div>
                                         <div><b>Inv. Time :</b> {formattedInvTime}</div>
                                     </div>
                                 </div>
@@ -429,7 +477,7 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                                             });
                                         }
                                         return (
-                                            <>
+                                            <React.Fragment>
                                                 {(party?.address || party?.email) && (
                                                     <div className="leading-tight uppercase text-gray-800">
                                                         {party?.address || party?.email}
@@ -437,13 +485,13 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                                                 )}
                                                 {!isWholesale && party?.age && <div className="text-gray-800">{party.age}</div>}
                                                 {isWholesale && (
-                                                    <>
+                                                    <React.Fragment>
                                                         {party?.dlNo && <div className="text-gray-800">{party.dlNo}</div>}
                                                         {party?.gstinNo && <div className="text-gray-800">{party.gstinNo}</div>}
-                                                    </>
+                                                    </React.Fragment>
                                                 )}
                                                 {party?.panNo && <div className="text-gray-800">{party.panNo}</div>}
-                                            </>
+                                            </React.Fragment>
                                         );
                                     })()}
                                 </div>
@@ -457,7 +505,7 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                                     <tr className="bg-gray-100 border-b border-black text-[10px] font-extrabold uppercase tracking-tight text-black">
                                         {visibleColumns.slNo && <th className="border-r border-black py-1 px-1 text-center w-8">SL.</th>}
                                         {cols.map(col => (
-                                            visibleColumns[col] && <th key={col} className="border-r border-black py-1 px-1 text-center">{col}</th>
+                                                visibleColumns[col] && <th key={col} className="border-r border-black py-1 px-1 text-center">{col.toUpperCase() === "DISCOUNT" ? "DISCOUNT %" : col.toUpperCase() === "GST" ? "GST %" : col}</th>
                                         ))}
                                     </tr>
                                 </thead>
@@ -482,7 +530,7 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                                                                         handleItemChange(item.id, col, e.target.value);
                                                                         setActiveDropdownRow(item.id);
                                                                     }} 
-                                                                    onFocus={() => setActiveDropdownRow(item.id)}
+                                                                    onFocus={() => { setActiveDropdownRow(item.id); if (!item['Product Name']) setInventoryData([]); }}
                                                                     onBlur={() => setTimeout(() => setActiveDropdownRow(null), 200)}
                                                                     className="w-full bg-transparent border-none outline-none text-center text-[10px] font-mono text-black m-0 p-0 h-full" 
                                                                     placeholder={col} 
@@ -518,12 +566,17 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                                                                                     imgSrc = imgSrc.url || imgSrc.src || '';
                                                                                 }
                                                                                 
-                                                                                if (typeof imgSrc === 'string') {
+                                                                                                                                                                if (typeof imgSrc === 'string') {
                                                                                     imgSrc = imgSrc.trim();
-                                                                                    if (imgSrc.startsWith('/uploads/') || imgSrc.startsWith('uploads/')) {
-                                                                                        if (imgSrc.startsWith('uploads/')) imgSrc = '/' + imgSrc;
+                                                                                    if (imgSrc && !imgSrc.startsWith('http') && !imgSrc.startsWith('data:')) {
+                                                                                        let path = imgSrc;
+                                                                                        if (!path.startsWith('/uploads/') && !path.startsWith('uploads/')) {
+                                                                                            path = '/uploads/' + path;
+                                                                                        } else if (path.startsWith('uploads/')) {
+                                                                                            path = '/' + path;
+                                                                                        }
                                                                                         const baseUrl = (apiClient && apiClient.defaults && apiClient.defaults.baseURL) ? apiClient.defaults.baseURL : 'http://localhost:6041/api';
-                                                                                        imgSrc = baseUrl.replace('/api', '') + imgSrc;
+                                                                                        imgSrc = baseUrl.replace('/api', '') + path;
                                                                                     }
                                                                                 }
                                                                             }
@@ -539,21 +592,15 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                                                                                 }}
                                                                             >
                                                                                 {imgSrc ? (
-                                                                                    <img src={imgSrc} onClick={(e) => { e.stopPropagation(); setPreviewProduct({ ...prod, _resolvedImgSrc: imgSrc }); }} className="w-12 h-12 object-cover rounded bg-gray-100 flex-shrink-0 hover:opacity-80 transition-opacity" alt="img" onError={(e) => { 
+                                                                                    <img src={imgSrc} onClick={(e) => { e.stopPropagation(); setPreviewProduct({ ...prod, _resolvedImgSrc: e.target.src }); }} className="w-14 h-14 object-cover rounded bg-gray-100 flex-shrink-0 hover:opacity-80 transition-opacity" alt="img" onError={(e) => { 
                                                                                         if (!e.target.dataset.retried && e.target.src.includes('localhost')) {
                                                                                             e.target.dataset.retried = 'true';
                                                                                             e.target.src = e.target.src.replace(/http:\/\/localhost:\d+/, 'https://apis.datsheets.in');
-                                                                                        } else {
-                                                                                            e.target.style.display='none'; 
-                                                                                            e.target.nextSibling.style.display='block'; 
-                                                                                        }
+} else { e.target.onerror = null; e.target.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56"><rect width="56" height="56" fill="%23e5e7eb" rx="4"/><text x="50%" y="50%" font-family="sans-serif" font-size="10" font-weight="500" fill="%239ca3af" text-anchor="middle" dy=".3em">No Img</text></svg>'; e.target.className = 'w-14 h-14 rounded bg-gray-200 flex-shrink-0 border border-gray-300'; }
                                                                                     }} />
                                                                                 ) : (
-                                                                                    <div className="w-12 h-12 rounded bg-gray-200 flex-shrink-0 flex items-center justify-center text-[8px] text-gray-400 border border-gray-300">No Img</div>
+                                                                                    <div className="w-14 h-14 rounded bg-gray-200 flex-shrink-0 flex items-center justify-center text-[8px] text-gray-400 border border-gray-300">No Img</div>
                                                                                 )}
-                                                                                <div style={{display:'none'}} className="absolute left-16 top-2 text-[10px] text-white bg-black/90 px-2 py-1.5 rounded whitespace-nowrap z-[200] shadow-xl pointer-events-none font-sans font-medium tracking-wide">
-                                                                                    {imgSrc}
-                                                                                </div>
                                                                                 <div className="flex-1 min-w-0">
                                                                                     <div className="font-bold text-gray-900 text-[11px] leading-tight break-words">{prod['Product Name']}</div>
                                                                                     {prod['Composition'] && (
@@ -565,13 +612,25 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                                                                     </div>
                                                                 )}
                                                             </div>
+                                                        ) : colTypes && colTypes[col] === "date" ? (
+                                                            <span className="relative inline-flex items-center justify-center w-full h-full">
+                                                                <span className="text-[10px] font-mono text-black">{item[col] ? formatDateDMY(item[col]) : col}</span>
+                                                                <input 
+                                                                    type="date" 
+                                                                    value={item[col] || ""} 
+                                                                    onChange={(e) => handleItemChange(item.id, col, e.target.value)} 
+                                                                    onFocus={(e) => e.target.showPicker && e.target.showPicker()} 
+                                                                    className="absolute left-0 top-0 w-full h-full opacity-0 cursor-pointer" 
+                                                                    title={`Set ${col}`}
+                                                                />
+                                                            </span>
                                                         ) : (
                                                             <input 
-                                                                type="text" 
-                                                                value={item[col] || ''} 
+                                                                type={colTypes && colTypes[col] === "number" ? "number" : "text"}
+                                                                value={item[col] || ""} 
                                                                 onChange={(e) => handleItemChange(item.id, col, e.target.value)} 
-                                                                onBlur={col === 'Qty' ? (e) => handleQtyBlur(item.id, e.target.value) : undefined} 
-                                                                onKeyDown={col === 'Qty' ? (e) => { if (e.key === 'Enter') e.target.blur(); } : undefined} 
+                                                                onBlur={col === "Qty" ? (e) => handleQtyBlur(item.id, e.target.value) : undefined} 
+                                                                onKeyDown={col === "Qty" ? (e) => { if (e.key === "Enter") e.target.blur(); } : undefined} 
                                                                 className="w-full bg-transparent border-none outline-none text-center text-[10px] font-mono text-black m-0 p-0 h-full" 
                                                                 placeholder={col}
                                                             />
@@ -601,52 +660,47 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                             </div>
 
                             {/* Col 2: Empty Spacer / Seal Selection */}
-                            <div className="col-span-4 border-r-2 border-black p-1 flex flex-col items-center justify-center relative group">
-                                {selectedSeal ? (
-                                    <div className="relative w-full h-full flex items-center justify-center">
-                                        <img src={selectedSeal} alt="Seal" className="max-w-full max-h-24 object-contain mix-blend-multiply" />
-                                        <button onClick={() => setSelectedSeal(null)} className="absolute top-0 right-0 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 no-print transition-opacity" title="Remove Seal"><FiX size={10} /></button>
-                                    </div>
-                                ) : (
-                                    <div className="no-print w-full h-full flex items-center justify-center">
-                                        {(() => {
-                                            let sealsArray = business?.seals;
-                                            if (typeof sealsArray === 'string') {
-                                                try { sealsArray = JSON.parse(sealsArray); } catch(e) { sealsArray = []; }
-                                            }
-                                            if (Array.isArray(sealsArray) && sealsArray.length > 0) {
-                                                return (
-                                                    <div className="relative inline-flex items-center gap-1 text-[10px] text-indigo-600 hover:text-indigo-800 font-bold bg-indigo-50 px-2 py-0.5 rounded cursor-pointer">
-                                                        <FiPlus size={12} /> Add Seal
-                                                        <select 
-                                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                                            onChange={(e) => {
-                                                                if(e.target.value !== "") {
-                                                                    setSelectedSeal(sealsArray[parseInt(e.target.value)]);
-                                                                }
-                                                            }}
-                                                            value=""
-                                                            title="Add Seal"
-                                                        >
-                                                            <option value="" disabled>Select Seal...</option>
-                                                            {sealsArray.map((seal, idx) => (
-                                                                <option key={idx} value={idx}>Seal {idx + 1}</option>
-                                                            ))}
-                                                        </select>
+                            <div className="col-span-4 border-r-2 border-black p-1 flex flex-col items-center justify-center relative group min-h-[120px]">
+                                <div className="w-full h-full flex flex-wrap items-center justify-center gap-4 relative">
+                                    {selectedSeals.length === 0 && (
+                                        <span className="text-[10px] text-gray-300 text-center no-print absolute">Seal Area</span>
+                                    )}
+                                    {selectedSeals.map((seal, index) => {
+                                        const rotation = index % 2 === 0 ? '-rotate-3' : 'rotate-2';
+                                        return (
+                                        <div key={index} className="relative group/seal">
+                                            <img src={seal} alt="Seal" className={`max-w-[180px] max-h-32 object-contain mix-blend-multiply opacity-85 ${rotation}`} />
+                                            <button onClick={(e) => { e.stopPropagation(); setSelectedSeals(prev => prev.filter((_, i) => i !== index)); }} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-100 no-print transition-opacity shadow-md z-50" title="Remove Seal"><FiX size={10} /></button>
+                                        </div>
+                                    )})}
+                                </div>
+                                <div className={`no-print absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 opacity-100`}>
+                                    {(() => {
+                                        let sealsArray = business?.seals;
+                                        if (typeof sealsArray === 'string') {
+                                            try { sealsArray = JSON.parse(sealsArray); } catch(e) { sealsArray = []; }
+                                        }
+                                        if (Array.isArray(sealsArray) && sealsArray.length > 0) {
+                                            return (
+                                                <div className="relative">
+                                                    <div 
+                                                        className="inline-flex items-center gap-1 text-[10px] text-indigo-600 hover:text-indigo-800 font-bold bg-indigo-50 px-2 py-0.5 rounded cursor-pointer whitespace-nowrap shadow-sm border border-indigo-100"
+                                                        onClick={(e) => { e.stopPropagation(); setIsSealDropdownOpen(true); }}
+                                                    >
+                                                        <FiPlus size={12} /> {selectedSeals.length > 0 ? 'Manage Seals' : 'Add Seal'}
                                                     </div>
-                                                );
-                                            } else {
-                                                return <span className="text-[10px] text-gray-400 text-center">No seals available in business profile</span>;
-                                            }
-                                        })()}
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Col 4: Final Financials & Sign */}
+                                                </div>
+                                            );
+                                        } else {
+                                            return selectedSeals.length === 0 ? <span className="text-[10px] text-gray-400 text-center block w-full mt-2 whitespace-nowrap">No seals in profile</span> : null;
+                                        }
+                                    })()}
+                                </div>
+                              </div>
+                              {/* Col 4: Final Financials & Sign */}
                             <div className="col-span-5 flex flex-col justify-between text-[11px]">
                                 <div className="p-1.5 space-y-0.5 font-mono [&_input]:bg-transparent [&_input]:border-none [&_input]:outline-none [&_input]:text-[11px] [&_input]:w-20 [&_input]:text-right">
-                                    <div className="flex justify-between font-sans items-center"><span>Gross Amt</span><input type="text" className="font-mono font-bold" value={totals.grossAmt !== '' ? totals.grossAmt : (totalGrossCalc > 0 ? totalGrossCalc.toFixed(2) : '')} onChange={(e) => handleTotalChange('grossAmt', e.target.value)} placeholder="0.00" /></div>
+                                    <div className="flex justify-between font-sans items-center"><span>Gross Amt</span><input type="text" className="font-mono font-bold" value={totals.grossAmt !== '' ? totals.grossAmt : ((totalGrossCalc - gstVal) > 0 ? (totalGrossCalc - gstVal).toFixed(2) : '')} onChange={(e) => handleTotalChange('grossAmt', e.target.value)} placeholder="0.00" /></div>
                                     <div className="flex justify-between font-sans items-center"><span>Dis Amt</span><input type="text" value={totals.disAmt} onChange={(e) => handleTotalChange('disAmt', e.target.value)} placeholder="0.00" /></div>
                                     <div className="flex justify-between font-sans items-center"><span>Addl Chg</span><input type="text" value={totals.addlChg} onChange={(e) => handleTotalChange('addlChg', e.target.value)} placeholder="0.00" /></div>
                                     <div className="flex justify-between font-sans items-center"><span>GST Amt</span><input type="text" className="font-mono" value={totals.totalGst !== '' ? totals.totalGst : (totalGstCalc > 0 ? totalGstCalc.toFixed(2) : '')} onChange={(e) => handleTotalChange('totalGst', e.target.value)} placeholder="0.00" /></div>
@@ -677,25 +731,80 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                     </div>
                 </div>
             </div>
+            {previewProduct && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={() => setPreviewProduct(null)}>
+                    <div className="relative bg-white p-4 rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col items-center justify-center animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => setPreviewProduct(null)} className="absolute -top-4 -right-4 bg-red-500 text-white rounded-full p-2 hover:bg-red-600 shadow-lg transition-transform hover:scale-110">
+                            <svg stroke="currentColor" fill="none" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" height="24" width="24" xmlns="http://www.w3.org/2000/svg"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </button>
+                        <img src={previewProduct._resolvedImgSrc} alt="Preview" className="max-w-full max-h-[45vh] object-contain rounded-lg shadow-inner bg-gray-50" />
+                        <div className="mt-4 text-center w-full">
+                            <h3 className="text-xl font-bold text-gray-800">{previewProduct['Product Name']}</h3>
+                            {previewProduct['Composition'] && <p className="text-sm text-gray-500 mt-1">{previewProduct['Composition']}</p>}
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Seals Selection Modal */}
+            {isSealDropdownOpen && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setIsSealDropdownOpen(false)}>
+                    <div className="relative bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[85vh] flex flex-col animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
+                        <div className="bg-gray-50 border-b border-gray-200 p-4 rounded-t-xl flex justify-between items-center">
+                            <div>
+                                <h3 className="font-bold text-gray-800 text-lg">Select Seals</h3>
+                                <p className="text-xs text-gray-500 mt-1">Choose which seals to stamp on this invoice.</p>
+                            </div>
+                            <button onClick={() => setIsSealDropdownOpen(false)} className="text-gray-400 hover:text-red-600 transition-colors bg-white border rounded-full p-1.5 shadow-sm hover:bg-red-50"><FiX size={18} /></button>
+                        </div>
+                        <div className="p-4 overflow-y-auto flex flex-col gap-3">
+                            {(() => {
+                                let sealsArray = business?.seals;
+                                if (typeof sealsArray === 'string') {
+                                    try { sealsArray = JSON.parse(sealsArray); } catch(e) { sealsArray = []; }
+                                }
+                                if (!Array.isArray(sealsArray) || sealsArray.length === 0) return <div className="text-center text-gray-500 py-8">No seals available.</div>;
+                                
+                                return sealsArray.map((seal, idx) => {
+                                    const isSelected = selectedSeals.includes(seal);
+                                    return (
+                                        <div 
+                                            key={idx} 
+                                            onClick={() => {
+                                                if (isSelected) {
+                                                    setSelectedSeals(prev => prev.filter(s => s !== seal));
+                                                } else {
+                                                    setSelectedSeals(prev => [...prev, seal]);
+                                                }
+                                            }}
+                                            className={`flex items-center gap-4 p-3 rounded-lg cursor-pointer border-2 transition-all ${isSelected ? 'border-indigo-500 bg-indigo-50/50 shadow-sm' : 'border-gray-200 hover:border-indigo-300 hover:bg-gray-50'}`}
+                                        >
+                                            <input 
+                                                type="checkbox" 
+                                                checked={isSelected}
+                                                readOnly
+                                                className="w-5 h-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer pointer-events-none"
+                                            />
+                                            <div className="flex-shrink-0 w-20 h-20 bg-white rounded-md shadow-sm border border-gray-100 flex items-center justify-center p-1">
+                                                <img src={seal} alt={`Seal ${idx + 1}`} className="max-w-full max-h-full object-contain mix-blend-multiply" />
+                                            </div>
+                                            <div className="flex-1">
+                                                <span className={`text-base font-semibold ${isSelected ? 'text-indigo-900' : 'text-gray-700'}`}>Seal {idx + 1}</span>
+                                            </div>
+                                        </div>
+                                    );
+                                });
+                            })()}
+                        </div>
+                        <div className="border-t border-gray-200 p-4 bg-gray-50 rounded-b-xl flex justify-end">
+                            <button onClick={() => setIsSealDropdownOpen(false)} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg shadow transition-colors">Done</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
+    </React.Fragment>
     );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
