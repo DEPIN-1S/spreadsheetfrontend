@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { FiX, FiPrinter, FiSettings, FiTrash2, FiPlus } from 'react-icons/fi';
 import apiClient from '../api/apiClient';
 
-export default function GenerateInvoiceModal({ isOpen, onClose, business, party, template }) {
+export default function GenerateInvoiceModal({ isOpen, onClose, business, party, template, onSaveInvoice, existingInvoices = [] }) {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const settingsRef = useRef(null);
     const [inventoryData, setInventoryData] = useState([]);
@@ -13,6 +13,55 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
 
     const sheetsToFetchCacheRef = useRef([]);
     const searchTimeoutRef = useRef(null);
+
+    const [isSaving, setIsSaving] = useState(false);
+
+    const getNextInvoiceNo = () => {
+        const year = new Date().getFullYear();
+        const prefix = `IG-INV-${year}-`;
+        let maxSeq = 0;
+
+        try {
+            const savedSeq = parseInt(localStorage.getItem(`invoice_seq_${year}`), 10);
+            if (!isNaN(savedSeq) && savedSeq > maxSeq) {
+                maxSeq = savedSeq;
+            }
+        } catch (_e) {}
+
+        let allInvoices = Array.isArray(existingInvoices) ? [...existingInvoices] : [];
+        try {
+            const stored = localStorage.getItem('recentInvoices');
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                if (Array.isArray(parsed)) {
+                    allInvoices = [...allInvoices, ...parsed];
+                }
+            }
+        } catch (_e) {}
+
+        allInvoices.forEach(inv => {
+            const no = inv?.invoiceNo || inv?.invoice_no || '';
+            const match = no.match(/^IG-INV-(\d{4})-(\d+)$/i);
+            if (match) {
+                const invYear = parseInt(match[1], 10);
+                const seq = parseInt(match[2], 10);
+                if (invYear === year && !isNaN(seq) && seq > maxSeq) {
+                    maxSeq = seq;
+                }
+            }
+        });
+
+        const nextSeq = maxSeq + 1;
+        return `${prefix}${String(nextSeq).padStart(3, '0')}`;
+    };
+
+    const [invoiceNo, setInvoiceNo] = useState(() => getNextInvoiceNo());
+
+    useEffect(() => {
+        if (isOpen) {
+            setInvoiceNo(getNextInvoiceNo());
+        }
+    }, [isOpen]);
 
     useEffect(() => {
         const fetchSheetsList = async () => {
@@ -303,32 +352,156 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
     const roffVal = parseFloat(totals.rOff) || 0;
     const computedGrandTotal = (grossVal - disVal + addlVal + gstVal + roffVal).toFixed(2);
 
+    const handleSaveInvoice = async () => {
+        try {
+            setIsSaving(true);
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            const year = new Date().getFullYear();
+            let finalInvoiceNo = invoiceNo || getNextInvoiceNo();
+
+            // Verify finalInvoiceNo is unique across all existing invoices
+            let allInvoices = Array.isArray(existingInvoices) ? [...existingInvoices] : [];
+            try {
+                const stored = localStorage.getItem('recentInvoices');
+                if (stored) {
+                    const parsed = JSON.parse(stored);
+                    if (Array.isArray(parsed)) allInvoices = [...allInvoices, ...parsed];
+                }
+            } catch (_e) {}
+
+            if (allInvoices.some(inv => inv?.invoiceNo === finalInvoiceNo)) {
+                finalInvoiceNo = getNextInvoiceNo();
+            }
+
+            // Record this sequence to ensure no future duplicate
+            const match = finalInvoiceNo.match(/^IG-INV-(\d{4})-(\d+)$/i);
+            if (match) {
+                const seq = parseInt(match[2], 10);
+                if (!isNaN(seq)) {
+                    try {
+                        const cur = parseInt(localStorage.getItem(`invoice_seq_${year}`), 10) || 0;
+                        if (seq >= cur) {
+                            localStorage.setItem(`invoice_seq_${year}`, seq.toString());
+                        }
+                    } catch (_e) {}
+                }
+            }
+
+            const finalGrandTotal = (totals.manualGrandTotal !== undefined && totals.manualGrandTotal !== '') 
+                ? totals.manualGrandTotal 
+                : (grossVal > 0 || disVal > 0 || addlVal > 0 || roffVal !== 0 || gstVal > 0 ? computedGrandTotal : (totalGrossCalc > 0 ? totalGrossCalc.toFixed(2) : '0.00'));
+
+            const newInvoice = {
+                id: Date.now(),
+                invoiceNo: finalInvoiceNo,
+                date: invoiceDate,
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
+                partyName: party?.name || 'CASH CUSTOMER',
+                templateName: template?.name || 'Standard Invoice',
+                total: finalGrandTotal,
+                fullData: {
+                    items: items,
+                    totals: {
+                        ...totals,
+                        totalNo: totals.totalNo !== '' ? totals.totalNo : (totalNoCalc || ''),
+                        grossAmt: totals.grossAmt !== '' ? totals.grossAmt : (grossVal > 0 ? grossVal.toFixed(2) : ''),
+                        totalGst: totals.totalGst !== '' ? totals.totalGst : (gstVal > 0 ? gstVal.toFixed(2) : ''),
+                        grandTotal: finalGrandTotal
+                    },
+                    selectedSeals: selectedSeals,
+                    template: template,
+                    business: business,
+                    party: party,
+                    date: invoiceDate
+                }
+            };
+            if (onSaveInvoice) onSaveInvoice(newInvoice);
+            if (onClose) onClose();
+        } catch (err) {
+            console.error("Error saving invoice:", err);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
 
     return ( <React.Fragment>
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
             <style>{`
-                @media print {
-                    body * {
-                        visibility: hidden !important;
+                    @media print {
+                        @page {
+                            size: A4 portrait;
+                            margin: 6mm;
+                        }
+                        html, body {
+                            width: 100% !important;
+                            height: auto !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            background: #fff !important;
+                            overflow: visible !important;
+                            -webkit-print-color-adjust: exact !important;
+                            print-color-adjust: exact !important;
+                        }
+                        body * {
+                            visibility: hidden !important;
+                        }
+                        #business-invoice-print-area, #business-invoice-print-area * {
+                            visibility: visible !important;
+                        }
+                        div:has(#business-invoice-print-area),
+                        .fixed, 
+                        .backdrop-blur-sm, 
+                        .animate-fade-in,
+                        .max-h-\\[95vh\\],
+                        .overflow-y-auto,
+                        .overflow-hidden {
+                            position: static !important;
+                            display: block !important;
+                            padding: 0 !important;
+                            margin: 0 !important;
+                            width: 100% !important;
+                            height: auto !important;
+                            max-height: none !important;
+                            overflow: visible !important;
+                            background: transparent !important;
+                            backdrop-filter: none !important;
+                            filter: none !important;
+                            transform: none !important;
+                            animation: none !important;
+                            box-shadow: none !important;
+                            border: none !important;
+                        }
+                        #business-invoice-print-area {
+                            position: absolute !important;
+                            left: 0 !important;
+                            top: 0 !important;
+                            width: 100% !important;
+                            max-width: 100% !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            box-shadow: none !important;
+                            border: 2px solid #000 !important;
+                            background: #fff !important;
+                            -webkit-print-color-adjust: exact !important;
+                            print-color-adjust: exact !important;
+                        }
+                        #business-invoice-print-area table {
+                            min-width: 0 !important;
+                            width: 100% !important;
+                        }
+                        #business-invoice-print-area input {
+                            border: none !important;
+                            background: transparent !important;
+                            box-shadow: none !important;
+                            color: #000 !important;
+                        }
+                        .no-print {
+                            display: none !important;
+                        }
                     }
-                    #business-invoice-print-area, #business-invoice-print-area * {
-                        visibility: visible !important;
-                    }
-                    #business-invoice-print-area {
-                        position: absolute !important;
-                        left: 0 !important;
-                        top: 0 !important;
-                        width: 100% !important;
-                        margin: 0 !important;
-                        padding: 0 !important;
-                        box-shadow: none !important;
-                        border: none !important;
-                    }
-                    .no-print {
-                        display: none !important;
-                    }
-                }
-            `}</style>
+                `}</style>
 
             <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full overflow-hidden flex flex-col max-h-[95vh]">
                 
@@ -340,6 +513,15 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                     </div>
                     <div className="flex items-center gap-3">
 
+                                                <div className="flex items-center gap-3 mr-4">
+                        <button
+                            onClick={handleSaveInvoice}
+                            disabled={isSaving}
+                            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white text-xs font-semibold rounded-lg shadow transition-colors"
+                        >
+                            {isSaving ? 'Saving...' : 'Save Invoice'}
+                        </button>
+                    </div>
                                                 <div className="relative" ref={settingsRef}>
                             <button
                                 onClick={() => setIsSettingsOpen(!isSettingsOpen)}
@@ -428,7 +610,7 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                                 <div>
                                     <div className="text-center font-black text-sm underline uppercase tracking-wide">TAX INVOICE </div>
                                     <div className="space-y-1 text-[11px] mt-2">
-                                        <div><b>Tax Inv. No. :</b> INV-2026-001</div>
+                                        <div><b>Tax Inv. No. :</b> {invoiceNo}</div>
                                         <div className="flex items-center gap-1"><b>Inv. Date :</b> <span className="relative">{formatDateDMY(invoiceDate)}<input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} onFocus={(e) => e.target.showPicker && e.target.showPicker()} className="absolute left-0 top-0 w-full h-full opacity-0 cursor-pointer" /></span></div>
                                         <div><b>Inv. Time :</b> {formattedInvTime}</div>
                                     </div>

@@ -27,7 +27,13 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData 
     });
     const [logoPreview, setLogoPreview] = useState(initialData?.logo || null);
     const [logoFile, setLogoFile] = useState(null);
-    const [seals, setSeals] = useState(initialData?.seals || []);
+    const [seals, setSeals] = useState(() => {
+        if (!initialData?.seals) return [];
+        if (typeof initialData.seals === 'string') {
+            try { return JSON.parse(initialData.seals); } catch(e) { return []; }
+        }
+        return Array.isArray(initialData.seals) ? initialData.seals : [];
+    });
     const [users, setUsers] = useState([]);
     const [sharedUsers, setSharedUsers] = useState([]);
 
@@ -63,7 +69,13 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData 
             }));
             setLogoPreview(initialData.logo || null);
             setLogoFile(null);
-            setSeals(initialData.seals || []);
+            if (!initialData?.seals) {
+                setSeals([]);
+            } else if (typeof initialData.seals === 'string') {
+                try { setSeals(JSON.parse(initialData.seals)); } catch(e) { setSeals([]); }
+            } else {
+                setSeals(Array.isArray(initialData.seals) ? initialData.seals : []);
+            }
             setSharedUsers(initialData.sharedUsers?.map(u => u.id) || []);
         } else if (isOpen && !initialData) {
             setBusinessName("");

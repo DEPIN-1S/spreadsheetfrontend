@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { FiArrowLeft, FiFileText, FiPlus, FiEdit2, FiTrash2, FiEye, FiSearch, FiEdit3, FiFilePlus, FiLink } from 'react-icons/fi';
+import { FiArrowLeft, FiFileText, FiPlus, FiEdit2, FiTrash2, FiEye, FiSearch, FiEdit3, FiFilePlus, FiLink, FiDownload } from 'react-icons/fi';
 import InvoiceTemplateModal from '../Components/InvoiceTemplateModal';
 import AddBusinessModal from '../Components/AddBusinessModal';
 import AddBusinessPartyModal from '../Components/AddBusinessPartyModal';
 import ViewBusinessPartyModal from '../Components/ViewBusinessPartyModal';
 import SelectPartyModal from '../Components/SelectPartyModal';
 import GenerateInvoiceModal from '../Components/GenerateInvoiceModal';
+import ViewSavedInvoiceModal from '../Components/ViewSavedInvoiceModal';
 import AddTemplateModal from '../Components/AddTemplateModal';
 import { businessApi } from '../api/apiClient';
 
@@ -14,6 +15,35 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isSelectPartyOpen, setIsSelectPartyOpen] = useState(false);
     const [isGenerateInvoiceOpen, setIsGenerateInvoiceOpen] = useState(false);
+    const [viewingSavedInvoice, setViewingSavedInvoice] = useState(null);
+    const [recentInvoices, setRecentInvoices] = useState(() => {
+        try {
+            const saved = localStorage.getItem('recentInvoices');
+            return saved ? JSON.parse(saved) : [];
+        } catch (e) {
+            return [];
+        }
+    });
+
+    useEffect(() => {
+        localStorage.setItem('recentInvoices', JSON.stringify(recentInvoices));
+    }, [recentInvoices]);
+
+    const [invoicePage, setInvoicePage] = useState(1);
+    const invoicePageSize = 10;
+    const totalInvoicePages = Math.max(1, Math.ceil((recentInvoices?.length || 0) / invoicePageSize));
+    const paginatedInvoices = (recentInvoices || []).slice((invoicePage - 1) * invoicePageSize, invoicePage * invoicePageSize);
+
+    useEffect(() => {
+        if (invoicePage > totalInvoicePages) {
+            setInvoicePage(Math.max(1, totalInvoicePages));
+        }
+    }, [totalInvoicePages, invoicePage]);
+
+    const handleDeleteInvoice = (id) => {
+        if (!window.confirm("Are you sure you want to delete this invoice?")) return;
+        setRecentInvoices(prev => prev.filter(inv => inv.id !== id));
+    };
     const [selectedInvoiceParty, setSelectedInvoiceParty] = useState(null);
     const [parties, setParties] = useState([]);
     const [templates, setTemplates] = useState([]);
@@ -468,6 +498,110 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                             </div>
                         )}
                     </div>
+
+                    {/* Recent Invoices Section */}
+                    <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mt-6">
+                        <h2 className="text-lg font-bold text-gray-900 mb-6">Recent Saved Invoices</h2>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse min-w-[600px]">
+                                <thead>
+                                    <tr className="bg-gray-50 border-b border-gray-200 text-xs uppercase tracking-wider text-gray-500 font-semibold">
+                                        <th className="px-6 py-3">Invoice No / Template Name</th>
+                                        <th className="px-6 py-3">Date & Time</th>
+                                        <th className="px-6 py-3">Party Name</th>
+                                        <th className="px-6 py-3 text-right">Total Amount</th>
+                                        <th className="px-6 py-3 text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200 text-sm">
+                                    {paginatedInvoices.length > 0 ? paginatedInvoices.map((inv) => (
+                                        <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
+                                            <td className="px-6 py-4">
+                                                <div className="font-semibold text-indigo-600">{inv.invoiceNo}</div>
+                                                {(() => {
+                                                    const tName = inv.templateName || inv.fullData?.template?.name || (typeof inv.fullData?.template === 'string' ? inv.fullData.template : '') || (inv.fullData?.template?.title || '');
+                                                    return tName ? (
+                                                        <div className="text-xs text-gray-400 font-normal mt-0.5">{tName}</div>
+                                                    ) : null;
+                                                })()}
+                                            </td>
+                                            <td className="px-6 py-4 text-gray-600">
+                                                {inv.date}
+                                                {inv.time && <div className="text-xs text-gray-400 mt-0.5">{inv.time}</div>}
+                                            </td>
+                                            <td className="px-6 py-4 text-gray-900 font-semibold">{inv.partyName}</td>
+                                            <td className="px-6 py-4 text-right font-black text-gray-900">
+                                                ₹{(() => {
+                                                    if (inv.total && inv.total !== '0.00' && inv.total !== '0') return inv.total;
+                                                    if (inv.grandTotal && inv.grandTotal !== '0.00' && inv.grandTotal !== '0') return inv.grandTotal;
+                                                    const fullTotals = inv.fullData?.totals;
+                                                    if (fullTotals?.manualGrandTotal) return fullTotals.manualGrandTotal;
+                                                    if (fullTotals?.grandTotal && fullTotals.grandTotal !== '0.00' && fullTotals.grandTotal !== '0') return fullTotals.grandTotal;
+                                                    if (inv.fullData?.items && Array.isArray(inv.fullData.items)) {
+                                                        const itms = inv.fullData.items;
+                                                        const gross = itms.reduce((s, it) => s + (parseFloat(it.Total) || ((parseFloat(it.Qty) || 0) * (parseFloat(it['Selling Rate']) || parseFloat(it['MRP']) || 0))), 0);
+                                                        const gst = itms.reduce((s, it) => {
+                                                            const lineTotal = parseFloat(it.Total) || ((parseFloat(it.Qty) || 0) * (parseFloat(it['Selling Rate']) || parseFloat(it['MRP']) || 0));
+                                                            return s + (lineTotal * (parseFloat(it.GST) || 0) / 100);
+                                                        }, 0);
+                                                        const gVal = parseFloat(fullTotals?.grossAmt) || gross;
+                                                        const gstV = parseFloat(fullTotals?.totalGst) || gst;
+                                                        const dVal = parseFloat(fullTotals?.disAmt) || 0;
+                                                        const aVal = parseFloat(fullTotals?.addlChg) || 0;
+                                                        const rVal = parseFloat(fullTotals?.rOff) || 0;
+                                                        const calc = gVal - dVal + aVal + gstV + rVal;
+                                                        if (calc > 0) return calc.toFixed(2);
+                                                        if (gross > 0) return gross.toFixed(2);
+                                                    }
+                                                    return inv.total || '0.00';
+                                                })()}
+                                            </td>
+                                            <td className="px-6 py-4 text-right space-x-2">
+                                                <button onClick={() => setViewingSavedInvoice(inv)} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors inline-flex" title="View">
+                                                    <FiEye size={16} />
+                                                </button>
+                                                <button onClick={() => setViewingSavedInvoice(inv)} className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition-colors inline-flex" title="Download">
+                                                    <FiDownload size={16} />
+                                                </button>
+                                                <button onClick={() => handleDeleteInvoice(inv.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors inline-flex" title="Delete">
+                                                    <FiTrash2 size={16} />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    )) : (
+                                        <tr>
+                                            <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
+                                                No recent invoices saved in this session.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                        {totalInvoicePages > 0 && recentInvoices.length > 0 && (
+                            <div className="flex items-center justify-between mt-4 px-2">
+                                <span className="text-sm text-gray-500">
+                                    Page {invoicePage} of {totalInvoicePages}
+                                </span>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => setInvoicePage(p => Math.max(1, p - 1))}
+                                        disabled={invoicePage === 1}
+                                        className="px-3 py-1 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        Previous
+                                    </button>
+                                    <button
+                                        onClick={() => setInvoicePage(p => Math.min(totalInvoicePages, p + 1))}
+                                        disabled={invoicePage === totalInvoicePages}
+                                        className="px-3 py-1 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </main>
 
@@ -520,6 +654,7 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
             />
 
             <GenerateInvoiceModal
+                onSaveInvoice={(invoice) => { setRecentInvoices(prev => [invoice, ...prev]); setInvoicePage(1); }}
                 isOpen={isGenerateInvoiceOpen}
                 onClose={() => {
                     setIsGenerateInvoiceOpen(false);
@@ -529,6 +664,12 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                 business={business}
                 party={selectedInvoiceParty}
                 template={selectedTemplate}
+            />
+
+            <ViewSavedInvoiceModal
+                isOpen={!!viewingSavedInvoice}
+                onClose={() => setViewingSavedInvoice(null)}
+                savedInvoice={viewingSavedInvoice}
             />
         </div>
     );

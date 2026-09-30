@@ -1,0 +1,594 @@
+import React, { useRef } from 'react';
+import { FiX, FiPrinter } from 'react-icons/fi';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+
+export default function ViewSavedInvoiceModal({ isOpen, onClose, savedInvoice }) {
+    const printAreaRef = useRef(null);
+
+    if (!isOpen || !savedInvoice || !savedInvoice.fullData) return null;
+
+    const { items, totals, selectedSeals, template, business, party, date } = savedInvoice.fullData;
+    const { invoiceNo, time } = savedInvoice;
+    const isWholesale = template?.isB2B || false;
+    
+    // Fallback template variables
+    let cols = [];
+    let colTypes = {};
+    if (template?.columns) {
+        let rawCols = [];
+        if (typeof template.columns === "string") {
+            try {
+                let parsed = JSON.parse(template.columns);
+                if (typeof parsed === "string") parsed = JSON.parse(parsed);
+                if (Array.isArray(parsed)) rawCols = parsed;
+            } catch {
+                if (template.columns.includes(",")) rawCols = template.columns.split(",").map(s => s.trim()).filter(Boolean);
+                else if (template.columns.trim() && !template.columns.startsWith("[")) rawCols = [template.columns.trim()];
+            }
+        } else if (Array.isArray(template.columns)) {
+            rawCols = template.columns;
+        }
+        rawCols.forEach(c => {
+            if (typeof c === "object" && c !== null) {
+                if (c.name) {
+                    cols.push(c.name);
+                    if (c.type) colTypes[c.name] = c.type;
+                }
+            } else if (typeof c === "string") {
+                cols.push(c);
+            }
+        });
+    }
+    if (!Array.isArray(cols)) cols = [];
+    const defaultCols = ["Product Name", "Qty", "Selling Rate", "Discount", "MRP", "GST", "Total"];
+    if (cols.length === 0) cols = defaultCols;
+    const initialCols = cols.reduce((acc, c) => ({ ...acc, [c]: true }), { slNo: true });
+    const visibleColumns = template?.visibleColumns ? (typeof template.visibleColumns === 'string' ? JSON.parse(template.visibleColumns) : template.visibleColumns) : initialCols;
+    const templateName = template?.name || 'Standard Invoice';
+    const formatDateDMY = (d) => d;
+
+    // Auto-calculate financial numbers from items if not present in totals
+    const totalNoCalc = (items || []).reduce((sum, item) => sum + (parseFloat(item.Qty) || 0), 0);
+    const totalGrossCalc = (items || []).reduce((sum, item) => {
+        const totalVal = parseFloat(item.Total);
+        if (!isNaN(totalVal)) return sum + totalVal;
+        const qty = parseFloat(item.Qty) || 0;
+        const rate = parseFloat(item['Selling Rate']) || parseFloat(item['MRP']) || 0;
+        return sum + (qty * rate);
+    }, 0);
+    const totalGstCalc = (items || []).reduce((sum, item) => {
+        const gstPercent = parseFloat(item.GST) || 0;
+        const lineTotal = parseFloat(item.Total) || ((parseFloat(item.Qty) || 0) * (parseFloat(item['Selling Rate']) || parseFloat(item['MRP']) || 0));
+        return sum + (lineTotal * gstPercent / 100);
+    }, 0);
+
+    const gstVal = parseFloat(totals?.totalGst !== '' && totals?.totalGst !== undefined ? totals.totalGst : (totalGstCalc > 0 ? totalGstCalc : 0)) || 0;
+    const grossVal = parseFloat(totals?.grossAmt !== '' && totals?.grossAmt !== undefined ? totals.grossAmt : (totalGrossCalc - gstVal)) || 0;
+    const disVal = parseFloat(totals?.disAmt) || 0;
+    const addlVal = parseFloat(totals?.addlChg) || 0;
+    const roffVal = parseFloat(totals?.rOff) || 0;
+
+    const computedGrandTotal = (grossVal - disVal + addlVal + gstVal + roffVal).toFixed(2);
+
+    const displayGrandTotal = (totals?.manualGrandTotal !== undefined && totals?.manualGrandTotal !== '')
+        ? totals.manualGrandTotal
+        : (savedInvoice?.total && savedInvoice.total !== '0.00' && savedInvoice.total !== '0')
+            ? savedInvoice.total
+            : (totals?.grandTotal && totals.grandTotal !== '0.00' && totals.grandTotal !== '0')
+                ? totals.grandTotal
+                : (grossVal > 0 || disVal > 0 || addlVal > 0 || roffVal !== 0 || gstVal > 0 ? computedGrandTotal : (totalGrossCalc > 0 ? totalGrossCalc.toFixed(2) : '0.00'));
+
+    const displayGrossAmt = (totals?.grossAmt !== '' && totals?.grossAmt !== undefined)
+        ? totals.grossAmt
+        : (grossVal > 0 ? grossVal.toFixed(2) : (totalGrossCalc > 0 ? totalGrossCalc.toFixed(2) : ''));
+
+    const displayGstAmt = (totals?.totalGst !== '' && totals?.totalGst !== undefined)
+        ? totals.totalGst
+        : (gstVal > 0 ? gstVal.toFixed(2) : '');
+
+    const displayTotalNo = (totals?.totalNo !== '' && totals?.totalNo !== undefined)
+        ? totals.totalNo
+        : (totalNoCalc > 0 ? totalNoCalc : '');
+
+    const handlePrint = () => {
+        const printContent = printAreaRef.current;
+        if (!printContent) {
+            window.print();
+            return;
+        }
+
+        // Sync input values to their value attributes so they print in cloned iframe
+        const inputs = printContent.querySelectorAll('input');
+        inputs.forEach(input => {
+            input.setAttribute('value', input.value || '');
+        });
+
+        let iframe = document.getElementById('invoice-print-iframe');
+        if (!iframe) {
+            iframe = document.createElement('iframe');
+            iframe.id = 'invoice-print-iframe';
+            iframe.style.position = 'fixed';
+            iframe.style.right = '0';
+            iframe.style.bottom = '0';
+            iframe.style.width = '0';
+            iframe.style.height = '0';
+            iframe.style.border = '0';
+            document.body.appendChild(iframe);
+        }
+
+        const styles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+            .map(s => s.outerHTML)
+            .join('\n');
+
+        const doc = iframe.contentWindow.document;
+        doc.open();
+        doc.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>${invoiceNo || 'Tax Invoice'}</title>
+                ${styles}
+                <style>
+                    @page {
+                        size: A4 portrait;
+                        margin: 6mm;
+                    }
+                    * {
+                        box-sizing: border-box;
+                    }
+                    html, body {
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        background: #fff !important;
+                        color: #000 !important;
+                        width: 100% !important;
+                        height: auto !important;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                    #business-invoice-print-area {
+                        width: 100% !important;
+                        max-width: 100% !important;
+                        margin: 0 auto !important;
+                        border: 2px solid #000 !important;
+                        box-shadow: none !important;
+                        background: #fff !important;
+                    }
+                    #business-invoice-print-area table {
+                        min-width: 0 !important;
+                        width: 100% !important;
+                    }
+                    #business-invoice-print-area input {
+                        border: none !important;
+                        background: transparent !important;
+                        box-shadow: none !important;
+                        color: #000 !important;
+                    }
+                    .no-print {
+                        display: none !important;
+                    }
+                </style>
+            </head>
+            <body>
+                <div id="business-invoice-print-area" class="${printContent.className}">
+                    ${printContent.innerHTML}
+                </div>
+            </body>
+            </html>
+        `);
+        doc.close();
+
+        setTimeout(() => {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+        }, 250);
+    };
+
+    const handleDownload = async () => {
+        if (!printAreaRef.current) return;
+        try {
+            const canvas = await html2canvas(printAreaRef.current, { scale: 2 });
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+            pdf.save(`${invoiceNo || 'Invoice'}.pdf`);
+        } catch (e) {
+            console.error('Error generating PDF', e);
+            window.print();
+        }
+    };
+
+    return (
+        <React.Fragment>
+            <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+                <style>{`
+                    @media print {
+                        @page {
+                            size: A4 portrait;
+                            margin: 6mm;
+                        }
+                        html, body {
+                            width: 100% !important;
+                            height: auto !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            background: #fff !important;
+                            overflow: visible !important;
+                            -webkit-print-color-adjust: exact !important;
+                            print-color-adjust: exact !important;
+                        }
+                        body * {
+                            visibility: hidden !important;
+                        }
+                        #business-invoice-print-area, #business-invoice-print-area * {
+                            visibility: visible !important;
+                        }
+                        div:has(#business-invoice-print-area),
+                        .fixed, 
+                        .backdrop-blur-sm, 
+                        .animate-fade-in,
+                        .max-h-\\[95vh\\],
+                        .overflow-y-auto,
+                        .overflow-hidden {
+                            position: static !important;
+                            display: block !important;
+                            padding: 0 !important;
+                            margin: 0 !important;
+                            width: 100% !important;
+                            height: auto !important;
+                            max-height: none !important;
+                            overflow: visible !important;
+                            background: transparent !important;
+                            backdrop-filter: none !important;
+                            filter: none !important;
+                            transform: none !important;
+                            animation: none !important;
+                            box-shadow: none !important;
+                            border: none !important;
+                        }
+                        #business-invoice-print-area {
+                            position: absolute !important;
+                            left: 0 !important;
+                            top: 0 !important;
+                            width: 100% !important;
+                            max-width: 100% !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            box-shadow: none !important;
+                            border: 2px solid #000 !important;
+                            background: #fff !important;
+                            -webkit-print-color-adjust: exact !important;
+                            print-color-adjust: exact !important;
+                        }
+                        #business-invoice-print-area table {
+                            min-width: 0 !important;
+                            width: 100% !important;
+                        }
+                        #business-invoice-print-area input {
+                            border: none !important;
+                            background: transparent !important;
+                            box-shadow: none !important;
+                            color: #000 !important;
+                        }
+                        .no-print {
+                            display: none !important;
+                        }
+                    }
+                `}</style>
+
+                <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full overflow-hidden flex flex-col max-h-[95vh]">
+                    
+                    <div className="px-6 py-4 bg-gray-900 text-white flex items-center justify-between no-print border-b border-gray-800">
+                        <div className="flex items-center gap-3">
+                            <span className="bg-indigo-600 text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">Saved Invoice</span>
+                            <h2 className="text-lg font-bold truncate max-w-sm">{templateName}</h2>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-2 mr-2">
+                                <button
+                                    onClick={handleDownload}
+                                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow transition-colors"
+                                >
+                                    Download PDF
+                                </button>
+                                <button 
+                                    onClick={handlePrint}
+                                    className="flex items-center gap-2 text-sm bg-gray-800 hover:bg-gray-700 text-gray-200 px-4 py-2 rounded-lg transition-colors border border-gray-700"
+                                >
+                                    <FiPrinter />
+                                    <span>Print</span>
+                                </button>
+                            </div>
+                            <div className="w-px h-6 bg-gray-700"></div>
+                            <button 
+                                onClick={onClose}
+                                className="text-gray-400 hover:text-white transition-colors p-1"
+                            >
+                                <FiX size={24} />
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto bg-gray-100 p-8 relative">
+                        <div ref={printAreaRef} id="business-invoice-print-area" className="bg-white mx-auto border-2 border-black text-black font-sans text-xs shadow-lg max-w-[900px]">
+                        
+                        {/* 1. Header Grid */}
+                        <div className="grid grid-cols-12 border-b-2 border-black">
+                            
+                            {/* Left Box: Seller */}
+                            <div className="col-span-5 border-r-2 border-black p-2.5 space-y-1.5">
+                                <div className="flex items-center gap-2 mb-2">
+                                    {business?.logo && <img src={business.logo} alt="Logo" className="h-12 object-contain" />}
+                                    <span className="font-extrabold text-lg">{business?.name}</span>
+                                    {template?.isB2B && (
+                                        <span className="border border-black px-1.5 py-0.5 text-[15px] font-bold tracking-wide ">B 2 B</span>
+                                    )}
+                                </div>
+                                <div className="space-y-1 mt-1">
+                                    {(() => {
+                                        if (!business?.additionalData) return null;
+                                        let dataArray = business.additionalData;
+                                        if (typeof dataArray === 'string') {
+                                            try { dataArray = JSON.parse(dataArray); } catch { return null; }
+                                        }
+                                        if (!Array.isArray(dataArray)) return null;
+
+                                        return dataArray.map((item, idx) => {
+                                            const value = typeof item === 'object' && item !== null ? (item.value || item.key || "") : item;
+                                            if (!value) return null;
+                                            return (
+                                                <div key={idx} className="text-[11px] leading-tight">
+                                                    {value}
+                                                </div>
+                                            );
+                                        });
+                                    })()}
+                                    {(!business?.additionalData || business.additionalData.length === 0) && (
+                                        <React.Fragment>
+                                            <div className="text-[11px] leading-tight text-gray-900 pt-0.5">SH1, Kilimanoor, Thiruvananthapuram, Kerala - 695601</div>
+                                            <div className="text-[11px] pt-1"><b>Email ID :</b> rxpharma27@gmail.com</div>
+                                            <div className="text-[11px]"><b>GST No :</b> 32ACAFM5688A1ZH</div>
+                                            <div className="text-[11px] leading-tight pt-0.5">
+                                                <b>DL No :</b> RLF20KL2026002461 , RLF21KL2026002472
+                                            </div>
+                                        </React.Fragment>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Middle Box: Invoice Info */}
+                            <div className="col-span-3 border-r-2 border-black p-2.5 flex flex-col justify-between">
+                                <div>
+                                    <div className="text-center font-black text-sm underline uppercase tracking-wide">TAX INVOICE </div>
+                                    <div className="space-y-1 text-[11px] mt-2">
+                                        <div><b>Tax Inv. No. :</b> {invoiceNo || 'IG-INV-2026-001'}</div>
+                                        <div className="flex items-center gap-1"><b>Inv. Date :</b> {date}</div>
+                                        <div><b>Inv. Time :</b> {time}</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {/* Right Box: Buyer / Customer */}
+                            <div className="col-span-4 p-2.5 space-y-1 text-[11px] flex flex-col justify-between">
+                                <div className="space-y-1.5">
+                                    <div className="font-extrabold text-xs uppercase leading-tight text-black">
+                                        {party?.name || 'CASH CUSTOMER'}
+                                    </div>
+                                    {party?.contact && (
+                                        <div className="text-gray-800 leading-tight">
+                                            <b>Phone : </b>
+                                            <span>{party.contact}</span>
+                                        </div>
+                                    )}
+                                    {(party?.age || party?.gender) && (
+                                        <div className="text-gray-800 leading-tight">
+                                            {party?.age && <span><b>Age : </b>{party.age}</span>}
+                                            {party?.age && party?.gender && <span> &nbsp;|&nbsp; </span>}
+                                            {party?.gender && <span><b>Gender : </b>{party.gender}</span>}
+                                        </div>
+                                    )}
+                                    
+                                    {/* Additional Data or Fallbacks */}
+                                    {(() => {
+                                        let pData = party?.additionalData;
+                                        if (typeof pData === 'string') {
+                                            try { pData = JSON.parse(pData); } catch { pData = []; }
+                                        }
+                                        if (Array.isArray(pData) && pData.length > 0) {
+                                            return pData.map((data, idx) => {
+                                                const isObj = typeof data === 'object' && data !== null;
+                                                const key = isObj ? data.key : (typeof data === 'string' && data.includes(':') ? data.split(':')[0].trim() : '');
+                                                const val = isObj ? data.value : (typeof data === 'string' && data.includes(':') ? data.split(':').slice(1).join(':').trim() : data);
+                                                if (!val && !key) return null;
+                                                const displayKey = key ? (key.trim().endsWith(':') ? key.trim().slice(0, -1).trim() : key.trim()) : '';
+                                                return (
+                                                    <div key={idx} className="text-gray-800 leading-tight">
+                                                        {displayKey ? <b>{displayKey} : </b> : null}
+                                                        <span>{val}</span>
+                                                    </div>
+                                                );
+                                            });
+                                        }
+                                        return (
+                                            <React.Fragment>
+                                                {(party?.address || party?.email) && (
+                                                    <div className="leading-tight uppercase text-gray-800">
+                                                        {party?.address || party?.email}
+                                                    </div>
+                                                )}
+                                                {!isWholesale && party?.age && <div className="text-gray-800">{party.age}</div>}
+                                                {isWholesale && (
+                                                    <React.Fragment>
+                                                        {party?.dlNo && <div className="text-gray-800">{party.dlNo}</div>}
+                                                        {party?.gstinNo && <div className="text-gray-800">{party.gstinNo}</div>}
+                                                    </React.Fragment>
+                                                )}
+                                                {party?.panNo && <div className="text-gray-800">{party.panNo}</div>}
+                                            </React.Fragment>
+                                        );
+                                    })()}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 2. Items Table */}
+                        <div className="w-full border-b-2 border-black overflow-visible">
+                            <table className="w-full text-left border-collapse min-w-[700px]">
+                                <thead>
+                                    <tr className="bg-gray-100 border-b border-black text-[10px] font-extrabold uppercase tracking-tight text-black">
+                                        {visibleColumns.slNo && <th className="border-r border-black py-1 px-1 text-center w-8">SL.</th>}
+                                        {(cols || []).map(col => (
+                                                visibleColumns[col] && <th key={col} className="border-r border-black py-1 px-1 text-center">{col.toUpperCase() === "DISCOUNT" ? "DISCOUNT %" : col.toUpperCase() === "GST" ? "GST %" : col}</th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-300 text-[10px]">
+                                    {(items || []).map((item, index) => (
+                                        <tr key={item.id || index} className="hover:bg-gray-50/80 transition-colors group">
+                                            {visibleColumns.slNo && (
+                                                <td className="border-r border-black py-1 px-1 text-center font-bold relative w-8">
+                                                    <span>{index + 1}</span>
+                                                </td>
+                                            )}
+                                            {(cols || []).map(col => (
+                                                visibleColumns[col] && (
+                                                    <td key={col} className="border-r border-black py-0 px-1 text-center font-mono relative">
+                                                        {col === 'Product Name' ? (
+                                                            <div className="relative w-full h-full">
+                                                                <div className="w-full text-center text-[10px] font-mono text-black m-0 p-0 h-full">{item[col] || ""}</div>
+                                                            </div>
+                                                        ) : colTypes && colTypes[col] === "date" ? (
+                                                            <span className="relative inline-flex items-center justify-center w-full h-full">
+                                                                <span className="text-[10px] font-mono text-black">{item[col] ? formatDateDMY(item[col]) : col}</span>
+                                                            </span>
+                                                        ) : (
+                                                            <input 
+                                                                type={colTypes && colTypes[col] === "number" ? "number" : "text"}
+                                                                value={item[col] || ""} 
+                                                                readOnly
+                                                                className="w-full bg-transparent border-none outline-none text-center text-[10px] font-mono text-black m-0 p-0 h-full cursor-default" 
+                                                                placeholder={col}
+                                                            />
+                                                        )}
+                                                    </td>
+                                                )
+                                            ))}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* 4. Calculation Grid */}
+                        <div className="grid grid-cols-12 border-b-2 border-black text-[11px]">
+                            
+                            {/* Col 1: Totals summary */}
+                            <div className="col-span-3 border-r-2 border-black p-1.5 space-y-0.5 [&_input]:bg-transparent [&_input]:border-none [&_input]:outline-none [&_input]:text-[10px] [&_input]:w-16 [&_input]:text-right">
+                                <div className="flex justify-between"><b>Total Items :</b> {items?.length || 0}</div>
+                                <div className="flex justify-between items-center"><b>Total No :</b> <span>{displayTotalNo}</span></div>
+                            </div>
+
+                            {/* Col 2: Seal Area */}
+                            <div className="col-span-4 border-r-2 border-black p-1 flex flex-col items-center justify-center relative min-h-[120px]">
+                                <div className="w-full h-full flex flex-wrap items-center justify-center gap-4 relative">
+                                    {(!selectedSeals || selectedSeals.length === 0) && (
+                                        <span className="text-[10px] text-gray-300 text-center no-print absolute">Seal Area</span>
+                                    )}
+                                    {(selectedSeals || []).map((sealUrl, index) => {
+                                        const rotation = index % 2 === 0 ? '-rotate-3' : 'rotate-2';
+                                        return (
+                                            <div key={index} className="relative group/seal">
+                                                <img src={sealUrl} alt="Seal" className={`max-w-[180px] max-h-32 object-contain mix-blend-multiply opacity-85 ${rotation}`} />
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Col 4: Final Financials & Sign */}
+                            <div className="col-span-5 flex flex-col justify-between text-[11px]">
+                                <div className="p-1.5 space-y-0.5 font-mono [&_input]:bg-transparent [&_input]:border-none [&_input]:outline-none [&_input]:text-[11px] [&_input]:w-20 [&_input]:text-right">
+                                    <div className="flex justify-between font-sans items-center">
+                                        <span>Gross Amt</span>
+                                        <input 
+                                            type="text" 
+                                            readOnly 
+                                            className="font-mono font-bold" 
+                                            value={displayGrossAmt} 
+                                            placeholder="0.00" 
+                                        />
+                                    </div>
+                                    <div className="flex justify-between font-sans items-center">
+                                        <span>Dis Amt</span>
+                                        <input 
+                                            type="text" 
+                                            readOnly 
+                                            value={totals?.disAmt || ""} 
+                                            placeholder="0.00" 
+                                        />
+                                    </div>
+                                    <div className="flex justify-between font-sans items-center">
+                                        <span>Addl Chg</span>
+                                        <input 
+                                            type="text" 
+                                            readOnly 
+                                            value={totals?.addlChg || ""} 
+                                            placeholder="0.00" 
+                                        />
+                                    </div>
+                                    <div className="flex justify-between font-sans items-center">
+                                        <span>GST Amt</span>
+                                        <input 
+                                            type="text" 
+                                            readOnly 
+                                            className="font-mono" 
+                                            value={displayGstAmt} 
+                                            placeholder="0.00" 
+                                        />
+                                    </div>
+                                    <div className="flex justify-between font-sans items-center">
+                                        <span>R.off</span>
+                                        <input 
+                                            type="text" 
+                                            readOnly 
+                                            value={totals?.rOff || ""} 
+                                            placeholder="0.00" 
+                                        />
+                                    </div>
+                                </div>
+                                <div className="bg-white text-black border-y-2 border-black font-black text-sm px-2.5 py-1.5 flex justify-between items-center tracking-wide">
+                                    <span className="whitespace-nowrap">Grand Total</span>
+                                    <input 
+                                        type="text" 
+                                        readOnly 
+                                        className="font-mono text-right bg-transparent border-none outline-none w-28" 
+                                        value={displayGrandTotal} 
+                                        placeholder="0.00" 
+                                    />
+                                </div>
+                                <div className="p-1.5 text-[10px] space-y-0.5">
+                                    <div className="text-right">
+                                        <b>For : {business?.name}</b><br/>
+                                        {template?.signatureImage ? (
+                                            <div className="flex justify-end py-1">
+                                                <img src={template.signatureImage} alt="Signature" className="h-10 max-w-[120px] object-contain" />
+                                            </div>
+                                        ) : (
+                                            <div className="h-6"></div>
+                                        )}
+                                        <b className="border-t border-black px-2 pt-0.5 inline-block">Authorised Signatory</b>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                    </div>
+                </div>
+            </div>
+        </React.Fragment>
+    );
+}
