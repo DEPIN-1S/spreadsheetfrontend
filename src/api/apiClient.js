@@ -109,6 +109,7 @@ apiClient.interceptors.response.use(
 );
 
 export const businessApi = {
+    getBusiness: (id) => apiClient.get(`/business/${id}`),
     updateBusiness: (id, payload) => apiClient.put(`/business/${id}`, payload),
     listParties: (businessId, page = 1, limit = 10, search = '') => apiClient.get(`/business/${businessId}/parties?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&t=${Date.now()}`),
     addParty: (businessId, data) => apiClient.post(`/business/${businessId}/parties`, data),
@@ -118,7 +119,13 @@ export const businessApi = {
     getTemplates: (businessId) => apiClient.get(`/templates/business/${businessId}`),
     createTemplate: (data) => apiClient.post(`/templates`, data),
     updateTemplate: (templateId, data) => apiClient.put(`/templates/${templateId}`, data),
-    deleteTemplate: (templateId) => apiClient.delete(`/templates/${templateId}`)
+    deleteTemplate: (templateId) => apiClient.delete(`/templates/${templateId}`),
+    
+    // Saved Invoices
+    saveInvoice: (businessId, data) => apiClient.post(`/business/${businessId}/invoices`, data),
+    getSavedInvoices: (businessId) => apiClient.get(`/business/${businessId}/invoices`),
+    deleteSavedInvoice: (businessId, invoiceId) => apiClient.delete(`/business/${businessId}/invoices/${invoiceId}`),
+    clearSavedInvoices: (businessId) => apiClient.delete(`/business/${businessId}/invoices`)
 };
 
 export default apiClient;

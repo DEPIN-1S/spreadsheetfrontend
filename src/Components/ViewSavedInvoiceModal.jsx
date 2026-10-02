@@ -3,12 +3,44 @@ import { FiX, FiPrinter } from 'react-icons/fi';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
-export default function ViewSavedInvoiceModal({ isOpen, onClose, savedInvoice }) {
+export default function ViewSavedInvoiceModal({ isOpen, onClose, savedInvoice, currentBusiness }) {
     const printAreaRef = useRef(null);
 
     if (!isOpen || !savedInvoice || !savedInvoice.fullData) return null;
 
-    const { items, totals, selectedSeals, template, business, party, date } = savedInvoice.fullData;
+    let parsedData = savedInvoice.fullData;
+    if (typeof parsedData === 'string') {
+        try { parsedData = JSON.parse(parsedData); } catch(e) {}
+    }
+    const { items, totals, template, party, date } = parsedData || {};
+    let business = parsedData?.business || {};
+    let selectedSeals = parsedData?.selectedSeals || [];
+    
+    // Hydrate stripped heavy base64 assets from the active currentBusiness context
+    if (currentBusiness) {
+        if (!business.logo) business.logo = currentBusiness.logo;
+        if (!business.seal) business.seal = currentBusiness.seal;
+        if (!business.signatureImage) business.signatureImage = currentBusiness.signatureImage;
+        if (!business.signatures) business.signatures = currentBusiness.signatures;
+        if (!business.seals) business.seals = currentBusiness.seals;
+        
+        // If seals were stripped out due to size, fallback to showing 1 seal if the business has one
+        if (selectedSeals.length === 0) {
+            let fallbackSeal = currentBusiness.seal;
+            if (!fallbackSeal && currentBusiness.seals) {
+                let sealsArray = currentBusiness.seals;
+                if (typeof sealsArray === 'string') {
+                    try { sealsArray = JSON.parse(sealsArray); } catch(e) { sealsArray = []; }
+                }
+                if (sealsArray && sealsArray.length > 0) {
+                    fallbackSeal = sealsArray[0];
+                }
+            }
+            if (fallbackSeal) {
+                selectedSeals = [fallbackSeal];
+            }
+        }
+    }
     const { invoiceNo, time } = savedInvoice;
     const isWholesale = template?.isB2B || false;
     
@@ -205,7 +237,7 @@ export default function ViewSavedInvoiceModal({ isOpen, onClose, savedInvoice })
         <React.Fragment>
             <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
                 <style>{`
-                    @media print {
+                                        @media print {
                         @page {
                             size: A4 portrait;
                             margin: 6mm;
@@ -216,7 +248,6 @@ export default function ViewSavedInvoiceModal({ isOpen, onClose, savedInvoice })
                             margin: 0 !important;
                             padding: 0 !important;
                             background: #fff !important;
-                            overflow: visible !important;
                             -webkit-print-color-adjust: exact !important;
                             print-color-adjust: exact !important;
                         }
@@ -225,29 +256,6 @@ export default function ViewSavedInvoiceModal({ isOpen, onClose, savedInvoice })
                         }
                         #business-invoice-print-area, #business-invoice-print-area * {
                             visibility: visible !important;
-                        }
-                        div:has(#business-invoice-print-area),
-                        .fixed, 
-                        .backdrop-blur-sm, 
-                        .animate-fade-in,
-                        .max-h-\\[95vh\\],
-                        .overflow-y-auto,
-                        .overflow-hidden {
-                            position: static !important;
-                            display: block !important;
-                            padding: 0 !important;
-                            margin: 0 !important;
-                            width: 100% !important;
-                            height: auto !important;
-                            max-height: none !important;
-                            overflow: visible !important;
-                            background: transparent !important;
-                            backdrop-filter: none !important;
-                            filter: none !important;
-                            transform: none !important;
-                            animation: none !important;
-                            box-shadow: none !important;
-                            border: none !important;
                         }
                         #business-invoice-print-area {
                             position: absolute !important;
@@ -258,11 +266,15 @@ export default function ViewSavedInvoiceModal({ isOpen, onClose, savedInvoice })
                             margin: 0 !important;
                             padding: 0 !important;
                             box-shadow: none !important;
-                            border: 2px solid #000 !important;
+                            border: none !important;
                             background: #fff !important;
-                            -webkit-print-color-adjust: exact !important;
-                            print-color-adjust: exact !important;
                         }
+                        
+                        /* HOLY GRAIL FIX: Shrink the physical layout space of everything EXCEPT the print area */
+                        body :not(:has(#business-invoice-print-area)):not(#business-invoice-print-area):not(#business-invoice-print-area *) {
+                            display: none !important;
+                        }
+
                         #business-invoice-print-area table {
                             min-width: 0 !important;
                             width: 100% !important;
@@ -322,30 +334,36 @@ export default function ViewSavedInvoiceModal({ isOpen, onClose, savedInvoice })
                             <div className="col-span-5 border-r-2 border-black p-2.5 space-y-1.5">
                                 <div className="flex items-center gap-2 mb-2">
                                     {business?.logo && <img src={business.logo} alt="Logo" className="h-12 object-contain" />}
-                                    <span className="font-extrabold text-lg">{business?.name}</span>
+                                    {template?.showBusinessName !== false && (
+                                        <span className="font-extrabold text-lg">{business?.name}</span>
+                                    )}
                                     {template?.isB2B && (
                                         <span className="border border-black px-1.5 py-0.5 text-[15px] font-bold tracking-wide ">B 2 B</span>
                                     )}
                                 </div>
                                 <div className="space-y-1 mt-1">
-                                    {(() => {
-                                        if (!business?.additionalData) return null;
-                                        let dataArray = business.additionalData;
+                                    {(({ business: b = business }) => {
+                                        if (!b?.additionalData) return null;
+                                        let dataArray = b.additionalData;
                                         if (typeof dataArray === 'string') {
-                                            try { dataArray = JSON.parse(dataArray); } catch { return null; }
+                                            try { dataArray = JSON.parse(dataArray); } catch(e) { return null; }
                                         }
                                         if (!Array.isArray(dataArray)) return null;
 
                                         return dataArray.map((item, idx) => {
-                                            const value = typeof item === 'object' && item !== null ? (item.value || item.key || "") : item;
-                                            if (!value) return null;
+                                            const isObj = typeof item === 'object' && item !== null;
+                                            const key = isObj ? item.key : (typeof item === 'string' && item.includes(':') ? item.split(':')[0].trim() : '');
+                                            const val = isObj ? item.value : (typeof item === 'string' && item.includes(':') ? item.split(':').slice(1).join(':').trim() : item);
+                                            if (!val && !key) return null;
+                                            const displayKey = key ? (key.trim().endsWith(':') ? key.trim().slice(0, -1).trim() : key.trim()) : '';
                                             return (
-                                                <div key={idx} className="text-[11px] leading-tight">
-                                                    {value}
+                                                <div key={idx} className="text-[11px] leading-tight text-gray-800">
+                                                    {displayKey ? <b>{displayKey} : </b> : null}
+                                                    <span>{val}</span>
                                                 </div>
                                             );
                                         });
-                                    })()}
+                                    })({ business })}
                                     {(!business?.additionalData || business.additionalData.length === 0) && (
                                         <React.Fragment>
                                             <div className="text-[11px] leading-tight text-gray-900 pt-0.5">SH1, Kilimanoor, Thiruvananthapuram, Kerala - 695601</div>
@@ -419,7 +437,7 @@ export default function ViewSavedInvoiceModal({ isOpen, onClose, savedInvoice })
                                                         {party?.address || party?.email}
                                                     </div>
                                                 )}
-                                                {!isWholesale && party?.age && <div className="text-gray-800">{party.age}</div>}
+                                                
                                                 {isWholesale && (
                                                     <React.Fragment>
                                                         {party?.dlNo && <div className="text-gray-800">{party.dlNo}</div>}
@@ -570,16 +588,49 @@ export default function ViewSavedInvoiceModal({ isOpen, onClose, savedInvoice })
                                     />
                                 </div>
                                 <div className="p-1.5 text-[10px] space-y-0.5">
+                                    <div className="text-left">
+                                        <b>For : {business?.name}</b>
+                                    </div>
                                     <div className="text-right">
-                                        <b>For : {business?.name}</b><br/>
-                                        {template?.signatureImage ? (
-                                            <div className="flex justify-end py-1">
-                                                <img src={template.signatureImage} alt="Signature" className="h-10 max-w-[120px] object-contain" />
-                                            </div>
-                                        ) : (
-                                            <div className="h-6"></div>
-                                        )}
-                                        <b className="border-t border-black px-2 pt-0.5 inline-block">Authorised Signatory</b>
+                                        <div className="inline-flex flex-col items-center">
+                                        {(() => {
+                                            let sigs = [];
+                                            let rawSigs = business?.signatures;
+                                            if (typeof rawSigs === 'string') {
+                                                try { rawSigs = JSON.parse(rawSigs); } catch(e) { rawSigs = []; }
+                                            }
+                                            if (Array.isArray(rawSigs) && rawSigs.length > 0) {
+                                                sigs = rawSigs.filter(Boolean);
+                                            } else if (business?.signatureImage) {
+                                                sigs = [business.signatureImage];
+                                            }
+
+                                            let currentSig = sigs.length > 0 ? sigs[0] : null;
+
+                                            if (!currentSig) {
+                                                let sealsArray = business?.seals;
+                                                if (typeof sealsArray === 'string') {
+                                                    try { sealsArray = JSON.parse(sealsArray); } catch(e) { sealsArray = []; }
+                                                }
+                                                if (Array.isArray(sealsArray) && sealsArray.length > 0 && sealsArray[0]) {
+                                                    currentSig = sealsArray[0];
+                                                } else if (business?.seal) {
+                                                    currentSig = business.seal;
+                                                } else if (template?.signatureImage) {
+                                                    currentSig = template.signatureImage;
+                                                }
+                                            }
+
+                                            return currentSig ? (
+                                                <div className="flex justify-center py-1">
+                                                        <img src={currentSig} alt="Signature / Seal" className="h-16 max-w-[180px] object-contain" />
+                                                </div>
+                                            ) : (
+                                                <div className="h-6"></div>
+                                            );
+                                        })()}
+                                        <b className="border-t border-black px-2 pt-0.5 inline-block text-center">Authorised Signatory</b>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

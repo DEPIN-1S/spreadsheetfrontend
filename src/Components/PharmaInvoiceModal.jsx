@@ -570,8 +570,10 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                     <span className="font-mono">{grandTotal.toFixed(2)}</span>
                                 </div>
                                 <div className="p-1.5 text-[10px] space-y-0.5">
+                                    <div className="text-left">
+                                        <b>For : Rx Pharma</b>
+                                    </div>
                                     <div className="text-right">
-                                        <b>For : Rx Pharma</b><br/>
                                         <div className="h-6"></div>
                                         <b className="border-t border-black px-2 pt-0.5 inline-block">Authorised Signatory</b>
                                     </div>

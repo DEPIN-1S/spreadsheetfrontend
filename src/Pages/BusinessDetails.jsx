@@ -13,26 +13,79 @@ import { businessApi } from '../api/apiClient';
 export default function BusinessDetails({ business, setActivePath, setCurrentBusiness }) {
     const [isTemplateOpen, setIsTemplateOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [isUpdating, setIsUpdating] = useState(false);
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+    const isSuperAdmin = currentUser?.role === 'superadmin';
     const [isSelectPartyOpen, setIsSelectPartyOpen] = useState(false);
     const [isGenerateInvoiceOpen, setIsGenerateInvoiceOpen] = useState(false);
     const [viewingSavedInvoice, setViewingSavedInvoice] = useState(null);
-    const [recentInvoices, setRecentInvoices] = useState(() => {
-        try {
-            const saved = localStorage.getItem('recentInvoices');
-            return saved ? JSON.parse(saved) : [];
-        } catch (e) {
-            return [];
-        }
-    });
-
+    const [recentInvoices, setRecentInvoices] = useState([]);
+    
     useEffect(() => {
-        localStorage.setItem('recentInvoices', JSON.stringify(recentInvoices));
-    }, [recentInvoices]);
+        if (business?.id) {
+            businessApi.getSavedInvoices(business.id)
+                .then(res => {
+                    console.log('GET INVOICES RESPONSE:', res.data);
+                        if (res.data.success) {
+                        const invoicesList = res.data.data ? (res.data.data.invoices || []) : (res.data.invoices || []);
+                          setRecentInvoices(invoicesList);
+                    }
+                })
+                .catch(err => console.error("Failed to load saved invoices", err));
+        }
+    }, [business?.id]);
 
     const [invoicePage, setInvoicePage] = useState(1);
     const invoicePageSize = 10;
-    const totalInvoicePages = Math.max(1, Math.ceil((recentInvoices?.length || 0) / invoicePageSize));
-    const paginatedInvoices = (recentInvoices || []).slice((invoicePage - 1) * invoicePageSize, invoicePage * invoicePageSize);
+    
+    const [sortOption, setSortOption] = useState('newest');
+    const [filterMonth, setFilterMonth] = useState('');
+    const [filterDate, setFilterDate] = useState('');
+
+    const sortedAndFilteredInvoices = React.useMemo(() => {
+        let result = [...(recentInvoices || [])].filter(Boolean);
+        if (filterMonth) {
+            result = result.filter(inv => {
+                if (!inv.date) return false;
+                const p = inv.date.split(/[-/]/);
+                if (p.length !== 3) return true;
+                let y, m;
+                if (p[0].length === 4) { y = p[0]; m = p[1]; }
+                else { y = p[2]; m = p[1]; }
+                m = m.padStart(2, '0');
+                return `${y}-${m}` === filterMonth;
+            });
+        }
+        if (filterDate) {
+            result = result.filter(inv => {
+                if (!inv.date) return false;
+                const p = inv.date.split(/[-/]/);
+                if (p.length !== 3) return true;
+                let y, m, d;
+                if (p[0].length === 4) { y = p[0]; m = p[1]; d = p[2]; }
+                else { y = p[2]; m = p[1]; d = p[0]; }
+                m = m.padStart(2, '0');
+                d = d.padStart(2, '0');
+                return `${y}-${m}-${d}` === filterDate;
+            });
+        }
+        result.sort((a, b) => {
+            const parseDate = (dStr) => {
+                if (!dStr) return 0;
+                const p = dStr.split(/[-/]/);
+                if (p.length !== 3) return 0;
+                if (p[0].length === 4) return new Date(p[0], parseInt(p[1])-1, p[2]).getTime();
+                return new Date(p[2], parseInt(p[1])-1, p[0]).getTime();
+            };
+            const timeA = parseDate(a.date);
+            const timeB = parseDate(b.date);
+            return sortOption === 'newest' ? timeB - timeA : timeA - timeB;
+        });
+        return result;
+    }, [recentInvoices, filterMonth, filterDate, sortOption]);
+
+    const totalInvoicePages = Math.max(1, Math.ceil((sortedAndFilteredInvoices?.length || 0) / invoicePageSize));
+    const paginatedInvoices = (sortedAndFilteredInvoices || []).slice((invoicePage - 1) * invoicePageSize, invoicePage * invoicePageSize);
 
     useEffect(() => {
         if (invoicePage > totalInvoicePages) {
@@ -40,9 +93,16 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
         }
     }, [totalInvoicePages, invoicePage]);
 
-    const handleDeleteInvoice = (id) => {
+
+
+    const handleDeleteInvoice = async (id) => {
         if (!window.confirm("Are you sure you want to delete this invoice?")) return;
-        setRecentInvoices(prev => prev.filter(inv => inv.id !== id));
+        try {
+            await businessApi.deleteSavedInvoice(business.id, id);
+            setRecentInvoices(prev => prev.filter(inv => inv.id !== id));
+        } catch (error) {
+            console.error("Failed to delete invoice", error);
+        }
     };
     const [selectedInvoiceParty, setSelectedInvoiceParty] = useState(null);
     const [parties, setParties] = useState([]);
@@ -82,8 +142,21 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
         }
     };
 
+    const fetchBusinessDetails = async () => {
+        if (!business?.id) return;
+        try {
+            const res = await businessApi.getBusiness(business.id);
+            if (res.data?.success && res.data.data) {
+                if (setCurrentBusiness) setCurrentBusiness(res.data.data);
+            }
+        } catch (error) {
+            console.error("Failed to load business details:", error);
+        }
+    };
+
     useEffect(() => {
         if (business?.id) {
+            fetchBusinessDetails();
             fetchTemplates();
             const delayDebounceFn = setTimeout(() => {
                 fetchParties(currentPage, searchQuery);
@@ -108,7 +181,9 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                 name: formData.name,
                 additionalData: formData.additionalData || [],
                 sharedUsers: formData.sharedUsers || [],
-                seals: formData.seals || []
+                seals: formData.seals || [],
+                signatures: formData.signatures !== undefined ? formData.signatures : [],
+                signatureImage: formData.signatureImage !== undefined ? formData.signatureImage : (formData.signatures?.[0] || null)
             };
             
             if (base64Logo !== undefined) {
@@ -229,13 +304,15 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                         <div className="flex-1 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                                 <h2 className="text-lg font-bold text-gray-900">Business Information</h2>
-                                <button 
-                                    onClick={() => setIsEditModalOpen(true)}
-                                    className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors flex items-center justify-center"
-                                    title="Edit Business"
-                                >
-                                    <FiEdit2 size={18} />
-                                </button>
+                                {isSuperAdmin && (
+                                    <button 
+                                        onClick={() => setIsEditModalOpen(true)}
+                                        className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors flex items-center justify-center"
+                                        title="Edit Business"
+                                    >
+                                        <FiEdit2 size={18} />
+                                    </button>
+                                )}
                             </div>
                             
                             <div className="flex flex-col md:flex-row gap-8 mb-6">
@@ -266,7 +343,7 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                         if (!val && !key) return null;
                                         return (
                                             <div key={index} className="md:col-span-2">
-                                                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">{key || `Data ${index + 1}`}</h3>
+                                                <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">{key || `Data ${index + 1}`}</h3>
                                                 <p className="text-sm font-medium text-gray-900">{val}</p>
                                             </div>
                                         );
@@ -501,7 +578,51 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
 
                     {/* Recent Invoices Section */}
                     <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mt-6">
-                        <h2 className="text-lg font-bold text-gray-900 mb-6">Recent Saved Invoices</h2>
+                        <div className="flex flex-col sm:flex-row justify-between items-center mb-6">
+                            <div className="flex items-center gap-4 mb-4 sm:mb-0">
+                                <h2 className="text-lg font-bold text-gray-900">Recent Saved Invoices</h2>
+
+                            </div>
+                            <div className="flex flex-wrap items-center gap-4">
+                                <div className="flex items-center space-x-2">
+                                    <label className="text-sm font-medium text-gray-600">Month:</label>
+                                    <input 
+                                        type="month" 
+                                        value={filterMonth} 
+                                        onChange={(e) => { setFilterMonth(e.target.value); setFilterDate(''); setInvoicePage(1); }}
+                                        className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                    <label className="text-sm font-medium text-gray-600">Date:</label>
+                                    <input 
+                                        type="date" 
+                                        value={filterDate} 
+                                        onChange={(e) => { setFilterDate(e.target.value); setFilterMonth(''); setInvoicePage(1); }}
+                                        className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                </div>
+                                {(filterMonth || filterDate) && (
+                                    <button 
+                                        onClick={() => { setFilterMonth(''); setFilterDate(''); setInvoicePage(1); }}
+                                        className="text-xs text-red-600 hover:text-red-800 font-medium px-2 py-1 bg-red-50 hover:bg-red-100 rounded-md transition-colors"
+                                    >
+                                        Clear Filter
+                                    </button>
+                                )}
+                                <div className="flex items-center space-x-2">
+                                    <label className="text-sm font-medium text-gray-600">Sort:</label>
+                                    <select 
+                                        value={sortOption} 
+                                        onChange={(e) => { setSortOption(e.target.value); setInvoicePage(1); }}
+                                        className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                                    >
+                                        <option value="newest">Newest First</option>
+                                        <option value="oldest">Oldest First</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
                         <div className="overflow-x-auto">
                             <table className="w-full text-left border-collapse min-w-[600px]">
                                 <thead>
@@ -514,10 +635,12 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200 text-sm">
-                                    {paginatedInvoices.length > 0 ? paginatedInvoices.map((inv) => (
-                                        <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
+                                    {paginatedInvoices.length > 0 ? paginatedInvoices.map((inv) => {
+                                        if (!inv) return null;
+                                        return (
+                                        <tr key={inv.id || Math.random()} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-4">
-                                                <div className="font-semibold text-indigo-600">{inv.invoiceNo}</div>
+                                                <div className="font-semibold text-indigo-600">{inv.invoiceNo || 'N/A'}</div>
                                                 {(() => {
                                                     const tName = inv.templateName || inv.fullData?.template?.name || (typeof inv.fullData?.template === 'string' ? inv.fullData.template : '') || (inv.fullData?.template?.title || '');
                                                     return tName ? (
@@ -532,6 +655,7 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                             <td className="px-6 py-4 text-gray-900 font-semibold">{inv.partyName}</td>
                                             <td className="px-6 py-4 text-right font-black text-gray-900">
                                                 ₹{(() => {
+                                                    if (!inv) return '0.00';
                                                     if (inv.total && inv.total !== '0.00' && inv.total !== '0') return inv.total;
                                                     if (inv.grandTotal && inv.grandTotal !== '0.00' && inv.grandTotal !== '0') return inv.grandTotal;
                                                     const fullTotals = inv.fullData?.totals;
@@ -568,7 +692,7 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                                 </button>
                                             </td>
                                         </tr>
-                                    )) : (
+                                    ); }) : (
                                         <tr>
                                             <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
                                                 No recent invoices saved in this session.
@@ -578,7 +702,7 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                 </tbody>
                             </table>
                         </div>
-                        {totalInvoicePages > 0 && recentInvoices.length > 0 && (
+                        {totalInvoicePages > 0 && recentInvoices?.length > 0 && (
                             <div className="flex items-center justify-between mt-4 px-2">
                                 <span className="text-sm text-gray-500">
                                     Page {invoicePage} of {totalInvoicePages}
@@ -654,7 +778,38 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
             />
 
             <GenerateInvoiceModal
-                onSaveInvoice={(invoice) => { setRecentInvoices(prev => [invoice, ...prev]); setInvoicePage(1); }}
+                onSaveInvoice={async (invoice) => { 
+                    try {
+                        // Strip heavy base64 strings to prevent database ETIMEDOUT due to payload size
+                        const cleanInvoice = JSON.parse(JSON.stringify(invoice));
+                        if (cleanInvoice.fullData?.business) {
+                            delete cleanInvoice.fullData.business.logo;
+                            delete cleanInvoice.fullData.business.seal;
+                            delete cleanInvoice.fullData.business.signatureImage;
+                            delete cleanInvoice.fullData.business.signatures;
+                            delete cleanInvoice.fullData.business.seals;
+                        }
+                        if (cleanInvoice.fullData?.template) {
+                            delete cleanInvoice.fullData.template.signatureImage;
+                        }
+                        if (Array.isArray(cleanInvoice.fullData?.selectedSeals)) {
+                            // We can't safely store massive base64 arrays in fullData json
+                            cleanInvoice.fullData.selectedSeals = [];
+                        }
+
+                        const res = await businessApi.saveInvoice(business.id, cleanInvoice);
+                        if (res.data.success) {
+                            const savedInvoiceObj = res.data.data ? res.data.data.invoice : res.data.invoice;
+                              if (savedInvoiceObj) {
+                                  setRecentInvoices(prev => [savedInvoiceObj, ...prev]);
+                              }
+                            setInvoicePage(1);
+                        }
+                    } catch (error) {
+                        console.error("Failed to save invoice to backend", error);
+                        alert("Failed to save invoice to backend.");
+                    }
+                }}
                 isOpen={isGenerateInvoiceOpen}
                 onClose={() => {
                     setIsGenerateInvoiceOpen(false);
@@ -670,6 +825,7 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                 isOpen={!!viewingSavedInvoice}
                 onClose={() => setViewingSavedInvoice(null)}
                 savedInvoice={viewingSavedInvoice}
+                currentBusiness={business}
             />
         </div>
     );

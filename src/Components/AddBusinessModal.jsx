@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { FiX, FiUploadCloud, FiBriefcase, FiList, FiCheckCircle, FiUsers, FiSearch, FiTrash2, FiPlus } from 'react-icons/fi';
 import apiClient from '../api/apiClient';
 
-export default function AddBusinessModal({ isOpen, onClose, onSave, initialData }) {
+export default function AddBusinessModal({ isOpen, onClose, onSave, initialData, isSaving = false }) {
+    const [localSaving, setLocalSaving] = useState(false);
 
     const [businessName, setBusinessName] = useState(initialData?.name || "");
     const [additionalData, setAdditionalData] = useState(() => {
@@ -27,6 +28,18 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData 
     });
     const [logoPreview, setLogoPreview] = useState(initialData?.logo || null);
     const [logoFile, setLogoFile] = useState(null);
+    const [signatures, setSignatures] = useState(() => {
+        let raw = initialData?.signatures || initialData?.signatureImage;
+        if (!raw) return [];
+        if (typeof raw === 'string') {
+            try {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed)) return parsed;
+            } catch(e) {}
+            return [raw];
+        }
+        return Array.isArray(raw) ? raw : [raw];
+    });
     const [seals, setSeals] = useState(() => {
         if (!initialData?.seals) return [];
         if (typeof initialData.seals === 'string') {
@@ -39,13 +52,17 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData 
 
     useEffect(() => {
         if (isOpen) {
+            setLocalSaving(false);
             apiClient.get('/user/search?limit=100').then(res => {
                 if (res.data && res.data.data) {
                     const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-                    // Filter out the current logged-in user
-                    setUsers(res.data.data.filter(u => u.id !== currentUser.id));
+                    const currentId = currentUser.id || currentUser._id;
+                    // Filter out the current logged-in user so creator cannot self-share
+                    setUsers(res.data.data.filter(u => u.id !== currentId && u._id !== currentId));
                 }
             }).catch(err => console.error("Failed to fetch users", err));
+        } else {
+            setLocalSaving(false);
         }
     }, [isOpen]);
 
@@ -69,6 +86,24 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData 
             }));
             setLogoPreview(initialData.logo || null);
             setLogoFile(null);
+            if (!initialData?.signatures && !initialData?.signatureImage) {
+                setSignatures([]);
+            } else {
+                let raw = initialData?.signatures || initialData?.signatureImage;
+                if (typeof raw === 'string') {
+                    try {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) setSignatures(parsed);
+                        else setSignatures([raw]);
+                    } catch(e) {
+                        setSignatures([raw]);
+                    }
+                } else if (Array.isArray(raw)) {
+                    setSignatures(raw);
+                } else {
+                    setSignatures([]);
+                }
+            }
             if (!initialData?.seals) {
                 setSeals([]);
             } else if (typeof initialData.seals === 'string') {
@@ -82,6 +117,7 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData 
             setAdditionalData([]);
             setLogoPreview(null);
             setLogoFile(null);
+            setSignatures([]);
             setSeals([]);
             setSharedUsers([]);
         }
@@ -116,6 +152,27 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData 
             const objectUrl = URL.createObjectURL(file);
             setLogoPreview(objectUrl);
         }
+    };
+
+        const handleAddSignatures = (e) => {
+        const files = Array.from(e.target.files);
+        if (!files.length) return;
+        files.forEach(file => {
+            if (file.size > 2 * 1024 * 1024) {
+                alert("A signature file is too large. Please select images under 2MB.");
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                setSignatures(prev => [...prev, ev.target.result]);
+            };
+            reader.readAsDataURL(file);
+        });
+        e.target.value = null;
+    };
+
+    const handleRemoveSignature = (index) => {
+        setSignatures(signatures.filter((_, i) => i !== index));
     };
 
     const handleAddSeals = (e) => {
@@ -213,24 +270,69 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData 
                                 </div>
                             </div>
                             
-                            <div className="space-y-4 border p-5 rounded-2xl bg-gray-50">
+                                                        <div className="space-y-4 border p-5 rounded-2xl bg-gray-50">
                                 <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Business Seals / Signatures</label>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1">Authorised Signatures</label>
+                                    <p className="text-xs text-gray-500 mb-3">Upload multiple authorised signatures for this business.</p>
                                     <div className="flex flex-wrap gap-3">
-                                        {seals.map((seal, idx) => (
-                                            <div key={idx} className="relative w-20 h-20 rounded-xl border border-gray-200 bg-white shadow-sm flex items-center justify-center group overflow-hidden">
-                                                <img src={seal} alt={`Seal ${idx + 1}`} className="w-full h-full object-contain p-1" />
+                                        {signatures.map((sig, idx) => (
+                                            <div key={idx} className="relative w-32 h-20 rounded-xl border border-gray-200 bg-white shadow-sm flex items-center justify-center group overflow-hidden">
+                                                <img src={sig} alt={`Signature ${idx + 1}`} className="w-full h-full object-contain p-1" />
+                                                {idx === 0 && (
+                                                    <span className="absolute bottom-0 inset-x-0 bg-indigo-600/90 text-[8px] text-white font-bold text-center py-0.5 pointer-events-none">Default</span>
+                                                )}
                                                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                                     <button 
-                                                        onClick={() => handleRemoveSeal(idx)}
-                                                        className="p-1.5 bg-white text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                        type="button"
+                                                        onClick={() => handleRemoveSignature(idx)}
+                                                        className="p-1.5 bg-white text-red-500 hover:bg-red-50 rounded-lg transition-colors shadow-sm"
+                                                        title="Remove Signature"
                                                     >
                                                         <FiTrash2 size={14} />
                                                     </button>
                                                 </div>
                                             </div>
                                         ))}
-                                        <label className="w-20 h-20 rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center bg-white hover:border-indigo-500 hover:bg-indigo-50/50 cursor-pointer transition-all">
+                                        <label className="w-32 h-20 rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center bg-white hover:border-indigo-500 hover:bg-indigo-50/50 cursor-pointer transition-all shadow-sm">
+                                            <FiPlus className="text-gray-400" size={20} />
+                                            <span className="text-[10px] text-gray-500 font-medium mt-1">Add Signature</span>
+                                            <input 
+                                                type="file" 
+                                                accept="image/*"
+                                                multiple
+                                                onChange={handleAddSignatures}
+                                                className="hidden"
+                                            />
+                                        </label>
+                                    </div>
+                                    <p className="text-xs text-gray-400 mt-2">The default signature will appear automatically above Authorised Signatory on invoices.</p>
+                                </div>
+                            </div>
+
+<div className="space-y-4 border p-5 rounded-2xl bg-gray-50">
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1">Business Seals / Signatures</label>
+                                    <p className="text-xs text-gray-500 mb-3">Upload business stamps, seals or authorised signatures to appear on invoices.</p>
+                                    <div className="flex flex-wrap gap-3">
+                                        {seals.map((seal, idx) => (
+                                            <div key={idx} className="relative w-20 h-20 rounded-xl border border-gray-200 bg-white shadow-sm flex items-center justify-center group overflow-hidden">
+                                                <img src={seal} alt={`Seal ${idx + 1}`} className="w-full h-full object-contain p-1" />
+                                                {idx === 0 && (
+                                                    <span className="absolute bottom-0 inset-x-0 bg-indigo-600/90 text-[8px] text-white font-bold text-center py-0.5 pointer-events-none">Default</span>
+                                                )}
+                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => handleRemoveSeal(idx)}
+                                                        className="p-1.5 bg-white text-red-500 hover:bg-red-50 rounded-lg transition-colors shadow-sm"
+                                                        title="Remove Seal"
+                                                    >
+                                                        <FiTrash2 size={14} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        <label className="w-20 h-20 rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center bg-white hover:border-indigo-500 hover:bg-indigo-50/50 cursor-pointer transition-all shadow-sm">
                                             <FiPlus className="text-gray-400" size={20} />
                                             <span className="text-[10px] text-gray-500 font-medium mt-1">Add Seal</span>
                                             <input 
@@ -242,7 +344,7 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData 
                                             />
                                         </label>
                                     </div>
-                                    <p className="text-xs text-gray-500 mt-2">Upload multiple stamps, signatures or other seals to use later.</p>
+                                    <p className="text-xs text-gray-400 mt-2">The default seal will appear automatically above Authorised Signatory on invoices.</p>
                                 </div>
                             </div>
 
@@ -362,6 +464,8 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData 
                         </button>
                         <button 
                             onClick={() => {
+                                if (isSaving || localSaving) return;
+                                setLocalSaving(true);
                                 const cleanedData = additionalData
                                     .filter(d => (d.key && d.key.trim()) || (d.value && d.value.trim()))
                                     .map(d => ({ key: d.key.trim(), value: d.value.trim() }));
@@ -370,17 +474,26 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData 
                                     logo: logoFile, 
                                     additionalData: cleanedData,
                                     sharedUsers: sharedUsers,
-                                    seals: seals
+                                    seals: seals,
+                                    signatures: signatures,
+                                    signatureImage: signatures.length > 0 ? signatures[0] : null
                                 });
                             }}
-                            disabled={!isSaveValid}
+                            disabled={!isSaveValid || isSaving || localSaving}
                             className={`px-6 py-2.5 text-sm font-semibold text-white rounded-xl transition-all flex items-center gap-2 ${
-                                isSaveValid 
+                                isSaveValid && !isSaving && !localSaving
                                     ? 'bg-indigo-600 hover:bg-indigo-700 shadow-sm shadow-indigo-600/20' 
                                     : 'bg-indigo-300 cursor-not-allowed'
                             }`}
                         >
-                            {initialData ? "Update Business" : "Save Business"}
+                            {(isSaving || localSaving) ? (
+                                <>
+                                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                                    <span>{initialData ? "Updating..." : "Saving..."}</span>
+                                </>
+                            ) : (
+                                initialData ? "Update Business" : "Save Business"
+                            )}
                         </button>
                     </div>
                 </div>

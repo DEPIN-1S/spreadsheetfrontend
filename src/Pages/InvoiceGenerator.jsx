@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { FiMenu, FiFileText, FiBriefcase } from 'react-icons/fi';
 import AddBusinessModal from '../Components/AddBusinessModal';
 import apiClient from '../api/apiClient';
@@ -6,23 +6,35 @@ import apiClient from '../api/apiClient';
 export default function InvoiceGenerator({ setMobileOpen, setActivePath, setCurrentBusiness }) {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [businesses, setBusinesses] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+    const isSuperAdmin = currentUser?.role === 'superadmin';
 
     useEffect(() => {
         fetchBusinesses();
     }, []);
 
     const fetchBusinesses = async () => {
+        setIsLoading(true);
         try {
             const response = await apiClient.get('/business');
             if (response.data.success) {
-                setBusinesses(response.data.data);
+                const uniqueBusinesses = Array.from(
+                    new Map((response.data.data || []).map(b => [b.id, b])).values()
+                );
+                setBusinesses(uniqueBusinesses);
             }
         } catch (error) {
             console.error('Failed to fetch businesses:', error);
+        } finally {
+            setIsLoading(false);
         }
     };
 
     const handleSaveBusiness = async (businessData) => {
+        if (!isSuperAdmin || isSaving) return;
+        setIsSaving(true);
         try {
             let base64Logo = null;
             if (businessData.logo) {
@@ -39,15 +51,19 @@ export default function InvoiceGenerator({ setMobileOpen, setActivePath, setCurr
                 logo: base64Logo,
                 additionalData: businessData.additionalData || [],
                 sharedUsers: businessData.sharedUsers || [],
-                seals: businessData.seals || []
+                seals: businessData.seals || [],
+                signatures: businessData.signatures || [],
+                signatureImage: businessData.signatureImage || (businessData.signatures?.[0] || null)
             };
             const response = await apiClient.post('/business', payload);
             if (response.data.success) {
-                setBusinesses([response.data.data, ...businesses]);
                 setIsModalOpen(false);
+                await fetchBusinesses();
             }
         } catch (error) {
             console.error('Failed to save business:', error);
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -55,6 +71,11 @@ export default function InvoiceGenerator({ setMobileOpen, setActivePath, setCurr
         if (setCurrentBusiness) setCurrentBusiness(biz);
         setActivePath('/business-details');
     };
+
+    // Ensure businesses are always strictly unique by ID
+    const uniqueBusinesses = useMemo(() => {
+        return Array.from(new Map((businesses || []).map(b => [b.id, b])).values());
+    }, [businesses]);
 
     return (
         <div className="flex-1 flex flex-col h-screen bg-white overflow-hidden relative">
@@ -80,14 +101,29 @@ export default function InvoiceGenerator({ setMobileOpen, setActivePath, setCurr
                     
                     <div className="flex items-center gap-3 mb-4">
                         <h2 className="text-md font-bold text-gray-900">Businesses</h2>
-                        <span className="text-[13px] font-medium text-gray-400">{businesses.length} Businesses</span>
+                        <span className="text-[13px] font-medium text-gray-400">{uniqueBusinesses.length} Businesses</span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 w-full">
+                        {/* Loading State */}
+                        {isLoading && (
+                            Array.from({ length: 4 }).map((_, idx) => (
+                                <div key={idx} className="flex flex-col p-4 bg-gray-50 border border-gray-100 rounded-xl animate-pulse min-h-[82px] shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)]">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-12 h-12 bg-gray-200 rounded-xl shrink-0"></div>
+                                        <div className="flex-1 space-y-2">
+                                            <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                                            <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+
                         {/* Map over saved businesses */}
-                        {businesses.map((biz, idx) => (
+                        {!isLoading && uniqueBusinesses.map((biz) => (
                             <div 
-                                key={idx} 
+                                key={biz.id} 
                                 onClick={() => handleBusinessClick(biz)}
                                 className="flex flex-col p-4 bg-gray-100 border border-gray-200 rounded-xl hover:shadow-sm cursor-pointer transition-all shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)] h-full"
                             >
@@ -138,20 +174,22 @@ export default function InvoiceGenerator({ setMobileOpen, setActivePath, setCurr
                             </div>
                         ))}
 
-                        {/* Add New Business Card */}
-                        <div 
-                            onClick={() => setIsModalOpen(true)}
-                            className="flex items-center gap-4 p-4 bg-gray-100 border border-gray-200 rounded-xl cursor-pointer transition-all group shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)]"
-                        >
-                            <div className="w-12 h-12 shrink-0 rounded-xl flex items-center justify-center bg-gray-50 border border-dashed border-gray-300 text-gray-400 group-hover:text-blue-600 group-hover:border-blue-200 transition-colors">
-                                <span className="text-xl">+</span>
+                        {/* Add New Business Card (Superadmin only) */}
+                        {!isLoading && isSuperAdmin && (
+                            <div 
+                                onClick={() => setIsModalOpen(true)}
+                                className="flex items-center gap-4 p-4 bg-gray-100 border border-gray-200 rounded-xl cursor-pointer transition-all group shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)]"
+                            >
+                                <div className="w-12 h-12 shrink-0 rounded-xl flex items-center justify-center bg-gray-50 border border-dashed border-gray-300 text-gray-400 group-hover:text-blue-600 group-hover:border-blue-200 transition-colors">
+                                    <span className="text-xl">+</span>
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <h4 className="text-sm font-bold text-blue-600 transition-colors">
+                                        Add New Business
+                                    </h4>
+                                </div>
                             </div>
-                            <div className="min-w-0 flex-1">
-                                <h4 className="text-sm font-bold text-blue-600 transition-colors">
-                                    Add New Business
-                                </h4>
-                            </div>
-                        </div>
+                        )}
                     </div>
                 </div>
             </main>
@@ -161,6 +199,7 @@ export default function InvoiceGenerator({ setMobileOpen, setActivePath, setCurr
                 isOpen={isModalOpen} 
                 onClose={() => setIsModalOpen(false)} 
                 onSave={handleSaveBusiness}
+                isSaving={isSaving}
             />
         </div>
     );

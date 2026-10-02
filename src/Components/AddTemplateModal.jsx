@@ -54,6 +54,7 @@ export default function AddTemplateModal({ isOpen, onClose, onSave, initialData 
 
     const [isProductBased, setIsProductBased] = useState(initialData?.isProductBased ?? true);
     const [isB2B, setIsB2B] = useState(initialData?.isB2B ?? false);
+    const [showBusinessName, setShowBusinessName] = useState(initialData?.showBusinessName !== undefined ? Boolean(initialData.showBusinessName) : true);
     const [columns, setColumns] = useState(getInitialCustomColumns());
     const [newColumnName, setNewColumnName] = useState("");
     const [newColumnType, setNewColumnType] = useState("text");
@@ -61,8 +62,7 @@ export default function AddTemplateModal({ isOpen, onClose, onSave, initialData 
     const [spreadsheetIds, setSpreadsheetIds] = useState(getInitialSpreadsheetIds(initialData));
     const [sheetSearch, setSheetSearch] = useState("");
     const [sheets, setSheets] = useState([]);
-    const [signatureImage, setSignatureImage] = useState(initialData?.signatureImage || null);
-    const [grandTotalCol, setGrandTotalCol] = useState("");
+        const [grandTotalCol, setGrandTotalCol] = useState("");
 
     useEffect(() => {
         if (isOpen) {
@@ -78,23 +78,23 @@ export default function AddTemplateModal({ isOpen, onClose, onSave, initialData 
         if (isOpen && initialData) {
             setIsProductBased(initialData.isProductBased ?? true);
             setIsB2B(initialData.isB2B ?? false);
+            setShowBusinessName(initialData.showBusinessName !== undefined ? Boolean(initialData.showBusinessName) : true);
             setColumns(getInitialCustomColumns());
             setTemplateName(initialData.name || "");
             setSpreadsheetIds(getInitialSpreadsheetIds(initialData));
             setSheetSearch("");
-            setSignatureImage(initialData.signatureImage || null);
-            let gtCol = "";
+                        let gtCol = "";
             getInitialCustomColumns().forEach(c => { if (typeof c === "object" && c.isGrandTotal) gtCol = c.name; });
             setGrandTotalCol(gtCol);
         } else if (isOpen && !initialData) {
             setIsProductBased(true);
             setIsB2B(false);
+            setShowBusinessName(true);
             setColumns([]);
             setTemplateName("");
             setSpreadsheetIds([]);
             setSheetSearch("");
-            setSignatureImage(null);
-            setGrandTotalCol("");
+                        setGrandTotalCol("");
         }
     }, [isOpen, initialData]);
 
@@ -187,6 +187,21 @@ export default function AddTemplateModal({ isOpen, onClose, onSave, initialData 
                         <hr className="border-gray-100" />
 
                         <section className="space-y-4">
+                            <div className="flex items-center justify-between p-5 bg-white border border-gray-100 shadow-sm rounded-2xl">
+                                <div>
+                                    <h3 className="text-sm font-bold text-gray-900">Display Business Name</h3>
+                                    <p className="text-xs text-gray-500 mt-1">When checked, the business name will be displayed in the invoice header.</p>
+                                </div>
+                                <label className="relative flex items-center cursor-pointer p-1">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={showBusinessName} 
+                                        onChange={(e) => setShowBusinessName(e.target.checked)} 
+                                        className="w-5 h-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer"
+                                    />
+                                </label>
+                            </div>
+
                             <div className="flex items-center justify-between p-5 bg-white border border-gray-100 shadow-sm rounded-2xl">
                                 <div>
                                     <h3 className="text-sm font-bold text-gray-900">B to B</h3>
@@ -324,41 +339,7 @@ export default function AddTemplateModal({ isOpen, onClose, onSave, initialData 
                             </div>
                         </section>
 
-                        <hr className="border-gray-100" />
-
-                        <section className="space-y-4">
-                            <h3 className="text-sm font-bold uppercase tracking-wider text-gray-400 flex items-center gap-2">
-                                <FiList />
-                                Signature
-                            </h3>
-                            <p className="text-xs text-gray-500">Upload an authorised signature image to appear on invoices generated with this template.</p>
-                            <div className="flex items-center gap-4">
-                                <label className="flex flex-col items-center justify-center w-40 h-20 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/50 transition-all bg-gray-50">
-                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => {
-                                        const file = e.target.files[0];
-                                        if (!file) return;
-                                        const reader = new FileReader();
-                                        reader.onload = (ev) => setSignatureImage(ev.target.result);
-                                        reader.readAsDataURL(file);
-                                    }} />
-                                    {signatureImage ? (
-                                        <img src={signatureImage} alt="Signature" className="w-full h-full object-contain p-1 rounded-xl" />
-                                    ) : (
-                                        <span className="text-xs text-gray-400 text-center px-2">Click to upload signature</span>
-                                    )}
-                                </label>
-                                {signatureImage && (
-                                    <button 
-                                        type="button" 
-                                        onClick={() => setSignatureImage(null)} 
-                                        className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 active:bg-red-200 border border-red-200 rounded-xl transition-all shadow-sm"
-                                    >
-                                        <FiTrash2 size={14} />
-                                        Remove
-                                    </button>
-                                )}
-                            </div>
-                        </section>
+                        
 
                         <hr className="border-gray-100" />
 
@@ -472,10 +453,10 @@ export default function AddTemplateModal({ isOpen, onClose, onSave, initialData 
                                 name: templateName, 
                                 isProductBased, 
                                 isB2B, 
+                                showBusinessName,
                                 columns: JSON.stringify(finalColumns), 
                                 spreadsheetIds: JSON.stringify(spreadsheetIds), 
-                                spreadsheetId: spreadsheetIds[0] || null, 
-                                signatureImage 
+                                spreadsheetId: spreadsheetIds[0] || null,
                             });
                         }}
                         disabled={!isSaveValid}

@@ -1,3 +1,39 @@
+
+const ProductImage = ({ imgSrc, prod, setPreviewProduct }) => {
+    const [status, setStatus] = useState('loading');
+
+    // Pre-emptively fix localhost URLs before rendering
+    if (typeof imgSrc === 'string' && imgSrc.includes('localhost')) {
+        imgSrc = imgSrc.replace(/http:\/\/localhost:\d+/, 'https://apis.datsheets.in');
+    }
+
+    if (!imgSrc) {
+        return <div className="w-14 h-14 rounded bg-gray-200 flex-shrink-0 flex items-center justify-center text-[8px] text-gray-400 border border-gray-300">No Img</div>;
+    }
+
+    return (
+        <div className="relative w-14 h-14 flex-shrink-0 rounded bg-gray-100">
+            {status === 'loading' && (
+                <div className="absolute inset-0 flex items-center justify-center rounded border border-gray-200 z-10">
+                    <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+            )}
+            {status === 'error' ? (
+                <div className="w-14 h-14 rounded bg-gray-200 flex items-center justify-center text-[8px] text-gray-400 border border-gray-300">No Img</div>
+            ) : (
+                <img 
+                    src={imgSrc} 
+                    key={imgSrc}
+                    className={`w-14 h-14 object-cover rounded bg-gray-100 hover:opacity-80 transition-opacity ${status === 'loading' ? 'opacity-0' : 'opacity-100'}`} 
+                    alt="img"
+                    onLoad={() => setStatus('success')}
+                    onError={() => { setStatus('error'); }}
+                    onClick={(e) => { e.stopPropagation(); setPreviewProduct({ ...prod, _resolvedImgSrc: imgSrc }); }}
+                />
+            )}
+        </div>
+    );
+};
 import React, { useState, useEffect, useRef } from 'react';
 import { FiX, FiPrinter, FiSettings, FiTrash2, FiPlus } from 'react-icons/fi';
 import apiClient from '../api/apiClient';
@@ -6,7 +42,23 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const settingsRef = useRef(null);
     const [inventoryData, setInventoryData] = useState([]);
+    const [isSearching, setIsSearching] = useState(false);
     const [selectedSeals, setSelectedSeals] = useState([]);
+    const [selectedSignatureIndex, setSelectedSignatureIndex] = useState(0);
+
+    const resolvedSignatures = (() => {
+        let rawSigs = business?.signatures;
+        if (typeof rawSigs === 'string') {
+            try { rawSigs = JSON.parse(rawSigs); } catch(e) { rawSigs = []; }
+        }
+        if (Array.isArray(rawSigs) && rawSigs.length > 0) {
+            return rawSigs.filter(Boolean);
+        }
+        if (business?.signatureImage) {
+            return [business.signatureImage];
+        }
+        return [];
+    })();
     const [isSealDropdownOpen, setIsSealDropdownOpen] = useState(false);
     const [activeDropdownRow, setActiveDropdownRow] = useState(null);
     const [previewProduct, setPreviewProduct] = useState(null);
@@ -207,6 +259,10 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
     };
 
     const handleItemChange = (id, field, value) => {
+        // Enforce numeric only for Qty
+        if (field === 'Qty' && value !== undefined) {
+            value = value.toString().replace(/[^0-9]/g, '');
+        }
         let updatedItem = { [field]: value };
         
         if (field === 'Product Name') {
@@ -352,6 +408,17 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
     const roffVal = parseFloat(totals.rOff) || 0;
     const computedGrandTotal = (grossVal - disVal + addlVal + gstVal + roffVal).toFixed(2);
 
+    const handleClearData = () => {
+        if(window.confirm('Are you sure you want to clear all current invoice data? This cannot be undone.')) {
+            setItems([{ id: Date.now(), description: '', ...cols.reduce((acc, col) => ({ ...acc, [col]: '' }), {}) }]);
+            setTotals({ 
+                totalNo: '', saleValue: '', schDiscGiven: '', cashDisc: '', 
+                totalGst: '', grossAmt: '', disAmt: '', addlChg: '', rOff: '', grandTotal: '', manualGrandTotal: '' 
+            });
+            setSelectedSeals([]);
+        }
+    };
+
     const handleSaveInvoice = async () => {
         try {
             setIsSaving(true);
@@ -429,7 +496,7 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
     return ( <React.Fragment>
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
             <style>{`
-                    @media print {
+                                        @media print {
                         @page {
                             size: A4 portrait;
                             margin: 6mm;
@@ -440,7 +507,6 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                             margin: 0 !important;
                             padding: 0 !important;
                             background: #fff !important;
-                            overflow: visible !important;
                             -webkit-print-color-adjust: exact !important;
                             print-color-adjust: exact !important;
                         }
@@ -449,29 +515,6 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                         }
                         #business-invoice-print-area, #business-invoice-print-area * {
                             visibility: visible !important;
-                        }
-                        div:has(#business-invoice-print-area),
-                        .fixed, 
-                        .backdrop-blur-sm, 
-                        .animate-fade-in,
-                        .max-h-\\[95vh\\],
-                        .overflow-y-auto,
-                        .overflow-hidden {
-                            position: static !important;
-                            display: block !important;
-                            padding: 0 !important;
-                            margin: 0 !important;
-                            width: 100% !important;
-                            height: auto !important;
-                            max-height: none !important;
-                            overflow: visible !important;
-                            background: transparent !important;
-                            backdrop-filter: none !important;
-                            filter: none !important;
-                            transform: none !important;
-                            animation: none !important;
-                            box-shadow: none !important;
-                            border: none !important;
                         }
                         #business-invoice-print-area {
                             position: absolute !important;
@@ -482,11 +525,15 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                             margin: 0 !important;
                             padding: 0 !important;
                             box-shadow: none !important;
-                            border: 2px solid #000 !important;
+                            border: none !important;
                             background: #fff !important;
-                            -webkit-print-color-adjust: exact !important;
-                            print-color-adjust: exact !important;
                         }
+                        
+                        /* HOLY GRAIL FIX: Shrink the physical layout space of everything EXCEPT the print area */
+                        body :not(:has(#business-invoice-print-area)):not(#business-invoice-print-area):not(#business-invoice-print-area *) {
+                            display: none !important;
+                        }
+
                         #business-invoice-print-area table {
                             min-width: 0 !important;
                             width: 100% !important;
@@ -503,7 +550,7 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                     }
                 `}</style>
 
-            <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full overflow-hidden flex flex-col max-h-[95vh]">
+            <div className="bg-white rounded-xl shadow-2xl max-w-[1240px] w-full overflow-hidden flex flex-col max-h-[95vh]">
                 
                 {/* Modal Action Bar (Hidden in Print) */}
                 <div className="px-6 py-4 bg-gray-900 text-white flex items-center justify-between no-print border-b border-gray-800">
@@ -514,6 +561,12 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                     <div className="flex items-center gap-3">
 
                                                 <div className="flex items-center gap-3 mr-4">
+                        <button
+                            onClick={handleClearData}
+                            className="flex items-center gap-2 px-4 py-2 border border-red-500 text-red-500 hover:bg-red-50 text-xs font-semibold rounded-lg shadow transition-colors"
+                        >
+                            Clear Data
+                        </button>
                         <button
                             onClick={handleSaveInvoice}
                             disabled={isSaving}
@@ -568,30 +621,36 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                             <div className="col-span-5 border-r-2 border-black p-2.5 space-y-1.5">
                                         <div className="flex items-center gap-2 mb-2">
                                             {business.logo && <img src={business.logo} alt="Logo" className="h-12 object-contain" />}
-                                            <span className="font-extrabold text-lg">{business.name}</span>
+                                            {template?.showBusinessName !== false && (
+                                                <span className="font-extrabold text-lg">{business.name}</span>
+                                            )}
                                             {template?.isB2B && (
                                                 <span className="border border-black px-1.5 py-0.5 text-[15px] font-bold tracking-wide ">B 2 B</span>
                                             )}
                                         </div>
                                 <div className="space-y-1 mt-1">
-                                    {(() => {
-                                        if (!business.additionalData) return null;
-                                        let dataArray = business.additionalData;
+                                    {(({ business: b = business }) => {
+                                        if (!b?.additionalData) return null;
+                                        let dataArray = b.additionalData;
                                         if (typeof dataArray === 'string') {
                                             try { dataArray = JSON.parse(dataArray); } catch(e) { return null; }
                                         }
                                         if (!Array.isArray(dataArray)) return null;
 
                                         return dataArray.map((item, idx) => {
-                                            const value = typeof item === 'object' && item !== null ? (item.value || item.key || "") : item;
-                                            if (!value) return null;
+                                            const isObj = typeof item === 'object' && item !== null;
+                                            const key = isObj ? item.key : (typeof item === 'string' && item.includes(':') ? item.split(':')[0].trim() : '');
+                                            const val = isObj ? item.value : (typeof item === 'string' && item.includes(':') ? item.split(':').slice(1).join(':').trim() : item);
+                                            if (!val && !key) return null;
+                                            const displayKey = key ? (key.trim().endsWith(':') ? key.trim().slice(0, -1).trim() : key.trim()) : '';
                                             return (
-                                                <div key={idx} className="text-[11px] leading-tight">
-                                                    {value}
+                                                <div key={idx} className="text-[11px] leading-tight text-gray-800">
+                                                    {displayKey ? <b>{displayKey} : </b> : null}
+                                                    <span>{val}</span>
                                                 </div>
                                             );
                                         });
-                                    })()}
+                                    })({ business })}
                                     {(!business.additionalData || business.additionalData.length === 0) && (
                                         <React.Fragment>
                                             <div className="text-[11px] leading-tight text-gray-900 pt-0.5">SH1, Kilimanoor, Thiruvananthapuram, Kerala - 695601</div>
@@ -665,7 +724,7 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                                                         {party?.address || party?.email}
                                                     </div>
                                                 )}
-                                                {!isWholesale && party?.age && <div className="text-gray-800">{party.age}</div>}
+                                                
                                                 {isWholesale && (
                                                     <React.Fragment>
                                                         {party?.dlNo && <div className="text-gray-800">{party.dlNo}</div>}
@@ -687,7 +746,7 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                                     <tr className="bg-gray-100 border-b border-black text-[10px] font-extrabold uppercase tracking-tight text-black">
                                         {visibleColumns.slNo && <th className="border-r border-black py-1 px-1 text-center w-8">SL.</th>}
                                         {cols.map(col => (
-                                                visibleColumns[col] && <th key={col} className="border-r border-black py-1 px-1 text-center">{col.toUpperCase() === "DISCOUNT" ? "DISCOUNT %" : col.toUpperCase() === "GST" ? "GST %" : col}</th>
+                                                visibleColumns[col] && <th key={col} className={`border-r border-black py-1 px-1 text-center ${col === 'Product Name' ? 'w-[35%]' : ''}`}>{col.toUpperCase() === "DISCOUNT" ? "DISCOUNT %" : col.toUpperCase() === "GST" ? "GST %" : col}</th>
                                         ))}
                                     </tr>
                                 </thead>
@@ -705,8 +764,8 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                                                     <td key={col} className="border-r border-black py-0 px-1 text-center font-mono relative">
                                                         {col === 'Product Name' ? (
                                                             <div className="relative w-full h-full">
-                                                                <input 
-                                                                    type="text" 
+                                                                <textarea 
+                                                                    rows={2} 
                                                                     value={item[col] || ''} 
                                                                     onChange={(e) => {
                                                                         handleItemChange(item.id, col, e.target.value);
@@ -714,13 +773,18 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                                                                     }} 
                                                                     onFocus={() => { setActiveDropdownRow(item.id); if (!item['Product Name']) setInventoryData([]); }}
                                                                     onBlur={() => setTimeout(() => setActiveDropdownRow(null), 200)}
-                                                                    className="w-full bg-transparent border-none outline-none text-center text-[10px] font-mono text-black m-0 p-0 h-full" 
+                                                                    className="w-full bg-transparent border-none outline-none text-center text-[10px] font-mono text-black m-0 p-0 h-full resize-none overflow-hidden block" style={{ minHeight: '30px', lineHeight: '1.2' }} 
                                                                     placeholder={col} 
                                                                 />
                                                                 {activeDropdownRow === item.id && inventoryData.length > 0 && (
                                                                     <div className="absolute z-[100] bg-white border border-gray-200 shadow-xl max-h-60 overflow-y-auto min-w-[350px] max-w-[500px] w-max top-full left-0 mt-1 rounded text-left no-print">
-                                                                        {inventoryData.map((prod, idx) => {
-                                                                            let imgSrc = prod['Image'];
+                                                                        {isSearching ? (
+    <div className="p-4 text-center text-gray-500 text-xs flex justify-center items-center gap-2">
+        <div className="w-3 h-3 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+        Searching...
+    </div>
+) : inventoryData.map((prod, idx) => {
+                                                                            let imgSrc = prod['Image'] || prod['image'] || prod['IMAGE'] || prod['Img'] || prod['img'] || prod['IMG'] || prod['Product Image'] || prod['product image'];
                                                                             
                                                                             if (imgSrc) {
                                                                                 if (typeof imgSrc === 'string' && imgSrc.includes('=')) {
@@ -773,16 +837,7 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                                                                                     setActiveDropdownRow(null);
                                                                                 }}
                                                                             >
-                                                                                {imgSrc ? (
-                                                                                    <img src={imgSrc} onClick={(e) => { e.stopPropagation(); setPreviewProduct({ ...prod, _resolvedImgSrc: e.target.src }); }} className="w-14 h-14 object-cover rounded bg-gray-100 flex-shrink-0 hover:opacity-80 transition-opacity" alt="img" onError={(e) => { 
-                                                                                        if (!e.target.dataset.retried && e.target.src.includes('localhost')) {
-                                                                                            e.target.dataset.retried = 'true';
-                                                                                            e.target.src = e.target.src.replace(/http:\/\/localhost:\d+/, 'https://apis.datsheets.in');
-} else { e.target.onerror = null; e.target.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56"><rect width="56" height="56" fill="%23e5e7eb" rx="4"/><text x="50%" y="50%" font-family="sans-serif" font-size="10" font-weight="500" fill="%239ca3af" text-anchor="middle" dy=".3em">No Img</text></svg>'; e.target.className = 'w-14 h-14 rounded bg-gray-200 flex-shrink-0 border border-gray-300'; }
-                                                                                    }} />
-                                                                                ) : (
-                                                                                    <div className="w-14 h-14 rounded bg-gray-200 flex-shrink-0 flex items-center justify-center text-[8px] text-gray-400 border border-gray-300">No Img</div>
-                                                                                )}
+                                                                                <ProductImage imgSrc={imgSrc} prod={prod} setPreviewProduct={setPreviewProduct} />
                                                                                 <div className="flex-1 min-w-0">
                                                                                     <div className="font-bold text-gray-900 text-[11px] leading-tight break-words">{prod['Product Name']}</div>
                                                                                     {prod['Composition'] && (
@@ -893,16 +948,60 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party,
                                     <input type="text" className="font-mono text-right bg-transparent border-none outline-none w-28" value={totals.manualGrandTotal !== undefined && totals.manualGrandTotal !== '' ? totals.manualGrandTotal : (grossVal > 0 || disVal > 0 || addlVal > 0 || roffVal !== 0 || gstVal > 0 ? computedGrandTotal : '0.00')} onChange={(e) => handleTotalChange('grandTotal', e.target.value)} placeholder="0.00" />
                                 </div>
                                 <div className="p-1.5 text-[10px] space-y-0.5">
+                                    <div className="text-left">
+                                        <b>For : {business.name}</b>
+                                    </div>
                                     <div className="text-right">
-                                        <b>For : {business.name}</b><br/>
-                                        {template?.signatureImage ? (
-                                            <div className="flex justify-end py-1">
-                                                <img src={template.signatureImage} alt="Signature" className="h-10 max-w-[120px] object-contain" />
+                                        <div className="inline-flex flex-col items-center">
+                                        {resolvedSignatures.length > 1 && (
+                                            <div className="flex items-center justify-end gap-1 mb-1 no-print">
+                                                <span className="text-[9px] text-gray-400">Sig:</span>
+                                                {resolvedSignatures.map((_, sIdx) => (
+                                                    <button
+                                                        key={sIdx}
+                                                        type="button"
+                                                        onClick={(e) => { e.stopPropagation(); setSelectedSignatureIndex(sIdx); }}
+                                                        className={`px-1.5 py-0.2 rounded text-[9px] font-semibold border transition-all ${
+                                                            (selectedSignatureIndex || 0) === sIdx 
+                                                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs' 
+                                                                : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+                                                        }`}
+                                                        title={`Select Signature ${sIdx + 1}`}
+                                                    >
+                                                        {sIdx + 1}
+                                                    </button>
+                                                ))}
                                             </div>
-                                        ) : (
-                                            <div className="h-6"></div>
                                         )}
-                                        <b className="border-t border-black px-2 pt-0.5 inline-block">Authorised Signatory</b>
+                                        <div className="inline-flex flex-col items-center">
+                                        {(() => {
+                                            let currentSig = resolvedSignatures.length > 0 ? (resolvedSignatures[selectedSignatureIndex] || resolvedSignatures[0]) : null;
+
+                                            if (!currentSig) {
+                                                let sealsArray = business?.seals;
+                                                if (typeof sealsArray === 'string') {
+                                                    try { sealsArray = JSON.parse(sealsArray); } catch(e) { sealsArray = []; }
+                                                }
+                                                if (Array.isArray(sealsArray) && sealsArray.length > 0 && sealsArray[0]) {
+                                                    currentSig = sealsArray[0];
+                                                } else if (business?.seal) {
+                                                    currentSig = business.seal;
+                                                } else if (template?.signatureImage) {
+                                                    currentSig = template.signatureImage;
+                                                }
+                                            }
+
+                                            return currentSig ? (
+                                                <div className="flex justify-center py-1">
+                                                        <img src={currentSig} alt="Signature / Seal" className="h-16 max-w-[180px] object-contain" />
+                                                </div>
+                                            ) : (
+                                                <div className="h-6"></div>
+                                            );
+                                        })()}
+                                        <b className="border-t border-black px-2 pt-0.5 inline-block text-center">Authorised Signatory</b>
+                                        </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
