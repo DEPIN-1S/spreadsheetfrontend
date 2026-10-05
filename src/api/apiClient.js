@@ -121,8 +121,10 @@ export const businessApi = {
     updateTemplate: (templateId, data) => apiClient.put(`/templates/${templateId}`, data),
     deleteTemplate: (templateId) => apiClient.delete(`/templates/${templateId}`),
     
-    // Saved Invoices
+       // Saved Invoices
     saveInvoice: (businessId, data) => apiClient.post(`/business/${businessId}/invoices`, data),
+    updateSavedInvoice: (businessId, invoiceId, data) => apiClient.put(`/business/${businessId}/invoices/${invoiceId}`, data),
+    toggleSavedInvoiceCb: (businessId, invoiceId, isCb) => apiClient.patch(`/business/${businessId}/invoices/${invoiceId}/toggle-cb`, { isCb }),
     getSavedInvoices: (businessId) => apiClient.get(`/business/${businessId}/invoices`),
     deleteSavedInvoice: (businessId, invoiceId) => apiClient.delete(`/business/${businessId}/invoices/${invoiceId}`),
     clearSavedInvoices: (businessId) => apiClient.delete(`/business/${businessId}/invoices`)

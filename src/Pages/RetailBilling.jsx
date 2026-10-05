@@ -156,7 +156,7 @@ export default function RetailBilling({ setMobileOpen, setActivePath }) {
                                         <th className="px-6 py-3">Customer Name</th>
                                         <th className="px-6 py-3">Address</th>
                                         <th className="px-6 py-3">Contact</th>
-                                        <th className="px-6 py-3">Email</th>
+                                        <th className="px-6 py-3">Place</th>
                                         <th className="px-6 py-3 text-right">Actions</th>
                                     </tr>
                                 </thead>
@@ -166,7 +166,7 @@ export default function RetailBilling({ setMobileOpen, setActivePath }) {
                                             <td className="px-6 py-4 font-medium text-gray-900">{party.name}</td>
                                             <td className="px-6 py-4 text-gray-600 max-w-[200px] truncate" title={party.address}>{party.address || <span className="text-gray-400 italic">N/A</span>}</td>
                                             <td className="px-6 py-4 text-gray-600">{party.contact}</td>
-                                            <td className="px-6 py-4 text-gray-600">{party.email || <span className="text-gray-400 italic">N/A</span>}</td>
+                                            <td className="px-6 py-4 text-gray-600">{party.place || party.email || <span className="text-gray-400 italic">N/A</span>}</td>
                                             <td className="px-6 py-4 text-right space-x-2">
                                                 <button 
                                                     className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors inline-flex" 
@@ -265,6 +265,7 @@ export default function RetailBilling({ setMobileOpen, setActivePath }) {
                                                      <button 
                                                          onClick={() => {
                                                              localStorage.setItem('edit_invoice_id', invoice.id);
+                                                             localStorage.setItem('return_path_invoice', '/inventory/retail-billing');
                                                              if (setActivePath) setActivePath('/inventory/retail-invoices/generate');
                                                          }}
                                                          className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors flex items-center justify-center" 

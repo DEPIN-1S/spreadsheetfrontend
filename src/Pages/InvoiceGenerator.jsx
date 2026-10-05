@@ -1,13 +1,65 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { FiMenu, FiFileText, FiBriefcase } from 'react-icons/fi';
+import { FiMenu, FiFileText, FiBriefcase, FiMoreVertical, FiTrash2, FiAlertCircle } from 'react-icons/fi';
 import AddBusinessModal from '../Components/AddBusinessModal';
-import apiClient from '../api/apiClient';
+import apiClient, { businessApi } from '../api/apiClient';
 
 export default function InvoiceGenerator({ setMobileOpen, setActivePath, setCurrentBusiness }) {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [businesses, setBusinesses] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    const [openMenuId, setOpenMenuId] = useState(null);
+    const [deleteModalBiz, setDeleteModalBiz] = useState(null);
+    const [deleteStats, setDeleteStats] = useState(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    const extractCount = (res, key) => {
+        if (!res || !res.data) return 0;
+        if (res.data.pagination && res.data.pagination.totalItems !== undefined) return res.data.pagination.totalItems;
+        if (Array.isArray(res.data[key])) return res.data[key].length;
+        if (res.data.data) {
+            if (Array.isArray(res.data.data)) return res.data.data.length;
+            if (Array.isArray(res.data.data[key])) return res.data.data[key].length;
+        }
+        return 0;
+    };
+
+    const handleDeleteClick = async (e, biz) => {
+        e.stopPropagation();
+        setOpenMenuId(null);
+        setDeleteModalBiz(biz);
+        setDeleteStats(null);
+        try {
+            const [tpls, invs, pts] = await Promise.all([
+                businessApi.getTemplates(biz.id).catch(() => ({ data: { data: [] } })),
+                businessApi.getSavedInvoices(biz.id).catch(() => ({ data: { data: [] } })),
+                businessApi.listParties(biz.id).catch(() => ({ data: { data: [] } }))
+            ]);
+            setDeleteStats({
+                templates: extractCount(tpls, 'templates'),
+                invoices: extractCount(invs, 'invoices'),
+                parties: extractCount(pts, 'parties')
+            });
+        } catch (err) {
+            console.error('Failed to fetch delete stats', err);
+            setDeleteStats({ templates: 0, invoices: 0, parties: 0, error: true });
+        }
+    };
+
+    const confirmDelete = async () => {
+        if (!deleteModalBiz) return;
+        setIsDeleting(true);
+        try {
+            await apiClient.delete('/business/' + deleteModalBiz.id);
+            await fetchBusinesses();
+            setDeleteModalBiz(null);
+        } catch (err) {
+            console.error('Failed to delete business', err);
+            alert('Failed to delete business');
+        } finally {
+            setIsDeleting(false);
+        }
+    };
     const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
     const isSuperAdmin = currentUser?.role === 'superadmin';
 
@@ -81,7 +133,7 @@ export default function InvoiceGenerator({ setMobileOpen, setActivePath, setCurr
         <div className="flex-1 flex flex-col h-screen bg-white overflow-hidden relative">
             {/* Header */}
             <header className="bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between sticky top-0 z-20">
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 relative">
                     <button
                         onClick={() => setMobileOpen(true)}
                         className="p-2 -ml-2 rounded-lg text-gray-500 hover:bg-gray-100 lg:hidden"
@@ -109,7 +161,7 @@ export default function InvoiceGenerator({ setMobileOpen, setActivePath, setCurr
                         {isLoading && (
                             Array.from({ length: 4 }).map((_, idx) => (
                                 <div key={idx} className="flex flex-col p-4 bg-gray-50 border border-gray-100 rounded-xl animate-pulse min-h-[82px] shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)]">
-                                    <div className="flex items-center gap-4">
+                                    <div className="flex items-center gap-4 relative">
                                         <div className="w-12 h-12 bg-gray-200 rounded-xl shrink-0"></div>
                                         <div className="flex-1 space-y-2">
                                             <div className="h-4 bg-gray-200 rounded w-3/4"></div>
@@ -127,18 +179,40 @@ export default function InvoiceGenerator({ setMobileOpen, setActivePath, setCurr
                                 onClick={() => handleBusinessClick(biz)}
                                 className="flex flex-col p-4 bg-gray-100 border border-gray-200 rounded-xl hover:shadow-sm cursor-pointer transition-all shadow-[0_2px_8px_-4px_rgba(0,0,0,0.05)] h-full"
                             >
-                                <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 shrink-0 rounded-xl flex items-center justify-center bg-blue-100 text-blue-600 overflow-hidden">
+                                <div className="flex items-center gap-4 relative">
+                                    <div className={`w-12 h-12 shrink-0 rounded-xl flex items-center justify-center overflow-hidden ${biz.logo ? "bg-white border border-gray-100 p-1" : "bg-blue-100 text-blue-600"}`}>
                                         {biz.logo ? (
-                                            <img src={biz.logo} alt="Logo" className="w-full h-full object-cover" />
+                                            <img src={biz.logo} alt="Logo" className="w-full h-full object-contain" />
                                         ) : (
                                             <FiBriefcase className="w-5 h-5" />
                                         )}
                                     </div>
                                     <div className="min-w-0 flex-1">
-                                        <h4 className="text-sm font-bold text-gray-800 truncate">
-                                            {biz.name}
-                                        </h4>
+                                        <div className="flex justify-between items-center w-full">
+                                            <h4 className="text-sm font-bold text-gray-800 truncate pr-2">
+                                                {biz.name}
+                                            </h4>
+                                            {isSuperAdmin && (
+                                            <div className="shrink-0 relative">
+                                                <button 
+                                                    onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === biz.id ? null : biz.id); }}
+                                                    className="p-1 rounded hover:bg-gray-200 text-gray-600 transition-colors"
+                                                >
+                                                    <FiMoreVertical size={16} />
+                                                </button>
+                                                {openMenuId === biz.id && (
+                                                    <div className="absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-xl border border-gray-100 z-[100] py-1">
+                                                        <button 
+                                                            onClick={(e) => handleDeleteClick(e, biz)}
+                                                            className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
+                                                        >
+                                                            <FiTrash2 size={14} /> Delete
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            )}
+                                        </div>
                                         <p className="text-[11px] font-medium text-gray-400 truncate mt-1">
                                             {biz.isProductBased ? 'Product-based' : 'Service-based'}
                                         </p>
@@ -194,6 +268,69 @@ export default function InvoiceGenerator({ setMobileOpen, setActivePath, setCurr
                 </div>
             </main>
 
+            {deleteModalBiz && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="p-6">
+                            <div className="flex items-center gap-4 mb-4">
+                                <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center text-red-600 shrink-0">
+                                    <FiAlertCircle size={24} />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold text-gray-900">Delete Business</h3>
+                                    <p className="text-sm text-gray-500 mt-1">
+                                        Are you sure you want to delete <span className="font-bold text-gray-800">"{deleteModalBiz.name}"</span>?
+                                    </p>
+                                </div>
+                            </div>
+                            
+                            <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 mb-2">
+                                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Data to be deleted</h4>
+                                {deleteStats ? (
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between items-center text-sm">
+                                            <span className="text-gray-600">Saved Templates</span>
+                                            <span className="font-bold text-gray-900">{deleteStats.templates}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-sm">
+                                            <span className="text-gray-600">Saved Invoices</span>
+                                            <span className="font-bold text-gray-900">{deleteStats.invoices}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-sm">
+                                            <span className="text-gray-600">Saved Parties</span>
+                                            <span className="font-bold text-gray-900">{deleteStats.parties}</span>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex justify-center items-center py-4 text-gray-400 text-sm">
+                                        <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mr-2"></div>
+                                        Calculating data...
+                                    </div>
+                                )}
+                            </div>
+                            <p className="text-xs text-red-500 text-center mt-2 px-4">
+                                This action cannot be undone.
+                            </p>
+                        </div>
+                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
+                            <button 
+                                onClick={() => setDeleteModalBiz(null)}
+                                className="px-5 py-2 text-sm font-bold text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={confirmDelete}
+                                disabled={isDeleting || !deleteStats}
+                                className="px-5 py-2 text-sm font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+                            >
+                                {isDeleting ? 'Deleting...' : 'Confirm Delete'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
             {/* Add Business Modal */}
             <AddBusinessModal 
                 isOpen={isModalOpen} 

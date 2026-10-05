@@ -13,7 +13,7 @@ export default function InvoiceTemplateModal({ isOpen, onClose, business, templa
                 let parsed = JSON.parse(template.columns);
                 if (typeof parsed === "string") parsed = JSON.parse(parsed);
                 if (Array.isArray(parsed)) rawCols = parsed;
-            } catch(e) {
+            } catch (e) {
                 if (template.columns.includes(",")) rawCols = template.columns.split(",").map(s => s.trim()).filter(Boolean);
                 else if (template.columns.trim() && !template.columns.startsWith("[")) rawCols = [template.columns.trim()];
             }
@@ -29,9 +29,9 @@ export default function InvoiceTemplateModal({ isOpen, onClose, business, templa
         });
     }
     if (!Array.isArray(cols)) cols = [];
-        
+
     const defaultCols = ["Product Name", "Qty", "Selling Rate", "Discount", "MRP", "GST", "Total"];
-        
+
     const defaultColsUpper = defaultCols.map(c => c.toUpperCase());
     if (template && template.isProductBased === false) {
         cols = cols.filter(c => !defaultColsUpper.includes(c.toUpperCase()));
@@ -47,14 +47,14 @@ export default function InvoiceTemplateModal({ isOpen, onClose, business, templa
         day: '2-digit'
     });
     const formattedInvTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-    const isWholesale = template?.isProductBased; 
+    const isWholesale = template?.isProductBased;
 
     // visible columns state for the settings dropdown
     const initialCols = {
         slNo: true
     };
     cols.forEach(c => initialCols[c] = true);
-    
+
     const [visibleColumns, setVisibleColumns] = useState(initialCols);
 
     useEffect(() => {
@@ -117,7 +117,7 @@ export default function InvoiceTemplateModal({ isOpen, onClose, business, templa
             `}</style>
 
             <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full overflow-hidden flex flex-col max-h-[95vh]">
-                
+
                 {/* Modal Action Bar (Hidden in Print) */}
                 <div className="px-6 py-4 bg-gray-900 text-white flex items-center justify-between no-print border-b border-gray-800">
                     <div className="flex items-center gap-2">
@@ -139,27 +139,27 @@ export default function InvoiceTemplateModal({ isOpen, onClose, business, templa
                 {/* Printable Invoice Sheet */}
                 <div className="overflow-y-auto p-6 flex-1 bg-gray-100">
                     <div id="business-invoice-print-area" className="bg-white mx-auto border-2 border-black text-black font-sans text-xs shadow-lg max-w-[900px]">
-                        
+
                         {/* 1. Header Grid */}
                         <div className="grid grid-cols-12 border-b-2 border-black">
-                            
+
                             {/* Left Box: Seller */}
                             <div className="col-span-5 border-r-2 border-black p-2.5 space-y-1.5">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        {business.logo && <img src={business.logo} alt="Logo" className="h-12 object-contain" />}
-                                        {template?.showBusinessName !== false && (
-                                            <span className="font-extrabold text-lg">{business.name}</span>
-                                        )}
-                                        {template?.isB2B && (
-                                            <span className="border border-black px-1.5 py-0.5 text-[15px] font-bold tracking-wide ">B 2 B</span>
-                                        )}
-                                    </div>
+                                <div className="flex items-center gap-2 mb-2">
+                                    {business.logo && <img src={business.logo} alt="Logo" className="h-12 object-contain" />}
+                                    {template?.showBusinessName !== false && (
+                                        <span className="font-extrabold text-lg">{business.name}</span>
+                                    )}
+                                    {template?.isB2B && (
+                                        <span className="border border-black px-1.5 py-0.5 text-[15px] font-bold tracking-wide ">B 2 B</span>
+                                    )}
+                                </div>
                                 <div className="space-y-1 mt-1">
                                     {(({ business: b = business }) => {
                                         if (!b?.additionalData) return null;
                                         let dataArray = b.additionalData;
                                         if (typeof dataArray === 'string') {
-                                            try { dataArray = JSON.parse(dataArray); } catch(e) { return null; }
+                                            try { dataArray = JSON.parse(dataArray); } catch (e) { return null; }
                                         }
                                         if (!Array.isArray(dataArray)) return null;
 
@@ -193,20 +193,29 @@ export default function InvoiceTemplateModal({ isOpen, onClose, business, templa
                             {/* Middle Box: Invoice Info */}
                             <div className="col-span-3 border-r-2 border-black p-2.5 flex flex-col justify-between">
                                 <div>
-                                    <div className="text-center font-black text-sm underline uppercase tracking-wide">TAX INVOICE </div>
+                                    <div className="text-center font-black text-[11px] underline uppercase tracking-wide">TAX INVOICE </div>
                                     <div className="space-y-1 text-[11px] mt-2">
-                                        <div><b>Tax Inv. No. :</b> INV-2026-001</div>
+                                        <div><b>Inv. No :</b> INV-2026-001</div>
                                         <div><b>Inv. Date :</b> {today}</div>
                                         <div><b>Inv. Time :</b> {formattedInvTime}</div>
                                     </div>
+                                </div>
+                                <div className="mt-3">
+                                    <span className="bg-white text-black font-bold px-2.5 py-0.5 text-xs tracking-wider uppercase inline-block border-2 border-black">
+                                        CASH
+                                    </span>
                                 </div>
                             </div>
 
                             {/* Right Box: Buyer / Customer */}
                             <div className="col-span-4 p-2.5 space-y-1 text-[11px] flex flex-col justify-between">
                                 <div className="space-y-1.5">
-                                    <div className="font-extrabold text-xs uppercase leading-tight text-black">
-                                        SAMPLE CUSTOMER
+                                    <div className="text-center font-black text-[11px] underline uppercase tracking-wide text-black">
+                                        Customer Details
+                                    </div>
+                                    <div className="text-gray-800 leading-tight">
+                                        <b>Name : </b>
+                                        <span>SAMPLE CUSTOMER</span>
                                     </div>
                                     <div className="text-gray-800 leading-tight"><b>Phone : </b><span>9876543210</span></div>
                                     <div className="leading-tight uppercase text-gray-800">123 SAMPLE ADDRESS, CITY, ST 12345</div>
@@ -261,7 +270,7 @@ export default function InvoiceTemplateModal({ isOpen, onClose, business, templa
 
                         {/* 4. Calculation Grid */}
                         <div className="grid grid-cols-12 border-b-2 border-black text-[11px]">
-                            
+
                             {/* Col 1: Totals summary */}
                             <div className="col-span-3 border-r-2 border-black p-1.5 space-y-0.5">
                                 <div><b>Total Items :</b> {items.length}</div>
@@ -294,43 +303,43 @@ export default function InvoiceTemplateModal({ isOpen, onClose, business, templa
                                     </div>
                                     <div className="text-right">
                                         <div className="inline-flex flex-col items-center">
-                                        {(() => {
-                                            let sigs = [];
-                                            let rawSigs = business?.signatures;
-                                            if (typeof rawSigs === 'string') {
-                                                try { rawSigs = JSON.parse(rawSigs); } catch(e) { rawSigs = []; }
-                                            }
-                                            if (Array.isArray(rawSigs) && rawSigs.length > 0) {
-                                                sigs = rawSigs.filter(Boolean);
-                                            } else if (business?.signatureImage) {
-                                                sigs = [business.signatureImage];
-                                            }
-
-                                            let currentSig = sigs.length > 0 ? sigs[0] : null;
-
-                                            if (!currentSig) {
-                                                let sealsArray = business?.seals;
-                                                if (typeof sealsArray === 'string') {
-                                                    try { sealsArray = JSON.parse(sealsArray); } catch(e) { sealsArray = []; }
+                                            {(() => {
+                                                let sigs = [];
+                                                let rawSigs = business?.signatures;
+                                                if (typeof rawSigs === 'string') {
+                                                    try { rawSigs = JSON.parse(rawSigs); } catch (e) { rawSigs = []; }
                                                 }
-                                                if (Array.isArray(sealsArray) && sealsArray.length > 0 && sealsArray[0]) {
-                                                    currentSig = sealsArray[0];
-                                                } else if (business?.seal) {
-                                                    currentSig = business.seal;
-                                                } else if (template?.signatureImage) {
-                                                    currentSig = template.signatureImage;
+                                                if (Array.isArray(rawSigs) && rawSigs.length > 0) {
+                                                    sigs = rawSigs.filter(Boolean);
+                                                } else if (business?.signatureImage) {
+                                                    sigs = [business.signatureImage];
                                                 }
-                                            }
 
-                                            return currentSig ? (
-                                                <div className="flex justify-center py-1">
+                                                let currentSig = sigs.length > 0 ? sigs[0] : null;
+
+                                                if (!currentSig) {
+                                                    let sealsArray = business?.seals;
+                                                    if (typeof sealsArray === 'string') {
+                                                        try { sealsArray = JSON.parse(sealsArray); } catch (e) { sealsArray = []; }
+                                                    }
+                                                    if (Array.isArray(sealsArray) && sealsArray.length > 0 && sealsArray[0]) {
+                                                        currentSig = sealsArray[0];
+                                                    } else if (business?.seal) {
+                                                        currentSig = business.seal;
+                                                    } else if (template?.signatureImage) {
+                                                        currentSig = template.signatureImage;
+                                                    }
+                                                }
+
+                                                return currentSig ? (
+                                                    <div className="flex justify-center py-1">
                                                         <img src={currentSig} alt="Signature / Seal" className="h-16 max-w-[180px] object-contain" />
-                                                </div>
-                                            ) : (
-                                                <div className="h-6"></div>
-                                            );
-                                        })()}
-                                        <b className="border-t border-black px-2 pt-0.5 inline-block text-center">Authorised Signatory</b>
+                                                    </div>
+                                                ) : (
+                                                    <div className="h-6"></div>
+                                                );
+                                            })()}
+                                            <b className="border-t border-black px-2 pt-0.5 inline-block text-center">Authorised Signatory</b>
                                         </div>
                                     </div>
                                 </div>

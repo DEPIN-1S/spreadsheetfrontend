@@ -257,6 +257,7 @@ export default function WholesaleBilling({ setMobileOpen, setActivePath }) {
                                                     <button 
                                                         onClick={() => {
                                                             localStorage.setItem('edit_invoice_id', invoice.id);
+                                                            localStorage.setItem('return_path_invoice', '/inventory/wholesale-billing');
                                                             if (setActivePath) setActivePath('/inventory/wholesale-invoices/generate');
                                                         }}
                                                         className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors flex items-center justify-center" 

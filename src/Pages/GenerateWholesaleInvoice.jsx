@@ -68,6 +68,7 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
                     const res = await invInvoicesApi.get(editId);
                     const inv = res.data.data;
                     if (inv) {
+                        if (inv.invoiceNo) setInvoiceNo(inv.invoiceNo);
                         setSelectedPartyId(inv.partyId || '');
                         setInvoiceDate(inv.invoiceDate);
                         setPaymentMethod(inv.paymentMethod || 'UPI');
@@ -379,7 +380,7 @@ export default function GenerateWholesaleInvoice({ setMobileOpen, setActivePath 
             } else {
                 res = await invInvoicesApi.create(payload);
             }
-            const generatedNo = res.data.invoiceNo || (editInvoiceId ? 'INV-WH-UPDATED' : 'INV-WH-GENERATED');
+            const generatedNo = res.data?.data?.invoiceNo || res.data?.invoiceNo || invoiceNo || (editInvoiceId ? 'INV-WH-UPDATED' : 'INV-WH-GENERATED');
             setInvoiceNo(generatedNo);
             setIsSuccess(true);
             Swal.fire({

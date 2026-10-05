@@ -95,12 +95,13 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
     const formattedInvDate = date;
     const formattedInvTime = formatTime(invDateObj);
     const formattedPrintTime = formatTime(new Date());
-    
+
     // Extract customer / party details
     const partyName = currentInv.partyName || (currentInv.party && currentInv.party.name) || 'WALK-IN CUSTOMER';
-    const partyBillingAddress = (currentInv.party && (currentInv.party.billingAddress || currentInv.party.address)) || (currentInv.billingAddress) || 'KILIMINOOR, THIRUVANANTHAPURAM - 695601';
+    const partyBillingAddress = (currentInv.party && (currentInv.party.billingAddress || currentInv.party.address)) || (currentInv.billingAddress) || (currentInv.address) || '';
     const partyShippingAddress = (currentInv.party && currentInv.party.shippingAddress) || (currentInv.shippingAddress) || '';
-    const partyAddress = partyBillingAddress; // kept for non-wholesale fallback
+    const partyAddress = (currentInv.party && (currentInv.party.address || currentInv.party.billingAddress)) || (currentInv.billingAddress) || (currentInv.address) || '';
+    const partyPlace = (currentInv.party && (currentInv.party.place || currentInv.party.email)) || currentInv.place || '';
     const partyContact = (currentInv.party && currentInv.party.contact) || '';
     const partyCode = (currentInv.party && currentInv.party.id) ? `Code A30${currentInv.party.id}` : 'Code A373';
     const partyDl = (currentInv.party && currentInv.party.dlNo) || '';
@@ -220,7 +221,10 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                         margin: 0 !important;
                         padding: 0 !important;
                         box-shadow: none !important;
-                        border: none !important;
+                        border: 2px solid #000 !important;
+                        box-sizing: border-box !important;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
                     }
                     .no-print {
                         display: none !important;
@@ -229,7 +233,7 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
             `}</style>
 
             <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full overflow-hidden flex flex-col max-h-[95vh]">
-                
+
                 {/* Modal Action Bar (Hidden in Print) */}
                 <div className="px-6 py-4 bg-gray-900 text-white flex items-center justify-between no-print border-b border-gray-800">
                     <div className="flex items-center gap-2">
@@ -297,10 +301,10 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                 {/* Printable Invoice Sheet */}
                 <div className="overflow-y-auto p-6 flex-1 bg-gray-100">
                     <div id="pharma-invoice-print-area" className="bg-white mx-auto border-2 border-black text-black font-sans text-xs shadow-lg max-w-[900px]">
-                        
+
                         {/* 1. Header Grid */}
                         <div className="grid grid-cols-12 border-b-2 border-black">
-                            
+
                             {/* Left Box: Seller */}
                             <div className="col-span-5 border-r-2 border-black p-2.5 space-y-1.5">
                                 <div className="flex items-center gap-2">
@@ -339,9 +343,9 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                             {/* Middle Box: Invoice Info */}
                             <div className="col-span-3 border-r-2 border-black p-2.5 flex flex-col justify-between">
                                 <div>
-                                    <div className="text-center font-black text-sm underline uppercase tracking-wide">TAX INVOICE </div>
+                                    <div className="text-center font-black text-[11px] underline uppercase tracking-wide">TAX INVOICE </div>
                                     <div className="space-y-1 text-[11px] mt-2">
-                                        <div><b>Tax Inv. No. :</b> {invoiceNo}</div>
+                                        <div><b>Inv. No :</b> {invoiceNo}</div>
                                         <div><b>Inv. Date :</b> {formattedInvDate}</div>
                                         <div><b>Inv. Time :</b> {formattedInvTime}</div>
                                     </div>
@@ -356,8 +360,12 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                             {/* Right Box: Buyer / Customer */}
                             <div className="col-span-4 p-2.5 space-y-1 text-[11px] flex flex-col justify-between">
                                 <div className="space-y-1.5">
-                                    <div className="font-extrabold text-xs uppercase leading-tight text-black">
-                                        {partyName}
+                                    <div className="text-center font-black text-[11px] underline uppercase tracking-wide text-black">
+                                        Customer Details
+                                    </div>
+                                    <div className="text-gray-800 leading-tight">
+                                        <b>Name : </b>
+                                        <span>{partyName}</span>
                                     </div>
                                     {partyContact && (
                                         <div className="text-gray-800 leading-tight">
@@ -372,7 +380,7 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                             {currentInv.party?.gender && <span><b>Gender : </b>{currentInv.party.gender}</span>}
                                         </div>
                                     )}
-                                    
+
                                     {/* Additional Data or Fallbacks */}
                                     {(() => {
                                         let pData = partyAdditionalData;
@@ -385,6 +393,10 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                                 const key = isObj ? data.key : (typeof data === 'string' && data.includes(':') ? data.split(':')[0].trim() : '');
                                                 const val = isObj ? data.value : (typeof data === 'string' && data.includes(':') ? data.split(':').slice(1).join(':').trim() : data);
                                                 if (!val && !key) return null;
+                                                // Prevent duplicate age if already displayed above
+                                                if ((key && key.toLowerCase() === 'age') || (!key && partyAge && String(val).trim() === String(partyAge).trim())) {
+                                                    return null;
+                                                }
                                                 const displayKey = key ? (key.trim().endsWith(':') ? key.trim().slice(0, -1).trim() : key.trim()) : '';
                                                 return (
                                                     <div key={idx} className="text-gray-800 leading-tight">
@@ -396,26 +408,45 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                         }
                                         return (
                                             <>
-                                                {/* Billing Address */}
-                                                {partyBillingAddress && (
-                                                    <div className="leading-tight uppercase text-gray-800">
-                                                        {partyBillingAddress}
-                                                    </div>
-                                                )}
-                                                {/* Shipping Address - only shown for wholesale when different */}
-                                                {showShipping && (
-                                                    <div className="pt-1 mt-1 border-t border-dashed border-gray-300 leading-tight uppercase text-gray-800">
-                                                        {partyShippingAddress}
-                                                    </div>
-                                                )}
-                                                {!isWholesale && partyAge && <div className="text-gray-800">{partyAge}</div>}
-                                                {isWholesale && (
+                                                {/* Shipping Address for wholesale when different */}
+                                                {showShipping ? (
                                                     <>
-                                                        {partyDl && <div className="text-gray-800">{partyDl}</div>}
-                                                        {partyGstin && <div className="text-gray-800">{partyGstin}</div>}
+                                                        {partyBillingAddress && (
+                                                            <div className="leading-tight uppercase text-gray-800">
+                                                                <b>Billing Address : </b>
+                                                                <span>{partyBillingAddress}</span>
+                                                            </div>
+                                                        )}
+                                                        {partyShippingAddress && (
+                                                            <div className="pt-1 mt-1 border-t border-dashed border-gray-300 leading-tight uppercase text-gray-800">
+                                                                <b>Shipping Address : </b>
+                                                                <span>{partyShippingAddress}</span>
+                                                            </div>
+                                                        )}
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        {partyAddress && (
+                                                            <div className="leading-tight uppercase text-gray-800">
+                                                                <b>Address : </b>
+                                                                <span>{partyAddress}</span>
+                                                            </div>
+                                                        )}
+                                                        {partyPlace && (
+                                                            <div className="leading-tight uppercase text-gray-800">
+                                                                <b>Place : </b>
+                                                                <span>{partyPlace}</span>
+                                                            </div>
+                                                        )}
                                                     </>
                                                 )}
-                                                {partyPan && <div className="text-gray-800">{partyPan}</div>}
+                                                {isWholesale && (
+                                                    <>
+                                                        {partyDl && <div className="text-gray-800"><b>DL : </b><span>{partyDl}</span></div>}
+                                                        {partyGstin && <div className="text-gray-800"><b>GSTIN : </b><span>{partyGstin}</span></div>}
+                                                    </>
+                                                )}
+                                                {partyPan && <div className="text-gray-800"><b>PAN : </b><span>{partyPan}</span></div>}
                                             </>
                                         );
                                     })()}
@@ -481,7 +512,7 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
 
                         {/* 4. Calculation Grid */}
                         <div className="grid grid-cols-12 border-b-2 border-black text-[11px]">
-                            
+
                             {/* Col 1: Totals summary */}
                             <div className="col-span-3 border-r-2 border-black p-1.5 space-y-0.5">
                                 <div><b>Total Items :</b> {items.length}</div>

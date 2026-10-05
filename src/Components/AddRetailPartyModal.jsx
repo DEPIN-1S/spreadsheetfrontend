@@ -9,6 +9,7 @@ export default function AddRetailPartyModal({ isOpen, onClose, initialData, onSa
         age: '',
         dobYear: '',
         contact: '',
+        place: '',
         email: '',
         address: '',
         panNo: ''
@@ -27,24 +28,31 @@ export default function AddRetailPartyModal({ isOpen, onClose, initialData, onSa
         if (isOpen && initialData) {
             const initAge = initialData.age ? String(initialData.age) : (initialData.dobYear ? String(currentYear - Number(initialData.dobYear)) : '');
             const initDobYear = initialData.dobYear ? String(initialData.dobYear) : (initialData.age ? String(currentYear - Number(initialData.age)) : '');
+            const placeVal = initialData.place || initialData.email || '';
             setFormData({
                 name: initialData.name || '',
                 age: initAge,
                 dobYear: initDobYear,
                 contact: initialData.contact || '',
-                email: initialData.email || '',
+                place: placeVal,
+                email: placeVal,
                 address: initialData.address || '',
                 panNo: initialData.panNo || initialData.pan || ''
             });
         } else if (isOpen && !initialData) {
-            setFormData({ name: '', age: '', dobYear: '', contact: '', email: '', address: '', panNo: '' });
+            setFormData({ name: '', age: '', dobYear: '', contact: '', place: '', email: '', address: '', panNo: '' });
         }
     }
 
     if (!isOpen) return null;
 
     const handleChange = (e) => {
-        setFormData({ ...formData, [e.target.name]: e.target.value });
+        const { name, value } = e.target;
+        if (name === 'place') {
+            setFormData(prev => ({ ...prev, place: value, email: value }));
+        } else {
+            setFormData(prev => ({ ...prev, [name]: value }));
+        }
     };
 
     const handleAgeChange = (e) => {
@@ -69,8 +77,11 @@ export default function AddRetailPartyModal({ isOpen, onClose, initialData, onSa
         e.preventDefault();
         setErrorMessage('');
         setIsSubmitting(true);
+        const trimmedPlace = formData.place ? formData.place.trim() : '';
         const payload = {
             ...formData,
+            place: trimmedPlace,
+            email: trimmedPlace,
             age: formData.age ? Number(formData.age) : null,
             dobYear: formData.dobYear ? Number(formData.dobYear) : null
         };
@@ -79,7 +90,7 @@ export default function AddRetailPartyModal({ isOpen, onClose, initialData, onSa
                 await onSave(payload);
             }
             onClose();
-            setFormData({ name: '', age: '', dobYear: '', contact: '', email: '', address: '', panNo: '' });
+            setFormData({ name: '', age: '', dobYear: '', contact: '', place: '', email: '', address: '', panNo: '' });
         } catch (err) {
             console.error("Error saving retail party modal:", err);
             setErrorMessage(err.response?.data?.message || err.message || "Failed to save retail customer.");
@@ -142,14 +153,14 @@ export default function AddRetailPartyModal({ isOpen, onClose, initialData, onSa
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Place</label>
                                 <input
-                                    type="email"
-                                    name="email"
-                                    value={formData.email}
+                                    type="text"
+                                    name="place"
+                                    value={formData.place}
                                     onChange={handleChange}
                                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-colors"
-                                    placeholder="customer@email.com (Optional)"
+                                    placeholder="e.g. City / Town (Optional)"
                                 />
                             </div>
                             <div>
@@ -181,7 +192,7 @@ export default function AddRetailPartyModal({ isOpen, onClose, initialData, onSa
                                 <input
                                     type="text"
                                     readOnly
-                                    value={formData.dobYear ? `${formData.dobYear}` : ''}
+                                    value={formData.dobYear ? String(formData.dobYear) : ''}
                                     className="w-full px-4 py-2 border border-indigo-200 rounded-lg bg-indigo-50/50 font-bold text-indigo-700 outline-none cursor-default"
                                     placeholder="Auto-calculated"
                                 />

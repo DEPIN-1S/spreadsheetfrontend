@@ -251,7 +251,7 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
                                     <div className="flex items-center gap-4">
                                         <div className="w-20 h-20 rounded-2xl border-2 border-dashed border-gray-200 flex items-center justify-center bg-white overflow-hidden shrink-0 group relative transition-colors hover:border-indigo-500">
                                             {logoPreview ? (
-                                                <img src={logoPreview} alt="Logo" className="w-full h-full object-cover" />
+                                                <img src={logoPreview} alt="Logo" className="w-full h-full object-contain p-1" />
                                             ) : (
                                                 <FiUploadCloud className="text-gray-300 group-hover:text-indigo-400 transition-colors" size={24} />
                                             )}
@@ -274,23 +274,23 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
                                 <div>
                                     <label className="block text-sm font-semibold text-gray-700 mb-1">Authorised Signatures</label>
                                     <p className="text-xs text-gray-500 mb-3">Upload multiple authorised signatures for this business.</p>
-                                    <div className="flex flex-wrap gap-3">
+                                    <div className="flex flex-wrap gap-3 pt-1.5 pr-1.5">
                                         {signatures.map((sig, idx) => (
-                                            <div key={idx} className="relative w-32 h-20 rounded-xl border border-gray-200 bg-white shadow-sm flex items-center justify-center group overflow-hidden">
-                                                <img src={sig} alt={`Signature ${idx + 1}`} className="w-full h-full object-contain p-1" />
-                                                {idx === 0 && (
-                                                    <span className="absolute bottom-0 inset-x-0 bg-indigo-600/90 text-[8px] text-white font-bold text-center py-0.5 pointer-events-none">Default</span>
-                                                )}
-                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                                    <button 
-                                                        type="button"
-                                                        onClick={() => handleRemoveSignature(idx)}
-                                                        className="p-1.5 bg-white text-red-500 hover:bg-red-50 rounded-lg transition-colors shadow-sm"
-                                                        title="Remove Signature"
-                                                    >
-                                                        <FiTrash2 size={14} />
-                                                    </button>
+                                            <div key={idx} className="relative w-32 h-20">
+                                                <div className="w-full h-full rounded-xl border border-gray-200 bg-white shadow-sm flex items-center justify-center overflow-hidden">
+                                                    <img src={sig} alt={`Signature ${idx + 1}`} className="w-full h-full object-contain p-1" />
+                                                    {idx === 0 && (
+                                                        <span className="absolute bottom-0 inset-x-0 bg-indigo-600/90 text-[8px] text-white font-bold text-center py-0.5 pointer-events-none rounded-b-xl">Default</span>
+                                                    )}
                                                 </div>
+                                                <button 
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); handleRemoveSignature(idx); }}
+                                                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-md transition-colors z-10"
+                                                    title="Remove Signature"
+                                                >
+                                                    <FiX size={12} strokeWidth={2.5} />
+                                                </button>
                                             </div>
                                         ))}
                                         <label className="w-32 h-20 rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center bg-white hover:border-indigo-500 hover:bg-indigo-50/50 cursor-pointer transition-all shadow-sm">
@@ -313,23 +313,23 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
                                 <div>
                                     <label className="block text-sm font-semibold text-gray-700 mb-1">Business Seals / Signatures</label>
                                     <p className="text-xs text-gray-500 mb-3">Upload business stamps, seals or authorised signatures to appear on invoices.</p>
-                                    <div className="flex flex-wrap gap-3">
+                                    <div className="flex flex-wrap gap-3 pt-1.5 pr-1.5">
                                         {seals.map((seal, idx) => (
-                                            <div key={idx} className="relative w-20 h-20 rounded-xl border border-gray-200 bg-white shadow-sm flex items-center justify-center group overflow-hidden">
-                                                <img src={seal} alt={`Seal ${idx + 1}`} className="w-full h-full object-contain p-1" />
-                                                {idx === 0 && (
-                                                    <span className="absolute bottom-0 inset-x-0 bg-indigo-600/90 text-[8px] text-white font-bold text-center py-0.5 pointer-events-none">Default</span>
-                                                )}
-                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                                    <button 
-                                                        type="button"
-                                                        onClick={() => handleRemoveSeal(idx)}
-                                                        className="p-1.5 bg-white text-red-500 hover:bg-red-50 rounded-lg transition-colors shadow-sm"
-                                                        title="Remove Seal"
-                                                    >
-                                                        <FiTrash2 size={14} />
-                                                    </button>
+                                            <div key={idx} className="relative w-20 h-20">
+                                                <div className="w-full h-full rounded-xl border border-gray-200 bg-white shadow-sm flex items-center justify-center overflow-hidden">
+                                                    <img src={seal} alt={`Seal ${idx + 1}`} className="w-full h-full object-contain p-1" />
+                                                    {idx === 0 && (
+                                                        <span className="absolute bottom-0 inset-x-0 bg-indigo-600/90 text-[8px] text-white font-bold text-center py-0.5 pointer-events-none rounded-b-xl">Default</span>
+                                                    )}
                                                 </div>
+                                                <button 
+                                                    type="button"
+                                                    onClick={(e) => { e.stopPropagation(); handleRemoveSeal(idx); }}
+                                                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-md transition-colors z-10"
+                                                    title="Remove Seal"
+                                                >
+                                                    <FiX size={12} strokeWidth={2.5} />
+                                                </button>
                                             </div>
                                         ))}
                                         <label className="w-20 h-20 rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center bg-white hover:border-indigo-500 hover:bg-indigo-50/50 cursor-pointer transition-all shadow-sm">

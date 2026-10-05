@@ -68,6 +68,7 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                     const res = await invInvoicesApi.get(editId);
                     const inv = res.data.data;
                     if (inv) {
+                        if (inv.invoiceNo) setInvoiceNo(inv.invoiceNo);
                         setSelectedPartyId(inv.partyId || '');
                         setInvoiceDate(inv.invoiceDate);
                         setPaymentMethod(inv.paymentMethod || 'Cash');
@@ -374,7 +375,7 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
             } else {
                 res = await invInvoicesApi.create(payload);
             }
-            const generatedNo = res.data.invoiceNo || (editInvoiceId ? 'INV-RET-UPDATED' : 'INV-RET-GENERATED');
+            const generatedNo = res.data?.data?.invoiceNo || res.data?.invoiceNo || invoiceNo || (editInvoiceId ? 'INV-RET-UPDATED' : 'INV-RET-GENERATED');
             setInvoiceNo(generatedNo);
             setIsSuccess(true);
             Swal.fire({
@@ -522,7 +523,7 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                                                     >
                                                         <div>
                                                             <span className="font-semibold text-gray-900">{party.name}</span>
-                                                            <div className="text-xs text-gray-500">{party.contact} {party.email ? `• ${party.email}` : ''}</div>
+                                                            <div className="text-xs text-gray-500">{party.contact} {(party.place || party.email) ? `• ${party.place || party.email}` : ''}</div>
                                                         </div>
                                                         <span className="text-xs text-indigo-600 font-semibold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">Select</span>
                                                     </div>
@@ -571,7 +572,7 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
                                     </div>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-600 pt-1">
                                         <div><span className="font-semibold text-gray-700">Contact:</span> {selectedParty.contact}</div>
-                                        <div><span className="font-semibold text-gray-700">Email:</span> {selectedParty.email || 'N/A'}</div>
+                                        <div><span className="font-semibold text-gray-700">Place:</span> {selectedParty.place || selectedParty.email || 'N/A'}</div>
                                         <div className="sm:col-span-2"><span className="font-semibold text-gray-700">Address:</span> {selectedParty.address || 'N/A'}</div>
                                     </div>
                                 </div>

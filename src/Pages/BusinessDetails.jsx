@@ -15,10 +15,11 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
     const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-    const isSuperAdmin = currentUser?.role === 'superadmin';
+    const isSuperAdmin = currentUser?.role === 'superadmin' || currentUser?.role === 'super_admin';
     const [isSelectPartyOpen, setIsSelectPartyOpen] = useState(false);
     const [isGenerateInvoiceOpen, setIsGenerateInvoiceOpen] = useState(false);
     const [viewingSavedInvoice, setViewingSavedInvoice] = useState(null);
+    const [editingInvoice, setEditingInvoice] = useState(null);
     const [recentInvoices, setRecentInvoices] = useState([]);
     
     useEffect(() => {
@@ -42,8 +43,35 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
     const [filterMonth, setFilterMonth] = useState('');
     const [filterDate, setFilterDate] = useState('');
 
+        const isCbTemplateInvoice = (inv) => {
+        if (!inv) return false;
+        const tName = inv.templateName || 
+                      inv.fullData?.template?.name || 
+                      (typeof inv.fullData?.template === 'string' ? inv.fullData.template : '') || 
+                      (inv.fullData?.template?.title || '');
+        if (!tName || typeof tName !== 'string') return false;
+        const clean = tName.trim().toLowerCase();
+        return clean === 'cb' || clean.startsWith('cb') || /\bcb\b/i.test(clean) || clean.includes('cb');
+    };
+
+    const handleToggleCb = async (inv) => {
+        if (!isSuperAdmin || !business?.id || !inv?.id) return;
+        const newCb = !inv.isCb;
+        setRecentInvoices(prev => prev.map(item => item.id === inv.id ? { ...item, isCb: newCb } : item));
+        try {
+            await businessApi.toggleSavedInvoiceCb(business.id, inv.id, newCb);
+        } catch (err) {
+            console.error("Failed to toggle CB status:", err);
+            setRecentInvoices(prev => prev.map(item => item.id === inv.id ? { ...item, isCb: !newCb } : item));
+            alert("Failed to update CB status. Please try again.");
+        }
+    };
+
     const sortedAndFilteredInvoices = React.useMemo(() => {
         let result = [...(recentInvoices || [])].filter(Boolean);
+        if (!isSuperAdmin) {
+            result = result.filter(inv => !inv.isCb);
+        }
         if (filterMonth) {
             result = result.filter(inv => {
                 if (!inv.date) return false;
@@ -69,20 +97,44 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                 return `${y}-${m}-${d}` === filterDate;
             });
         }
+        if (sortOption === 'cb-newest' || sortOption === 'cb-oldest' || sortOption === 'cb-only') {
+            result = result.filter(inv => isCbTemplateInvoice(inv));
+        }
+
         result.sort((a, b) => {
-            const parseDate = (dStr) => {
+            const parseDateTime = (inv) => {
+                if (!inv) return 0;
+                if (inv.createdAt) {
+                    const c = new Date(inv.createdAt).getTime();
+                    if (!isNaN(c) && c > 0) return c;
+                }
+                const dStr = inv.date;
                 if (!dStr) return 0;
                 const p = dStr.split(/[-/]/);
                 if (p.length !== 3) return 0;
-                if (p[0].length === 4) return new Date(p[0], parseInt(p[1])-1, p[2]).getTime();
-                return new Date(p[2], parseInt(p[1])-1, p[0]).getTime();
+                let y, m, d;
+                if (p[0].length === 4) { y = parseInt(p[0]); m = parseInt(p[1]) - 1; d = parseInt(p[2]); }
+                else { y = parseInt(p[2]); m = parseInt(p[1]) - 1; d = parseInt(p[0]); }
+                let hours = 0, minutes = 0;
+                if (inv.time) {
+                    const match = inv.time.match(/(\d+):(\d+)\s*(am|pm)?/i);
+                    if (match) {
+                        hours = parseInt(match[1]);
+                        minutes = parseInt(match[2]);
+                        const ampm = (match[3] || '').toLowerCase();
+                        if (ampm === 'pm' && hours < 12) hours += 12;
+                        if (ampm === 'am' && hours === 12) hours = 0;
+                    }
+                }
+                return new Date(y, m, d, hours, minutes).getTime();
             };
-            const timeA = parseDate(a.date);
-            const timeB = parseDate(b.date);
-            return sortOption === 'newest' ? timeB - timeA : timeA - timeB;
+            const timeA = parseDateTime(a);
+            const timeB = parseDateTime(b);
+            const isNewest = sortOption === 'newest' || sortOption === 'cb-newest' || sortOption === 'cb-only';
+            return isNewest ? timeB - timeA : timeA - timeB;
         });
         return result;
-    }, [recentInvoices, filterMonth, filterDate, sortOption]);
+    }, [recentInvoices, filterMonth, filterDate, sortOption, isSuperAdmin]);
 
     const totalInvoicePages = Math.max(1, Math.ceil((sortedAndFilteredInvoices?.length || 0) / invoicePageSize));
     const paginatedInvoices = (sortedAndFilteredInvoices || []).slice((invoicePage - 1) * invoicePageSize, invoicePage * invoicePageSize);
@@ -94,6 +146,54 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
     }, [totalInvoicePages, invoicePage]);
 
 
+
+    const handleEditSavedInvoice = (inv) => {
+        if (!inv) return;
+
+        let fullData = inv.fullData;
+        if (typeof fullData === 'string') {
+            try {
+                fullData = JSON.parse(fullData);
+            } catch (e) {
+                console.error("Failed to parse inv.fullData:", e);
+                fullData = {};
+            }
+        }
+
+        const invoiceToEdit = {
+            ...inv,
+            fullData,
+            items: fullData?.items || inv.items || [],
+            totals: fullData?.totals || inv.totals || {}
+        };
+
+        setEditingInvoice(invoiceToEdit);
+
+        const allTemplates = [...(templates || []), ...(business?.templates || [])];
+        const invTpl = fullData?.template;
+        let matchedTemplate = null;
+        if (invTpl?.id) {
+            matchedTemplate = allTemplates.find(t => String(t.id) === String(invTpl.id));
+        }
+        if (!matchedTemplate && inv.templateName) {
+            matchedTemplate = allTemplates.find(t => t.name === inv.templateName);
+        }
+        if (!matchedTemplate && invTpl) {
+            matchedTemplate = invTpl;
+        }
+        if (!matchedTemplate && allTemplates.length > 0) {
+            matchedTemplate = allTemplates[0];
+        }
+        setSelectedTemplate(matchedTemplate);
+
+        let matchedParty = fullData?.party || null;
+        if (!matchedParty && inv.partyName) {
+            matchedParty = (parties || []).find(p => p.name === inv.partyName) || { name: inv.partyName };
+        }
+        setSelectedInvoiceParty(matchedParty);
+
+        setIsGenerateInvoiceOpen(true);
+    };
 
     const handleDeleteInvoice = async (id) => {
         if (!window.confirm("Are you sure you want to delete this invoice?")) return;
@@ -317,8 +417,8 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                             
                             <div className="flex flex-col md:flex-row gap-8 mb-6">
                             {business.logo && (
-                                <div className="w-32 h-32 shrink-0 rounded-2xl overflow-hidden bg-gray-50 border border-gray-100 flex items-center justify-center shadow-sm">
-                                    <img src={business.logo} alt="Business Logo" className="w-full h-full object-cover" />
+                                <div className="w-32 h-32 shrink-0 rounded-2xl overflow-hidden bg-white border border-gray-100 flex items-center justify-center shadow-sm p-2">
+                                    <img src={business.logo} alt="Business Logo" className="w-full h-full object-contain" />
                                 </div>
                             )}
                             
@@ -543,7 +643,7 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                     })}
                                     {(!Array.isArray(parties) || parties.length === 0) && (
                                         <tr>
-                                            <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
+                                            <td colSpan={isSuperAdmin ? 6 : 5} className="px-6 py-8 text-center text-gray-500">
                                                 No parties found for this business.
                                             </td>
                                         </tr>
@@ -602,9 +702,9 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                         className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                     />
                                 </div>
-                                {(filterMonth || filterDate) && (
+                                {(filterMonth || filterDate || sortOption !== 'newest') && (
                                     <button 
-                                        onClick={() => { setFilterMonth(''); setFilterDate(''); setInvoicePage(1); }}
+                                        onClick={() => { setFilterMonth(''); setFilterDate(''); setSortOption('newest'); setInvoicePage(1); }}
                                         className="text-xs text-red-600 hover:text-red-800 font-medium px-2 py-1 bg-red-50 hover:bg-red-100 rounded-md transition-colors"
                                     >
                                         Clear Filter
@@ -619,6 +719,8 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                     >
                                         <option value="newest">Newest First</option>
                                         <option value="oldest">Oldest First</option>
+                                        <option value="cb-newest">Only CB Newest First</option>
+                                        <option value="cb-oldest">Only CB Oldest First</option>
                                     </select>
                                 </div>
                             </div>
@@ -631,6 +733,7 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                         <th className="px-6 py-3">Date & Time</th>
                                         <th className="px-6 py-3">Party Name</th>
                                         <th className="px-6 py-3 text-right">Total Amount</th>
+                                        {isSuperAdmin && <th className="px-6 py-3 text-center">CB</th>}
                                         <th className="px-6 py-3 text-right">Actions</th>
                                     </tr>
                                 </thead>
@@ -638,7 +741,7 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                     {paginatedInvoices.length > 0 ? paginatedInvoices.map((inv) => {
                                         if (!inv) return null;
                                         return (
-                                        <tr key={inv.id || Math.random()} className="hover:bg-gray-50 transition-colors">
+                                        <tr key={inv.id || Math.random()} className={`${inv.isCb ? 'bg-amber-50/70 hover:bg-amber-100/70 border-l-4 border-l-amber-500' : 'hover:bg-gray-50/80'} transition-colors group`}>
                                             <td className="px-6 py-4">
                                                 <div className="font-semibold text-indigo-600">{inv.invoiceNo || 'N/A'}</div>
                                                 {(() => {
@@ -680,9 +783,35 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                                     return inv.total || '0.00';
                                                 })()}
                                             </td>
-                                            <td className="px-6 py-4 text-right space-x-2">
+                                            {isSuperAdmin && (
+                                                <td className="px-6 py-4 text-center">
+                                                    {isCbTemplateInvoice(inv) ? (
+                                                        <button 
+                                                            type="button"
+                                                            onClick={() => handleToggleCb(inv)} 
+                                                            className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                                                inv.isCb ? 'bg-amber-500 hover:bg-amber-600' : 'bg-gray-200 hover:bg-gray-300'
+                                                            }`} 
+                                                            title={inv.isCb ? "CB Applied: Hidden from non-superadmin users (Click to turn OFF)" : "Apply CB: Hide from non-superadmin users (Click to turn ON)"}
+                                                        >
+                                                            <span className="sr-only">Toggle CB</span>
+                                                            <span 
+                                                                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                                                                    inv.isCb ? 'translate-x-4' : 'translate-x-0'
+                                                                }`} 
+                                                            />
+                                                        </button>
+                                                    ) : (
+                                                        <span className="text-gray-300 font-mono text-xs select-none">—</span>
+                                                    )}
+                                                </td>
+                                            )}
+                                            <td className="px-6 py-4 text-right space-x-2 whitespace-nowrap">
                                                 <button onClick={() => setViewingSavedInvoice(inv)} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors inline-flex" title="View">
                                                     <FiEye size={16} />
+                                                </button>
+                                                <button onClick={() => handleEditSavedInvoice(inv)} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors inline-flex" title="Edit">
+                                                    <FiEdit2 size={16} />
                                                 </button>
                                                 <button onClick={() => setViewingSavedInvoice(inv)} className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition-colors inline-flex" title="Download">
                                                     <FiDownload size={16} />
@@ -778,6 +907,7 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
             />
 
             <GenerateInvoiceModal
+                key={editingInvoice ? `edit-${editingInvoice.id}` : 'new-invoice'}
                 onSaveInvoice={async (invoice) => { 
                     try {
                         // Strip heavy base64 strings to prevent database ETIMEDOUT due to payload size
@@ -793,18 +923,29 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                             delete cleanInvoice.fullData.template.signatureImage;
                         }
                         if (Array.isArray(cleanInvoice.fullData?.selectedSeals)) {
-                            // We can't safely store massive base64 arrays in fullData json
                             cleanInvoice.fullData.selectedSeals = [];
                         }
 
-                        const res = await businessApi.saveInvoice(business.id, cleanInvoice);
-                        if (res.data.success) {
-                            const savedInvoiceObj = res.data.data ? res.data.data.invoice : res.data.invoice;
-                              if (savedInvoiceObj) {
-                                  setRecentInvoices(prev => [savedInvoiceObj, ...prev]);
-                              }
-                            setInvoicePage(1);
+                        if (editingInvoice && editingInvoice.id) {
+                            if (editingInvoice.isCb !== undefined) {
+                                cleanInvoice.isCb = editingInvoice.isCb;
+                            }
+                            const res = await businessApi.updateSavedInvoice(business.id, editingInvoice.id, cleanInvoice);
+                            if (res.data?.success) {
+                                const updatedInvoice = res.data.data ? (res.data.data.invoice || res.data.data) : (res.data.invoice || cleanInvoice);
+                                setRecentInvoices(prev => prev.map(inv => String(inv.id) === String(editingInvoice.id) ? { ...inv, ...cleanInvoice, ...updatedInvoice } : inv));
+                            }
+                        } else {
+                            const res = await businessApi.saveInvoice(business.id, cleanInvoice);
+                            if (res.data?.success) {
+                                const savedInvoiceObj = res.data.data ? (res.data.data.invoice || res.data.data) : res.data.invoice;
+                                if (savedInvoiceObj) {
+                                    setRecentInvoices(prev => [savedInvoiceObj, ...prev]);
+                                }
+                                setInvoicePage(1);
+                            }
                         }
+                        setEditingInvoice(null);
                     } catch (error) {
                         console.error("Failed to save invoice to backend", error);
                         alert("Failed to save invoice to backend.");
@@ -815,10 +956,12 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                     setIsGenerateInvoiceOpen(false);
                     setSelectedInvoiceParty(null);
                     setSelectedTemplate(null);
+                    setEditingInvoice(null);
                 }}
                 business={business}
                 party={selectedInvoiceParty}
                 template={selectedTemplate}
+                editingInvoice={editingInvoice}
             />
 
             <ViewSavedInvoiceModal
@@ -826,6 +969,10 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                 onClose={() => setViewingSavedInvoice(null)}
                 savedInvoice={viewingSavedInvoice}
                 currentBusiness={business}
+                onEdit={(inv) => {
+                    setViewingSavedInvoice(null);
+                    handleEditSavedInvoice(inv);
+                }}
             />
         </div>
     );

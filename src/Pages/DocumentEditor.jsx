@@ -858,7 +858,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         if (colDef?.type === 'formula' && colDef.formulaExpr && !colDef.formulaExpr.includes('/')) {
             const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
             for (const refCol of columns) {
-                if (refCol.type === 'currency' && refCol.name) {
+                if ((refCol.type === 'currency' || (refCol.type === 'formula' && refCol.currencyCode)) && refCol.name) {
                     const regex = new RegExp(`(?<=^|[^a-zA-Z0-9_])${escapeRegExp(refCol.name.trim())}(?=$|[^a-zA-Z0-9_])`, "gi");
                     if (regex.test(colDef.formulaExpr)) {
                         isCurrencyFormula = true;
@@ -2033,7 +2033,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                     if (col.type === 'formula' && col.formulaExpr && !col.formulaExpr.includes('/')) {
                         const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
                         for (const refCol of columns) {
-                            if (refCol.type === 'currency' && refCol.name) {
+                            if ((refCol.type === 'currency' || (refCol.type === 'formula' && refCol.currencyCode)) && refCol.name) {
                                 const regex = new RegExp(`(?<=^|[^a-zA-Z0-9_])${escapeRegExp(refCol.name.trim())}(?=$|[^a-zA-Z0-9_])`, "gi");
                                 if (regex.test(col.formulaExpr)) {
                                     isCurrencyFormula = true;
@@ -2672,7 +2672,7 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                             if (isFormula && col.formulaExpr && !col.formulaExpr.includes('/')) {
                                                 const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
                                                 for (const refCol of columns) {
-                                                    if (refCol.type === 'currency' && refCol.name) {
+                                                    if ((refCol.type === 'currency' || (refCol.type === 'formula' && refCol.currencyCode)) && refCol.name) {
                                                         const regex = new RegExp(`(?<=^|[^a-zA-Z0-9_])${escapeRegExp(refCol.name.trim())}(?=$|[^a-zA-Z0-9_])`, "gi");
                                                         if (regex.test(col.formulaExpr)) {
                                                             isCurrencyFormula = true;
@@ -3874,7 +3874,10 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
                                         Add column values to formula by clicking column names from below list:
                                     </div>
                                     <div className="flex-col overflow-y-auto max-h-56 pr-2 space-y-1.5 custom-scrollbar">
-                                        {columns.filter(col => col.type === 'number' || col.type === 'currency').map((col, idx) => {
+                                        {columns.filter(col => {
+                                            const t = (col?.type || '').toLowerCase();
+                                            return t === 'number' || t === 'currency' || t === 'formula' || Boolean(col?.formulaExpr);
+                                        }).map((col, idx) => {
                                             if (col.id === pendingFormulaColumnDesc.id) return null; // Don't allow self-reference
 
                                             // Calculate A1 notation for this column (e.g., A, B, C...)

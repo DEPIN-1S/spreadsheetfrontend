@@ -77,7 +77,7 @@ export default function SelectPartyModal({ isOpen, onClose, onSelect, businessId
                                         </div>
                                         <div className="min-w-0">
                                             <h4 className="font-semibold text-gray-900 text-sm truncate">{party.name}</h4>
-                                            <p className="text-xs text-gray-500 mt-0.5">{party.contact || party.email || 'No contact info'}</p>
+                                            <p className="text-xs text-gray-500 mt-0.5">{party.contact || party.place || party.email || 'No contact info'}</p>
                                         </div>
                                     </div>
 

@@ -165,6 +165,17 @@ export default function RetailInvoices({ setMobileOpen, setActivePath }) {
                                                         <FiEye size={16} />
                                                     </button>
                                                     <button 
+                                                        onClick={() => {
+                                                            localStorage.setItem('edit_invoice_id', invoice.id);
+                                                            localStorage.setItem('return_path_invoice', '/inventory/retail-invoices');
+                                                            if (setActivePath) setActivePath('/inventory/retail-invoices/generate');
+                                                        }}
+                                                        className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors flex items-center justify-center" 
+                                                        title="Edit Invoice"
+                                                    >
+                                                        <FiEdit2 size={16} />
+                                                    </button>
+                                                    <button 
                                                         className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors flex items-center justify-center" 
                                                         onClick={() => handleDeleteInvoice(invoice.id)}
                                                         title="Delete Invoice"
