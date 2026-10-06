@@ -43,19 +43,20 @@ export default function ViewBusinessPartyModal({ isOpen, onClose, party }) {
                             <p className="text-sm font-medium text-gray-900 bg-gray-50 px-3 py-2.5 rounded-xl border border-gray-100">{party.contact}</p>
                         </div>
 
-                        {party.age && (
-                            <div>
-                                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Age</label>
-                                <p className="text-sm font-medium text-gray-900 bg-gray-50 px-3 py-2.5 rounded-xl border border-gray-100">{party.age}</p>
+                                                <div className="col-span-1">
+                                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Place</label>
+                                <p className="text-sm font-medium text-gray-900 bg-gray-50 px-3 py-2.5 rounded-xl border border-gray-100">{party.place || "-"}</p>
                             </div>
-                        )}
 
-                        {party.gender && (
-                            <div>
-                                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Gender</label>
-                                <p className="text-sm font-medium text-gray-900 bg-gray-50 px-3 py-2.5 rounded-xl border border-gray-100">{party.gender}</p>
+                        <div>
+                                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Age</label>
+                                <p className="text-sm font-medium text-gray-900 bg-gray-50 px-3 py-2.5 rounded-xl border border-gray-100">{party.age || "-"}</p>
                             </div>
-                        )}
+
+                        <div>
+                                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Gender</label>
+                                <p className="text-sm font-medium text-gray-900 bg-gray-50 px-3 py-2.5 rounded-xl border border-gray-100">{party.gender || "-"}</p>
+                            </div>
                     </div>
 
                     {Array.isArray(extraData) && extraData.length > 0 && (

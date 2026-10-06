@@ -7,11 +7,26 @@ export default function AddTemplateModal({ isOpen, onClose, onSave, initialData 
     
             const getInitialSpreadsheetIds = (data) => {
         if (!data) return [];
-        if (data.spreadsheetIds) {
+        if (Array.isArray(data.spreadsheetIds)) {
+            return data.spreadsheetIds.filter(Boolean);
+        }
+        if (typeof data.spreadsheetIds === 'string') {
             try {
-                const parsed = JSON.parse(data.spreadsheetIds);
-                if (Array.isArray(parsed)) return parsed;
-            } catch(e) { }
+                let parsed = JSON.parse(data.spreadsheetIds);
+                if (typeof parsed === 'string') {
+                    parsed = JSON.parse(parsed); // Handle double stringified
+                }
+                if (Array.isArray(parsed)) return parsed.filter(Boolean);
+                if (parsed) return [parsed];
+            } catch (e) {
+                if (data.spreadsheetIds.includes(',')) {
+                    return data.spreadsheetIds.split(',').map(s => s.trim()).filter(Boolean);
+                }
+                if (data.spreadsheetIds.trim()) return [data.spreadsheetIds.trim()];
+            }
+        }
+        if (Array.isArray(data.spreadsheetId)) {
+            return data.spreadsheetId.filter(Boolean);
         }
         if (data.spreadsheetId) return [data.spreadsheetId];
         return [];

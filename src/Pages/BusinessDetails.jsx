@@ -589,6 +589,7 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                     <tr className="bg-gray-50 border-b border-gray-200 text-xs uppercase tracking-wider text-gray-500 font-semibold">
                                         <th className="px-6 py-3">Party Name</th>
                                         <th className="px-6 py-3">Contact</th>
+                                        <th className="px-6 py-3">Place</th>
                                         <th className="px-6 py-3">Age</th>
                                         <th className="px-6 py-3">Gender</th>
                                         <th className="px-6 py-3 text-right">Actions</th>
@@ -606,6 +607,7 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                         <tr key={party.id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-4 font-medium text-gray-900">{party.name}</td>
                                             <td className="px-6 py-4 text-gray-600">{party.contact}</td>
+                                            <td className="px-6 py-4 text-gray-600">{party.place ? <span className="font-medium text-gray-900">{party.place}</span> : <span className="text-gray-400 italic">-</span>}</td>
                                             <td className="px-6 py-4 text-gray-600">
                                                 {party.age ? <span className="font-medium text-gray-900">{party.age}</span> : <span className="text-gray-400 italic">-</span>}
                                             </td>
@@ -823,7 +825,7 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                         </tr>
                                     ); }) : (
                                         <tr>
-                                            <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
+                                            <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
                                                 No recent invoices saved in this session.
                                             </td>
                                         </tr>
@@ -922,8 +924,22 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                         if (cleanInvoice.fullData?.template) {
                             delete cleanInvoice.fullData.template.signatureImage;
                         }
+                        let sealsArray = business?.seals;
+                        if (typeof sealsArray === 'string') {
+                            try { sealsArray = JSON.parse(sealsArray); } catch (e) { sealsArray = []; }
+                        }
                         if (Array.isArray(cleanInvoice.fullData?.selectedSeals)) {
+                            if (Array.isArray(sealsArray) && sealsArray.length > 0) {
+                                cleanInvoice.fullData.selectedSealIndices = cleanInvoice.fullData.selectedSeals
+                                    .map(seal => sealsArray.findIndex(s => s === seal || (typeof s === 'string' && typeof seal === 'string' && s.slice(0, 80) === seal.slice(0, 80))))
+                                    .filter(idx => idx !== -1);
+                            }
+                            cleanInvoice.fullData.hasNoSeal = cleanInvoice.fullData.selectedSeals.length === 0;
                             cleanInvoice.fullData.selectedSeals = [];
+                        }
+                        cleanInvoice.paymentMethod = invoice.paymentMethod || invoice.fullData?.paymentMethod || 'Cash';
+                        if (cleanInvoice.fullData) {
+                            cleanInvoice.fullData.paymentMethod = cleanInvoice.paymentMethod;
                         }
 
                         if (editingInvoice && editingInvoice.id) {

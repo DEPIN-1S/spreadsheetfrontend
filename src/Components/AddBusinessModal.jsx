@@ -8,8 +8,8 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
     const [businessName, setBusinessName] = useState(initialData?.name || "");
     const [additionalData, setAdditionalData] = useState(() => {
         if (initialData?.additionalData) {
-            let parsed = typeof initialData.additionalData === 'string' 
-                ? JSON.parse(initialData.additionalData) 
+            let parsed = typeof initialData.additionalData === 'string'
+                ? JSON.parse(initialData.additionalData)
                 : initialData.additionalData;
             return parsed.map(item => {
                 if (typeof item === 'object' && item !== null) {
@@ -35,7 +35,7 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
             try {
                 const parsed = JSON.parse(raw);
                 if (Array.isArray(parsed)) return parsed;
-            } catch(e) {}
+            } catch (e) { }
             return [raw];
         }
         return Array.isArray(raw) ? raw : [raw];
@@ -43,7 +43,7 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
     const [seals, setSeals] = useState(() => {
         if (!initialData?.seals) return [];
         if (typeof initialData.seals === 'string') {
-            try { return JSON.parse(initialData.seals); } catch(e) { return []; }
+            try { return JSON.parse(initialData.seals); } catch (e) { return []; }
         }
         return Array.isArray(initialData.seals) ? initialData.seals : [];
     });
@@ -69,8 +69,8 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
     useEffect(() => {
         if (isOpen && initialData) {
             setBusinessName(initialData.name || "");
-            const parsedData = typeof initialData.additionalData === 'string' 
-                ? JSON.parse(initialData.additionalData) 
+            const parsedData = typeof initialData.additionalData === 'string'
+                ? JSON.parse(initialData.additionalData)
                 : (initialData.additionalData || []);
             setAdditionalData(parsedData.map(item => {
                 if (typeof item === 'object' && item !== null) {
@@ -95,7 +95,7 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
                         const parsed = JSON.parse(raw);
                         if (Array.isArray(parsed)) setSignatures(parsed);
                         else setSignatures([raw]);
-                    } catch(e) {
+                    } catch (e) {
                         setSignatures([raw]);
                     }
                 } else if (Array.isArray(raw)) {
@@ -107,7 +107,7 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
             if (!initialData?.seals) {
                 setSeals([]);
             } else if (typeof initialData.seals === 'string') {
-                try { setSeals(JSON.parse(initialData.seals)); } catch(e) { setSeals([]); }
+                try { setSeals(JSON.parse(initialData.seals)); } catch (e) { setSeals([]); }
             } else {
                 setSeals(Array.isArray(initialData.seals) ? initialData.seals : []);
             }
@@ -154,7 +154,7 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
         }
     };
 
-        const handleAddSignatures = (e) => {
+    const handleAddSignatures = (e) => {
         const files = Array.from(e.target.files);
         if (!files.length) return;
         files.forEach(file => {
@@ -206,7 +206,7 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
-            <div 
+            <div
                 className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
                 onClick={onClose}
             ></div>
@@ -222,7 +222,7 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
                             <p className="text-xs text-gray-500">Configure your business profile</p>
                         </div>
                     </div>
-                    <button 
+                    <button
                         onClick={onClose}
                         className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
                     >
@@ -232,13 +232,13 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
 
                 <div className="relative flex-1 p-6 sm:p-8 overflow-y-auto">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        
+
                         <div className="space-y-8">
                             <div className="space-y-5 border p-5 rounded-2xl bg-gray-50">
                                 <div>
                                     <label className="block text-sm font-semibold text-gray-700 mb-2">Business Name <span className="text-red-500">*</span></label>
-                                    <input 
-                                        type="text" 
+                                    <input
+                                        type="text"
                                         value={businessName}
                                         onChange={(e) => setBusinessName(e.target.value)}
                                         className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all bg-white"
@@ -255,8 +255,8 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
                                             ) : (
                                                 <FiUploadCloud className="text-gray-300 group-hover:text-indigo-400 transition-colors" size={24} />
                                             )}
-                                            <input 
-                                                type="file" 
+                                            <input
+                                                type="file"
                                                 accept="image/*"
                                                 onChange={handleLogoChange}
                                                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
@@ -269,8 +269,8 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
                                     </div>
                                 </div>
                             </div>
-                            
-                                                        <div className="space-y-4 border p-5 rounded-2xl bg-gray-50">
+
+                            <div className="space-y-4 border p-5 rounded-2xl bg-gray-50">
                                 <div>
                                     <label className="block text-sm font-semibold text-gray-700 mb-1">Authorised Signatures</label>
                                     <p className="text-xs text-gray-500 mb-3">Upload multiple authorised signatures for this business.</p>
@@ -283,7 +283,7 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
                                                         <span className="absolute bottom-0 inset-x-0 bg-indigo-600/90 text-[8px] text-white font-bold text-center py-0.5 pointer-events-none rounded-b-xl">Default</span>
                                                     )}
                                                 </div>
-                                                <button 
+                                                <button
                                                     type="button"
                                                     onClick={(e) => { e.stopPropagation(); handleRemoveSignature(idx); }}
                                                     className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-md transition-colors z-10"
@@ -296,8 +296,8 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
                                         <label className="w-32 h-20 rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center bg-white hover:border-indigo-500 hover:bg-indigo-50/50 cursor-pointer transition-all shadow-sm">
                                             <FiPlus className="text-gray-400" size={20} />
                                             <span className="text-[10px] text-gray-500 font-medium mt-1">Add Signature</span>
-                                            <input 
-                                                type="file" 
+                                            <input
+                                                type="file"
                                                 accept="image/*"
                                                 multiple
                                                 onChange={handleAddSignatures}
@@ -309,7 +309,7 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
                                 </div>
                             </div>
 
-<div className="space-y-4 border p-5 rounded-2xl bg-gray-50">
+                            <div className="space-y-4 border p-5 rounded-2xl bg-gray-50">
                                 <div>
                                     <label className="block text-sm font-semibold text-gray-700 mb-1">Business Seals / Signatures</label>
                                     <p className="text-xs text-gray-500 mb-3">Upload business stamps, seals or authorised signatures to appear on invoices.</p>
@@ -322,7 +322,7 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
                                                         <span className="absolute bottom-0 inset-x-0 bg-indigo-600/90 text-[8px] text-white font-bold text-center py-0.5 pointer-events-none rounded-b-xl">Default</span>
                                                     )}
                                                 </div>
-                                                <button 
+                                                <button
                                                     type="button"
                                                     onClick={(e) => { e.stopPropagation(); handleRemoveSeal(idx); }}
                                                     className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-md transition-colors z-10"
@@ -335,8 +335,8 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
                                         <label className="w-20 h-20 rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center bg-white hover:border-indigo-500 hover:bg-indigo-50/50 cursor-pointer transition-all shadow-sm">
                                             <FiPlus className="text-gray-400" size={20} />
                                             <span className="text-[10px] text-gray-500 font-medium mt-1">Add Seal</span>
-                                            <input 
-                                                type="file" 
+                                            <input
+                                                type="file"
                                                 accept="image/*"
                                                 multiple
                                                 onChange={handleAddSeals}
@@ -352,9 +352,8 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
                                 <div className="flex items-center justify-between">
                                     <div>
                                         <h3 className="text-sm font-bold text-gray-900">Additional Data</h3>
-                                        <p className="text-xs text-gray-500">Add dynamic fields like GSTIN, Address, etc.</p>
                                     </div>
-                                    <button 
+                                    <button
                                         onClick={handleAddDataField}
                                         className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors"
                                     >
@@ -365,22 +364,22 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
                                     {additionalData.map((data, index) => (
                                         <div key={index} className="flex gap-2 items-start">
                                             <div className="flex-1 flex gap-2">
-                                                <input 
-                                                    type="text" 
+                                                <input
+                                                    type="text"
                                                     value={data.key}
                                                     onChange={(e) => handleDataChange(index, 'key', e.target.value)}
                                                     placeholder="Key (e.g. GSTIN)"
                                                     className="w-1/3 px-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all bg-gray-50 focus:bg-white"
                                                 />
-                                                <input 
-                                                    type="text" 
+                                                <input
+                                                    type="text"
                                                     value={data.value}
                                                     onChange={(e) => handleDataChange(index, 'value', e.target.value)}
                                                     placeholder="Value (e.g. 29ABCDE1234F1Z5)"
                                                     className="flex-1 px-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all bg-gray-50 focus:bg-white"
                                                 />
                                             </div>
-                                            <button 
+                                            <button
                                                 onClick={() => handleRemoveData(index)}
                                                 className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors mt-1"
                                             >
@@ -414,19 +413,17 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
                                 ) : (
                                     <div className="space-y-1">
                                         {users.map(user => (
-                                            <div 
+                                            <div
                                                 key={user.id}
                                                 onClick={() => toggleUserShare(user.id)}
-                                                className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition-colors border border-transparent ${
-                                                    sharedUsers.includes(user.id) 
-                                                        ? 'bg-indigo-50 border-indigo-100' 
-                                                        : 'hover:bg-gray-50'
-                                                }`}
+                                                className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition-colors border border-transparent ${sharedUsers.includes(user.id)
+                                                    ? 'bg-indigo-50 border-indigo-100'
+                                                    : 'hover:bg-gray-50'
+                                                    }`}
                                             >
                                                 <div className="flex items-center gap-3">
-                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                                                        sharedUsers.includes(user.id) ? 'bg-indigo-200 text-indigo-700' : 'bg-gray-100 text-gray-600'
-                                                    }`}>
+                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${sharedUsers.includes(user.id) ? 'bg-indigo-200 text-indigo-700' : 'bg-gray-100 text-gray-600'
+                                                        }`}>
                                                         {user.name.charAt(0).toUpperCase()}
                                                     </div>
                                                     <div>
@@ -434,11 +431,10 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
                                                         <p className="text-xs text-gray-500 capitalize">{user.role}</p>
                                                     </div>
                                                 </div>
-                                                <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-colors ${
-                                                    sharedUsers.includes(user.id)
-                                                        ? 'bg-indigo-600 border-indigo-600 text-white'
-                                                        : 'border-gray-300 bg-white text-transparent'
-                                                }`}>
+                                                <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-colors ${sharedUsers.includes(user.id)
+                                                    ? 'bg-indigo-600 border-indigo-600 text-white'
+                                                    : 'border-gray-300 bg-white text-transparent'
+                                                    }`}>
                                                     <FiCheckCircle size={14} />
                                                 </div>
                                             </div>
@@ -456,22 +452,22 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
                         {sharedUsers.length > 0 ? `Shared with ${sharedUsers.length} user(s)` : 'Not shared with anyone'}
                     </div>
                     <div className="flex gap-3">
-                        <button 
+                        <button
                             onClick={onClose}
                             className="px-5 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:text-gray-900 transition-all shadow-sm"
                         >
                             Cancel
                         </button>
-                        <button 
+                        <button
                             onClick={() => {
                                 if (isSaving || localSaving) return;
                                 setLocalSaving(true);
                                 const cleanedData = additionalData
                                     .filter(d => (d.key && d.key.trim()) || (d.value && d.value.trim()))
                                     .map(d => ({ key: d.key.trim(), value: d.value.trim() }));
-                                onSave({ 
-                                    name: businessName, 
-                                    logo: logoFile, 
+                                onSave({
+                                    name: businessName,
+                                    logo: logoFile,
                                     additionalData: cleanedData,
                                     sharedUsers: sharedUsers,
                                     seals: seals,
@@ -480,11 +476,10 @@ export default function AddBusinessModal({ isOpen, onClose, onSave, initialData,
                                 });
                             }}
                             disabled={!isSaveValid || isSaving || localSaving}
-                            className={`px-6 py-2.5 text-sm font-semibold text-white rounded-xl transition-all flex items-center gap-2 ${
-                                isSaveValid && !isSaving && !localSaving
-                                    ? 'bg-indigo-600 hover:bg-indigo-700 shadow-sm shadow-indigo-600/20' 
-                                    : 'bg-indigo-300 cursor-not-allowed'
-                            }`}
+                            className={`px-6 py-2.5 text-sm font-semibold text-white rounded-xl transition-all flex items-center gap-2 ${isSaveValid && !isSaving && !localSaving
+                                ? 'bg-indigo-600 hover:bg-indigo-700 shadow-sm shadow-indigo-600/20'
+                                : 'bg-indigo-300 cursor-not-allowed'
+                                }`}
                         >
                             {(isSaving || localSaving) ? (
                                 <>

@@ -28,13 +28,17 @@ export default function ViewSavedInvoiceModal({ isOpen, onClose, savedInvoice, c
         if (!business.signatures) business.signatures = currentBusiness.signatures;
         if (!business.seals) business.seals = currentBusiness.seals;
 
-        // If seals were stripped out due to size, fallback to showing default seal if the business has one
-        if (selectedSeals.length === 0) {
-            let fallbackSeal = null;
-            let sealsArray = currentBusiness?.seals || business?.seals;
-            if (typeof sealsArray === 'string') {
-                try { sealsArray = JSON.parse(sealsArray); } catch (e) { sealsArray = []; }
+        let sealsArray = currentBusiness?.seals || business?.seals;
+        if (typeof sealsArray === 'string') {
+            try { sealsArray = JSON.parse(sealsArray); } catch (e) { sealsArray = []; }
+        }
+        if (Array.isArray(parsedData?.selectedSealIndices) && parsedData.selectedSealIndices.length > 0 && Array.isArray(sealsArray)) {
+            const byIndices = parsedData.selectedSealIndices.map(idx => sealsArray[idx]).filter(Boolean);
+            if (byIndices.length > 0) {
+                selectedSeals = byIndices;
             }
+        } else if (selectedSeals.length === 0 && !parsedData?.hasNoSeal) {
+            let fallbackSeal = null;
             if (Array.isArray(sealsArray) && sealsArray.length > 0 && sealsArray[0]) {
                 fallbackSeal = sealsArray[0];
             } else if (currentBusiness?.seal || business?.seal) {

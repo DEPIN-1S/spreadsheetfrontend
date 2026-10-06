@@ -36,6 +36,7 @@ const parseAdditionalData = (raw) => {
 export default function AddBusinessPartyModal({ isOpen, onClose, onSave, initialData }) {
     const [name, setName] = useState("");
     const [contact, setContact] = useState("");
+    const [place, setPlace] = useState("");
     const [age, setAge] = useState("");
     const [gender, setGender] = useState("");
     const [additionalData, setAdditionalData] = useState([]);
@@ -47,6 +48,7 @@ export default function AddBusinessPartyModal({ isOpen, onClose, onSave, initial
         if (isOpen && initialData) {
             setName(initialData.name || "");
             setContact(initialData.contact || "");
+            setPlace(initialData.place || "");
             setAge(initialData.age ? String(initialData.age) : "");
             setGender(initialData.gender || "");
             setAdditionalData(parseAdditionalData(initialData.additionalData));
@@ -144,6 +146,7 @@ export default function AddBusinessPartyModal({ isOpen, onClose, onSave, initial
                 ...(initialData?.id ? { id: initialData.id } : {}),
                 name: name.trim(),
                 contact: contact.trim(),
+                  place: place ? place.trim() : null,
                 age: (age && age !== '.' && age !== '0.' && age !== '0') ? String(age).trim() : null,
                 gender: gender || null,
                 additionalData: cleanedData
@@ -243,7 +246,7 @@ export default function AddBusinessPartyModal({ isOpen, onClose, onSave, initial
                                 )}
                             </div>
                             
-                            <div className="md:col-span-2">
+                            <div>
                                 <label className="block text-sm font-semibold text-gray-700 mb-1">
                                     Contact Number <span className="text-red-500">*</span>
                                 </label>
@@ -267,6 +270,19 @@ export default function AddBusinessPartyModal({ isOpen, onClose, onSave, initial
                                         <FiAlertCircle size={12} /> {errors.contact}
                                     </p>
                                 )}
+                            </div>
+
+                                                        <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                                    Place <span className="text-xs text-gray-400 font-normal">(Optional)</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    value={place}
+                                    onChange={(e) => setPlace(e.target.value)}
+                                    placeholder="Enter place / city (e.g. Kilimanoor)"
+                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg outline-none transition-all text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                />
                             </div>
 
                             {/* Optional Age & Gender */}

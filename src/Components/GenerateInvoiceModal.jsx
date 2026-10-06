@@ -35,7 +35,7 @@ const ProductImage = ({ imgSrc, prod, setPreviewProduct }) => {
     );
 };
 import React, { useState, useEffect, useRef } from 'react';
-import { FiX, FiPrinter, FiSettings, FiTrash2, FiPlus } from 'react-icons/fi';
+import { FiX, FiPrinter, FiSettings, FiTrash2, FiPlus, FiEdit2 } from 'react-icons/fi';
 import apiClient from '../api/apiClient';
 import { parseGstPercent } from '../utils/gst';
 
@@ -81,9 +81,40 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
     const settingsRef = useRef(null);
     const [inventoryData, setInventoryData] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
-    const [selectedSeals, setSelectedSeals] = useState([]);
+    const [selectedSeals, setSelectedSeals] = useState(() => {
+        let sealsArray = business?.seals || resolvedFullData?.business?.seals;
+        if (typeof sealsArray === 'string') {
+            try { sealsArray = JSON.parse(sealsArray); } catch (e) { sealsArray = []; }
+        }
+        const rawSeals = resolvedFullData?.selectedSeals || editingInvoice?.selectedSeals;
+        let parsedSeals = rawSeals;
+        if (typeof parsedSeals === 'string') {
+            try { parsedSeals = JSON.parse(parsedSeals); } catch (e) { }
+        }
+        if (Array.isArray(parsedSeals) && parsedSeals.length > 0) {
+            return parsedSeals;
+        }
+        if (Array.isArray(resolvedFullData?.selectedSealIndices) && resolvedFullData.selectedSealIndices.length > 0 && Array.isArray(sealsArray)) {
+            const byIndices = resolvedFullData.selectedSealIndices.map(idx => sealsArray[idx]).filter(Boolean);
+            if (byIndices.length > 0) return byIndices;
+        }
+        if (editingInvoice && !resolvedFullData?.hasNoSeal) {
+            if (Array.isArray(sealsArray) && sealsArray.length > 0 && sealsArray[0]) {
+                return [sealsArray[0]];
+            }
+            if (business?.seal || resolvedFullData?.business?.seal) {
+                return [business?.seal || resolvedFullData?.business?.seal];
+            }
+        }
+        return [];
+    });
     const [selectedSignatureIndex, setSelectedSignatureIndex] = useState(0);
-    const [paymentMethod, setPaymentMethod] = useState(() => resolvedFullData?.paymentMethod || editingInvoice?.paymentMethod || '');
+    const [paymentMethod, setPaymentMethod] = useState(() => {
+        if (editingInvoice) {
+            return resolvedFullData?.paymentMethod || editingInvoice?.paymentMethod || 'Cash';
+        }
+        return '';
+    });
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
 
     const resolvedSignatures = (() => {
@@ -318,6 +349,10 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
                     });
                 }
 
+                let sealsArray = business?.seals || resolvedFullData?.business?.seals;
+                if (typeof sealsArray === 'string') {
+                    try { sealsArray = JSON.parse(sealsArray); } catch (e) { sealsArray = []; }
+                }
                 const rawSeals = resolvedFullData?.selectedSeals || editingInvoice.selectedSeals;
                 let parsedSeals = rawSeals;
                 if (typeof parsedSeals === 'string') {
@@ -325,10 +360,21 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
                 }
                 if (Array.isArray(parsedSeals) && parsedSeals.length > 0) {
                     setSelectedSeals(parsedSeals);
+                } else if (Array.isArray(resolvedFullData?.selectedSealIndices) && resolvedFullData.selectedSealIndices.length > 0 && Array.isArray(sealsArray)) {
+                    const byIndices = resolvedFullData.selectedSealIndices.map(idx => sealsArray[idx]).filter(Boolean);
+                    setSelectedSeals(byIndices.length > 0 ? byIndices : (sealsArray[0] ? [sealsArray[0]] : []));
+                } else if (editingInvoice && !resolvedFullData?.hasNoSeal) {
+                    if (Array.isArray(sealsArray) && sealsArray.length > 0 && sealsArray[0]) {
+                        setSelectedSeals([sealsArray[0]]);
+                    } else if (business?.seal || resolvedFullData?.business?.seal) {
+                        setSelectedSeals([business?.seal || resolvedFullData?.business?.seal]);
+                    } else {
+                        setSelectedSeals([]);
+                    }
                 } else {
                     setSelectedSeals([]);
                 }
-                setPaymentMethod(resolvedFullData?.paymentMethod || editingInvoice.paymentMethod || '');
+                setPaymentMethod(resolvedFullData?.paymentMethod || editingInvoice.paymentMethod || 'Cash');
             } else {
                 setInvoiceNo(getNextInvoiceNo());
                 setInvoiceDate(todayIso);
@@ -860,9 +906,9 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
                                             <button
                                                 type="button"
                                                 onClick={() => setIsPaymentModalOpen(true)}
-                                                className="no-print text-[10px] text-indigo-600 hover:text-indigo-800 font-bold bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded border border-indigo-200 transition-colors shadow-xs cursor-pointer"
+                                                className="no-print inline-flex items-center gap-1 text-[10px] text-indigo-600 hover:text-indigo-800 font-bold bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded border border-indigo-200 transition-colors shadow-xs cursor-pointer"
                                             >
-                                                Change
+                                                <FiEdit2 size={10} /> Change
                                             </button>
                                         </div>
                                     ) : (
@@ -1162,21 +1208,32 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
                                             )
                                         })}
                                     </div>
-                                    <div className={`no-print absolute ${selectedSeals.length > 0 ? 'bottom-1 right-2 opacity-80 hover:opacity-100' : 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2'} z-50 transition-opacity`}>
+                                    <div className={`no-print absolute ${selectedSeals.length > 0 ? 'bottom-1 right-2' : 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2'} z-50`}>
                                         {(() => {
-                                            let sealsArray = business?.seals;
+                                            let sealsArray = business?.seals || resolvedFullData?.business?.seals;
                                             if (typeof sealsArray === 'string') {
                                                 try { sealsArray = JSON.parse(sealsArray); } catch (e) { sealsArray = []; }
                                             }
-                                            if (Array.isArray(sealsArray) && sealsArray.length > 0) {
+                                            const hasBusinessSeals = (Array.isArray(sealsArray) && sealsArray.length > 0) || business?.seal || resolvedFullData?.business?.seal;
+                                            if (hasBusinessSeals) {
                                                 return (
                                                     <div className="relative">
-                                                        <div
-                                                            className="inline-flex items-center gap-1 text-[10px] text-indigo-600 hover:text-indigo-800 font-bold bg-indigo-50 px-2 py-0.5 rounded cursor-pointer whitespace-nowrap shadow-sm border border-indigo-100"
+                                                        <button
+                                                            type="button"
+                                                            className="inline-flex items-center gap-1 text-[10px] text-indigo-600 hover:text-indigo-800 font-bold bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded cursor-pointer whitespace-nowrap shadow-xs border border-indigo-200 transition-colors"
                                                             onClick={(e) => { e.stopPropagation(); setIsSealDropdownOpen(true); }}
+                                                            title={selectedSeals.length > 0 ? "Change Seal" : "Add Seal"}
                                                         >
-                                                            <FiPlus size={12} /> {selectedSeals.length > 0 ? 'Manage Seals' : 'Add Seal'}
-                                                        </div>
+                                                            {selectedSeals.length > 0 ? (
+                                                                <>
+                                                                    <FiEdit2 size={11} /> Change Seal
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <FiPlus size={11} /> Add Seal
+                                                                </>
+                                                            )}
+                                                        </button>
                                                     </div>
                                                 );
                                             } else {
@@ -1359,22 +1416,25 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
                         </div>
                         <div className="p-4 overflow-y-auto flex flex-col gap-3">
                             {(() => {
-                                let sealsArray = business?.seals;
+                                let sealsArray = business?.seals || resolvedFullData?.business?.seals;
                                 if (typeof sealsArray === 'string') {
                                     try { sealsArray = JSON.parse(sealsArray); } catch (e) { sealsArray = []; }
                                 }
-                                if (!Array.isArray(sealsArray) || sealsArray.length === 0) return <div className="text-center text-gray-500 py-8">No seals available.</div>;
+                                if ((!Array.isArray(sealsArray) || sealsArray.length === 0) && (business?.seal || resolvedFullData?.business?.seal)) {
+                                    sealsArray = [business?.seal || resolvedFullData?.business?.seal];
+                                }
+                                if (!Array.isArray(sealsArray) || sealsArray.length === 0) return <div className="text-center text-gray-500 py-8">No seals available in profile.</div>;
 
                                 return sealsArray.map((seal, idx) => {
-                                    const isSelected = selectedSeals.includes(seal);
+                                    const isSelected = selectedSeals.some(s => s === seal || (typeof s === 'string' && typeof seal === 'string' && s.slice(0, 80) === seal.slice(0, 80)));
                                     return (
                                         <div
                                             key={idx}
                                             onClick={() => {
                                                 if (isSelected) {
-                                                    setSelectedSeals(prev => prev.filter(s => s !== seal));
+                                                    setSelectedSeals(prev => prev.filter(s => s !== seal && !(typeof s === 'string' && typeof seal === 'string' && s.slice(0, 80) === seal.slice(0, 80))));
                                                 } else {
-                                                    setSelectedSeals(prev => [...prev, seal]);
+                                                    setSelectedSeals(prev => [...prev.filter(s => s !== seal), seal]);
                                                 }
                                             }}
                                             className={`flex items-center gap-4 p-3 rounded-lg cursor-pointer border-2 transition-all ${isSelected ? 'border-indigo-500 bg-indigo-50/50 shadow-sm' : 'border-gray-200 hover:border-indigo-300 hover:bg-gray-50'}`}
