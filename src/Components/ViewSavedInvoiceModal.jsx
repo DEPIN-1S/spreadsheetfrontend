@@ -361,12 +361,6 @@ export default function ViewSavedInvoiceModal({ isOpen, onClose, savedInvoice, c
                                     </button>
                                 )}
                                 <button
-                                    onClick={handleDownload}
-                                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow transition-colors"
-                                >
-                                    Download PDF
-                                </button>
-                                <button
                                     onClick={handlePrint}
                                     className="flex items-center gap-2 text-sm bg-gray-800 hover:bg-gray-700 text-gray-200 px-4 py-2 rounded-lg transition-colors border border-gray-700"
                                 >

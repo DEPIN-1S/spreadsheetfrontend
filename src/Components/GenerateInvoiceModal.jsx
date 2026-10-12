@@ -138,6 +138,11 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
     const searchTimeoutRef = useRef(null);
 
     const [isSaving, setIsSaving] = useState(false);
+    const isValidItem = (it) => {
+        if (!it) return false;
+        return Object.keys(it).some(k => k !== 'id' && k !== 'slNo' && it[k] && String(it[k]).trim() !== '');
+    };
+
 
     const getNextInvoiceNo = () => {
         const year = new Date().getFullYear();
@@ -530,12 +535,12 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
     };
 
     const totalNoCalc = items.reduce((sum, item) => {
-        if (!item['Product Name'] || !item['Product Name'].trim()) return sum;
+        if (!isValidItem(item)) return sum;
         return sum + (parseFloat(item.Qty) || 0);
     }, 0);
-    const totalItemsCount = items.filter(it => it['Product Name'] && it['Product Name'].trim()).length;
+    const totalItemsCount = items.filter(isValidItem).length;
     const totalGrossCalc = items.reduce((sum, item) => {
-        if (!item['Product Name'] || !item['Product Name'].trim()) return sum;
+        if (!isValidItem(item)) return sum;
         if (template && template.isProductBased === false && grandTotalColumn) {
             const val = parseFloat(item[grandTotalColumn]);
             if (!isNaN(val)) return sum + val;
@@ -548,7 +553,7 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
         return sum + (qty * rate);
     }, 0);
     const totalGstCalc = items.reduce((sum, item) => {
-        if (!item['Product Name'] || !item['Product Name'].trim()) return sum;
+        if (!isValidItem(item)) return sum;
         const gstPercent = parseGstPercent(item.GST || item['GST%'] || item.gst || item.gstPercent);
         const lineTotal = parseFloat(item.Total) || ((parseFloat(item.Qty) || 0) * (parseFloat(item['Selling Rate']) || parseFloat(item['MRP']) || 0));
         return sum + (gstPercent > 0 ? (lineTotal - (lineTotal / (1 + gstPercent / 100))) : 0);
@@ -601,14 +606,8 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
     const gstBreakdown = getGstBreakdown(items);
 
     // Validation: at least one valid product row, and NO incomplete rows (e.g. empty Product Name)
-    const validRows = items.filter(it => it['Product Name'] && it['Product Name'].trim() !== '');
-    const hasIncompleteRows = items.some(it => {
-        const name = it['Product Name'] ? it['Product Name'].trim() : '';
-        if (!name) return true; // Empty product name
-        const qty = parseFloat(it.Qty);
-        if (isNaN(qty) || qty <= 0) return true; // Empty or zero qty
-        return false;
-    });
+    const validRows = items.filter(isValidItem);
+    const hasIncompleteRows = false; // Disable strict validation to allow any filled rows
     const canSave = validRows.length > 0 && !hasIncompleteRows;
 
     const handleClearData = () => {
@@ -623,6 +622,9 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
     };
 
     const handleSaveInvoice = async () => {
+        try {
+            alert('Save clicked! canSave=' + canSave + ' validRows=' + validRows.length);
+        } catch(e) {}
         if (!canSave) {
             alert(validRows.length === 0 ? "Please add at least one product with a name." : "Please enter a product name for all rows or delete empty rows.");
             return;
@@ -679,7 +681,7 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
                 total: finalGrandTotal,
                 fullData: {
                     paymentMethod: paymentMethod || null,
-                    items: items.filter(it => it['Product Name'] && it['Product Name'].trim() !== ''),
+                    items: items.filter(isValidItem),
                     totals: {
                         ...totals,
                         totalNo: totals.totalNo !== '' ? totals.totalNo : (totalNoCalc || ''),

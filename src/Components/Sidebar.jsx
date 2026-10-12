@@ -25,7 +25,15 @@ const navItems = [
             { name: "Ledger", path: "/inventory/ledger" }
         ]
     },
-    { name: "Invoice Generator", icon: FiFileText, path: "/invoice-generator" },
+    { 
+        name: "Invoice Generator", 
+        icon: FiFileText, 
+        path: "/invoice-generator",
+        subItems: [
+            { name: "Business Invoices", path: "/invoice-generator" },
+            { name: "Personal Invoices", path: "/invoice-generator/freelance" }
+        ]
+    },
 ];
 
 
@@ -41,13 +49,15 @@ export default function Sidebar({ isCollapsed, toggleCollapse, mobileOpen, setMo
         }
     });
     const [showLogoutPrompt, setShowLogoutPrompt] = useState(false);
-    const [inventoryExpanded, setInventoryExpanded] = useState(() => {
-        return activePath.startsWith("/inventory");
+    const [expandedMenu, setExpandedMenu] = useState(() => {
+        if (activePath.startsWith("/inventory")) return "Inventory";
+        if (activePath.startsWith("/invoice-generator")) return "Invoice Generator";
+        return null;
     });
 
     const handleItemClick = (item) => {
         if (item.subItems) {
-            setInventoryExpanded(prev => !prev);
+            setExpandedMenu(prev => prev === item.name ? null : item.name);
             if (isCollapsed) {
                 toggleCollapse();
             }
@@ -134,18 +144,21 @@ export default function Sidebar({ isCollapsed, toggleCollapse, mobileOpen, setMo
                             })
                             .map((item) => {
                             const isSuperOrAdmin = user?.role === 'admin' || user?.role === 'superadmin';
-                            const visibleSubItems = item.subItems ? item.subItems.filter(subItem => {
+                                                        const visibleSubItems = item.subItems ? item.subItems.filter(subItem => {
                                 if ((subItem.name === "Downloads" || subItem.name === "Ledger") && !isSuperOrAdmin) {
+                                    return false;
+                                }
+                                if (subItem.name === "Personal Invoices" && user?.role !== 'superadmin') {
                                     return false;
                                 }
                                 return true;
                             }) : null;
 
-                            const isExactActive = activePath === item.path;
+                            const hasSubItems = visibleSubItems && visibleSubItems.length > 0;
+                            const isExactActive = activePath === item.path && !hasSubItems;
                             const isSubActive = visibleSubItems && visibleSubItems.some(sub => activePath === sub.path);
                             const isActive = isExactActive || isSubActive;
-                            const hasSubItems = visibleSubItems && visibleSubItems.length > 0;
-                            const isExpanded = item.name === "Inventory" ? inventoryExpanded : false;
+                            const isExpanded = expandedMenu === item.name;
                             
                             return (
                                 <div key={item.name} className="space-y-1">

@@ -23,6 +23,7 @@ import InvoiceList from "./Pages/InvoiceList";
 import Ledger from "./Pages/Ledger";
 import InvoiceGenerator from "./Pages/InvoiceGenerator";
 import BusinessDetails from "./Pages/BusinessDetails";
+import FreelanceInvoices from "./Pages/FreelanceInvoices";
 import { ClipboardProvider } from "./context/ClipboardContext";
 
 
@@ -168,6 +169,9 @@ function App() {
                     )}
                     {activePath === "/invoice-generator" && (
                         <InvoiceGenerator setMobileOpen={setMobileOpen} setActivePath={setActivePath} setCurrentBusiness={setCurrentBusiness} />
+                    )}
+                    {activePath === "/invoice-generator/freelance" && (
+                        <FreelanceInvoices setMobileOpen={setMobileOpen} setActivePath={setActivePath} />
                     )}
                     {activePath === "/business-details" && (
                         <BusinessDetails business={currentBusiness} setActivePath={setActivePath} setMobileOpen={setMobileOpen} setCurrentBusiness={setCurrentBusiness} />

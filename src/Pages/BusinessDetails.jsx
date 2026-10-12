@@ -815,9 +815,6 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                                 <button onClick={() => handleEditSavedInvoice(inv)} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors inline-flex" title="Edit">
                                                     <FiEdit2 size={16} />
                                                 </button>
-                                                <button onClick={() => setViewingSavedInvoice(inv)} className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition-colors inline-flex" title="Download">
-                                                    <FiDownload size={16} />
-                                                </button>
                                                 <button onClick={() => handleDeleteInvoice(inv.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors inline-flex" title="Delete">
                                                     <FiTrash2 size={16} />
                                                 </button>
@@ -913,7 +910,14 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                 onSaveInvoice={async (invoice) => { 
                     try {
                         // Strip heavy base64 strings to prevent database ETIMEDOUT due to payload size
-                        const cleanInvoice = JSON.parse(JSON.stringify(invoice));
+                        let cleanInvoice;
+                          try {
+                              cleanInvoice = JSON.parse(JSON.stringify(invoice));
+                          } catch (stringifyError) {
+                              console.error("Stringify error:", stringifyError);
+                              alert("Data formatting error: " + stringifyError.message);
+                              return;
+                          }
                         if (cleanInvoice.fullData?.business) {
                             delete cleanInvoice.fullData.business.logo;
                             delete cleanInvoice.fullData.business.seal;
@@ -953,13 +957,15 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                             }
                         } else {
                             const res = await businessApi.saveInvoice(business.id, cleanInvoice);
-                            if (res.data?.success) {
-                                const savedInvoiceObj = res.data.data ? (res.data.data.invoice || res.data.data) : res.data.invoice;
-                                if (savedInvoiceObj) {
-                                    setRecentInvoices(prev => [savedInvoiceObj, ...prev]);
-                                }
-                                setInvoicePage(1);
-                            }
+                              if (res.data?.success) {
+                                  const savedInvoiceObj = res.data.data ? (res.data.data.invoice || res.data.data) : res.data.invoice;
+                                  if (savedInvoiceObj) {
+                                      setRecentInvoices(prev => [savedInvoiceObj, ...prev]);
+                                  }
+                                  setInvoicePage(1);
+                              } else {
+                                  alert("Failed to save invoice: " + (res.data?.message || JSON.stringify(res.data) || "Unknown error"));
+                              }
                         }
                         setEditingInvoice(null);
                     } catch (error) {

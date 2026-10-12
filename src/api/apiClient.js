@@ -130,4 +130,18 @@ export const businessApi = {
     clearSavedInvoices: (businessId) => apiClient.delete(`/business/${businessId}/invoices`)
 };
 
+export const freelanceApi = {
+    // Templates
+    getTemplates: () => apiClient.get(`/freelance/templates`),
+    createTemplate: (data) => apiClient.post(`/freelance/templates`, data),
+    updateTemplate: (templateId, data) => apiClient.put(`/freelance/templates/${templateId}`, data),
+    deleteTemplate: (templateId) => apiClient.delete(`/freelance/templates/${templateId}`),
+    
+    // Invoices
+    getInvoices: () => apiClient.get(`/freelance/invoices`),
+    createInvoice: (data) => apiClient.post(`/freelance/invoices`, data),
+    updateInvoice: (invoiceId, data) => apiClient.put(`/freelance/invoices/${invoiceId}`, data),
+    deleteInvoice: (invoiceId) => apiClient.delete(`/freelance/invoices/${invoiceId}`)
+};
+
 export default apiClient;
