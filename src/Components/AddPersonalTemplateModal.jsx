@@ -1,12 +1,163 @@
-import React, { useState } from 'react';
-import { FiX, FiPlus, FiTrash2, FiUpload, FiImage } from 'react-icons/fi';
+import React, { useState, useRef, useEffect } from 'react';
+import { FiX, FiPlus, FiTrash2, FiUpload, FiImage, FiSearch, FiCheck, FiUser } from 'react-icons/fi';
 
-export default function AddPersonalTemplateModal({ isOpen, onClose, onSave }) {
+/**
+ * Reusable Search & Select Combobox for Parties in Invoice Generation
+ */
+function PartySearchSelect({
+    label,
+    placeholder = 'Search party by name or detail...',
+    parties = [],
+    selectedPartyId,
+    onSelectParty,
+    onClearParty,
+    onOpenCreateParty,
+    details = []
+}) {
+    const [search, setSearch] = useState('');
+    const [isOpen, setIsOpen] = useState(false);
+    const containerRef = useRef(null);
+
+    const selectedParty = parties.find(p => p.id === selectedPartyId);
+
+    // Filter parties by search query
+    const filtered = parties.filter(p => {
+        const query = search.toLowerCase().trim();
+        if (!query) return true;
+        const nameMatch = (p.name || '').toLowerCase().includes(query);
+        const fieldMatch = Array.isArray(p.customFields) && p.customFields.some(f => 
+            (f.key || '').toLowerCase().includes(query) || (f.value || '').toLowerCase().includes(query)
+        );
+        return nameMatch || fieldMatch;
+    });
+
+    useEffect(() => {
+        const handleOutside = (e) => {
+            if (containerRef.current && !containerRef.current.contains(e.target)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleOutside);
+        return () => document.removeEventListener('mousedown', handleOutside);
+    }, []);
+
+    return (
+        <div className="space-y-2.5" ref={containerRef}>
+            {selectedParty ? (
+                /* Selected Party Preview Card */
+                <div className="bg-white border border-indigo-200 rounded-xl p-4 shadow-2xs transition-all">
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-base shrink-0">
+                                {selectedParty.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <h4 className="font-bold text-gray-900 text-sm">{selectedParty.name}</h4>
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-semibold rounded-full border border-emerald-100">
+                                        <FiCheck size={10} /> Selected
+                                    </span>
+                                </div>
+                                <p className="text-xs text-gray-400 mt-0.5">
+                                    {details.length} detail{details.length !== 1 ? 's' : ''} auto-loaded
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={onClearParty}
+                            className="text-xs font-semibold text-gray-500 hover:text-indigo-600 px-2.5 py-1.5 rounded-lg hover:bg-gray-100 transition-colors border border-gray-200"
+                        >
+                            Change Party
+                        </button>
+                    </div>
+
+                    {/* Loaded Details Summary (Read-Only Preview) */}
+                    {details.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                            {details.map((d, idx) => (
+                                <div key={idx} className="bg-gray-50 px-2.5 py-1.5 rounded-lg border border-gray-100 flex items-center justify-between">
+                                    <span className="text-gray-400 font-medium truncate">{d.key}</span>
+                                    <span className="text-gray-800 font-semibold truncate ml-2">{d.value || '—'}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            ) : (
+                /* Search & Select Combobox */
+                <div className="relative">
+                    <div className="relative">
+                        <FiSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={15} />
+                        <input
+                            type="text"
+                            placeholder={placeholder}
+                            value={search}
+                            onChange={(e) => {
+                                setSearch(e.target.value);
+                                setIsOpen(true);
+                            }}
+                            onFocus={() => setIsOpen(true)}
+                            className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-2xs transition-all placeholder:text-gray-400"
+                        />
+                    </div>
+
+                    {/* Dropdown Options */}
+                    {isOpen && (
+                        <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-gray-200 rounded-xl shadow-xl z-50 max-h-56 overflow-y-auto divide-y divide-gray-100 animate-in fade-in zoom-in-95">
+                            {filtered.length > 0 ? (
+                                filtered.map(party => (
+                                    <button
+                                        key={party.id}
+                                        type="button"
+                                        onClick={() => {
+                                            onSelectParty(party.id);
+                                            setIsOpen(false);
+                                            setSearch('');
+                                        }}
+                                        className="w-full text-left px-4 py-2.5 hover:bg-indigo-50/70 transition-colors flex items-center justify-between group"
+                                    >
+                                        <div className="min-w-0 pr-3">
+                                            <div className="font-semibold text-sm text-gray-900 group-hover:text-indigo-700 truncate">
+                                                {party.name}
+                                            </div>
+                                            {Array.isArray(party.customFields) && party.customFields.length > 0 && (
+                                                <div className="text-[11px] text-gray-400 truncate mt-0.5">
+                                                    {party.customFields.map(f => `${f.key}: ${f.value}`).join(' • ')}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <span className="text-xs font-semibold text-indigo-600 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            Select →
+                                        </span>
+                                    </button>
+                                ))
+                            ) : (
+                                <div className="p-4 text-center text-xs text-gray-500">
+                                    <p className="font-semibold text-gray-700">No parties found</p>
+                                    <p className="mt-0.5 text-gray-400">
+                                        {parties.length === 0 ? "No parties added yet." : `No party matching "${search}"`}
+                                    </p>
+
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+export default function AddPersonalTemplateModal({ isOpen, onClose, onSave, parties = [], onOpenCreateParty }) {
     const [logo, setLogo] = useState(null);
     const [logoPreview, setLogoPreview] = useState(null);
-    const [fromDetails, setFromDetails] = useState([{ key: 'Name', value: '' }, { key: 'Email', value: '' }]);
-    const [toDetails, setToDetails] = useState([{ key: 'Client Name', value: '' }]);
+    const [fromDetails, setFromDetails] = useState([]);
+    const [toDetails, setToDetails] = useState([]);
+    const [selectedFromPartyId, setSelectedFromPartyId] = useState('');
+    const [selectedToPartyId, setSelectedToPartyId] = useState('');
     const [paymentModes, setPaymentModes] = useState({ cash: false, upi: false, bank: false });
+    const [paymentProof, setPaymentProof] = useState(null);
     const [columns, setColumns] = useState([]);
     const [newColumnName, setNewColumnName] = useState('');
     const [newColumnType, setNewColumnType] = useState('Text');
@@ -28,20 +179,46 @@ export default function AddPersonalTemplateModal({ isOpen, onClose, onSave }) {
         }
     };
 
-    const addDetail = (setter) => {
-        setter(prev => [...prev, { key: '', value: '' }]);
+    const handleSelectFromParty = (partyId) => {
+        setSelectedFromPartyId(partyId);
+        if (!partyId) {
+            setFromDetails([]);
+            return;
+        }
+        const party = parties.find(p => p.id === partyId);
+        if (party) {
+            const fields = [];
+            fields.push({ key: 'Name', value: party.name });
+            if (Array.isArray(party.customFields)) {
+                party.customFields.forEach(f => {
+                    if (f.key && f.key.trim()) {
+                        fields.push({ key: f.key.trim(), value: f.value || '' });
+                    }
+                });
+            }
+            setFromDetails(fields);
+        }
     };
 
-    const updateDetail = (setter, index, field, value) => {
-        setter(prev => {
-            const newArr = [...prev];
-            newArr[index][field] = value;
-            return newArr;
-        });
-    };
-
-    const removeDetail = (setter, index) => {
-        setter(prev => prev.filter((_, i) => i !== index));
+    const handleSelectToParty = (partyId) => {
+        setSelectedToPartyId(partyId);
+        if (!partyId) {
+            setToDetails([]);
+            return;
+        }
+        const party = parties.find(p => p.id === partyId);
+        if (party) {
+            const fields = [];
+            fields.push({ key: 'Client Name', value: party.name });
+            if (Array.isArray(party.customFields)) {
+                party.customFields.forEach(f => {
+                    if (f.key && f.key.trim()) {
+                        fields.push({ key: f.key.trim(), value: f.value || '' });
+                    }
+                });
+            }
+            setToDetails(fields);
+        }
     };
 
     const handleAddCustomColumn = () => {
@@ -55,12 +232,23 @@ export default function AddPersonalTemplateModal({ isOpen, onClose, onSave }) {
     const removeColumn = (index) => {
         setColumns(prev => {
             const newCols = prev.filter((_, i) => i !== index);
-            // reset grand total column if the selected one was removed
             if (grandTotalColumn === prev[index].name) {
                 setGrandTotalColumn('');
             }
             return newCols;
         });
+    };
+
+    const handlePaymentProofUpload = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setPaymentProof(reader.result);
+            };
+            reader.readAsDataURL(file);
+        }
+        e.target.value = '';
     };
 
     const handleGstToggle = (e) => {
@@ -93,14 +281,13 @@ export default function AddPersonalTemplateModal({ isOpen, onClose, onSave }) {
         });
     };
 
-    const hasValidFrom = fromDetails.some(d => d.key.trim() !== '' && d.value.trim() !== '');
-    const hasValidTo = toDetails.some(d => d.key.trim() !== '' && d.value.trim() !== '');
+    const hasValidFrom = !!selectedFromPartyId && fromDetails.length > 0;
+    const hasValidTo = !!selectedToPartyId && toDetails.length > 0;
     const hasColumns = columns.length > 0;
     const hasNumberColumn = columns.some(c => c.type === 'Number');
     const isTotalValid = hasNumberColumn ? !!grandTotalColumn : true;
 
     const isFormValid = hasValidFrom && hasValidTo && hasColumns && isTotalValid;
-
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -119,8 +306,9 @@ export default function AddPersonalTemplateModal({ isOpen, onClose, onSave }) {
                         <div className="bg-gray-50 p-5 rounded-xl border border-gray-200">
                             <h3 className="text-lg font-bold text-gray-800 mb-4 border-b pb-2">From Details</h3>
                             
-                            <div className="mb-6">
-                                <label className="block text-sm font-semibold text-gray-700 mb-2">Logo</label>
+                            {/* Logo Upload */}
+                            <div className="mb-5">
+                                <label className="block text-sm font-semibold text-gray-700 mb-2">Company / Business Logo (Optional)</label>
                                 <div className="flex items-center gap-4">
                                     <div className="w-20 h-20 bg-white border border-dashed border-gray-300 rounded-xl flex items-center justify-center overflow-hidden relative group">
                                         {logoPreview ? (
@@ -139,65 +327,49 @@ export default function AddPersonalTemplateModal({ isOpen, onClose, onSave }) {
                                 </div>
                             </div>
 
-                            <div className="space-y-3">
-                                <label className="block text-sm font-semibold text-gray-700">Fields</label>
-                                {fromDetails.map((detail, index) => (
-                                    <div key={index} className="flex gap-3 items-center">
-                                        <input 
-                                            type="text" 
-                                            placeholder="Key (e.g. Name)" 
-                                            value={detail.key}
-                                            readOnly={index === 0}
-                                            onChange={(e) => updateDetail(setFromDetails, index, 'key', e.target.value)}
-                                            className={`w-1/3 px-3 py-2 border border-gray-300 rounded-lg text-sm ${index === 0 ? 'bg-gray-100 font-semibold text-gray-700 cursor-not-allowed' : ''}`}
-                                        />
-                                        <input 
-                                            type="text" 
-                                            placeholder="Value" 
-                                            value={detail.value}
-                                            onChange={(e) => updateDetail(setFromDetails, index, 'value', e.target.value)}
-                                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                                        />
-                                        <button type="button" onClick={() => removeDetail(setFromDetails, index)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg">
-                                            <FiTrash2 />
-                                        </button>
-                                    </div>
-                                ))}
-                                <button type="button" onClick={() => addDetail(setFromDetails)} className="text-sm text-indigo-600 font-semibold flex items-center gap-1 hover:text-indigo-700">
-                                    <FiPlus size={16} /> Add Field
-                                </button>
+                            {/* Search & Select From Party */}
+                            <div>
+                                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                                    Select From Party <span className="text-red-500">*</span>
+                                </label>
+                                <PartySearchSelect
+                                    label="From Party"
+                                    placeholder="Search saved party by name or detail..."
+                                    parties={parties}
+                                    selectedPartyId={selectedFromPartyId}
+                                    onSelectParty={handleSelectFromParty}
+                                    onClearParty={() => {
+                                        setSelectedFromPartyId('');
+                                        setFromDetails([]);
+                                    }}
+                                    onOpenCreateParty={onOpenCreateParty}
+                                    details={fromDetails}
+                                />
                             </div>
                         </div>
 
                         {/* To Section */}
                         <div className="bg-gray-50 p-5 rounded-xl border border-gray-200">
                             <h3 className="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Client (To) Details</h3>
-                            <div className="space-y-3">
-                                {toDetails.map((detail, index) => (
-                                    <div key={index} className="flex gap-3 items-center">
-                                        <input 
-                                            type="text" 
-                                            placeholder="Key (e.g. Client Name)" 
-                                            value={detail.key}
-                                            readOnly={index === 0}
-                                            onChange={(e) => updateDetail(setToDetails, index, 'key', e.target.value)}
-                                            className={`w-1/3 px-3 py-2 border border-gray-300 rounded-lg text-sm ${index === 0 ? 'bg-gray-100 font-semibold text-gray-700 cursor-not-allowed' : ''}`}
-                                        />
-                                        <input 
-                                            type="text" 
-                                            placeholder="Placeholder / Default Value" 
-                                            value={detail.value}
-                                            onChange={(e) => updateDetail(setToDetails, index, 'value', e.target.value)}
-                                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                                        />
-                                        <button type="button" onClick={() => removeDetail(setToDetails, index)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg">
-                                            <FiTrash2 />
-                                        </button>
-                                    </div>
-                                ))}
-                                <button type="button" onClick={() => addDetail(setToDetails)} className="text-sm text-indigo-600 font-semibold flex items-center gap-1 hover:text-indigo-700">
-                                    <FiPlus size={16} /> Add Field
-                                </button>
+                            
+                            {/* Search & Select Client (To) Party */}
+                            <div>
+                                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                                    Select Client Party <span className="text-red-500">*</span>
+                                </label>
+                                <PartySearchSelect
+                                    label="Client (To) Party"
+                                    placeholder="Search saved client by name or detail..."
+                                    parties={parties}
+                                    selectedPartyId={selectedToPartyId}
+                                    onSelectParty={handleSelectToParty}
+                                    onClearParty={() => {
+                                        setSelectedToPartyId('');
+                                        setToDetails([]);
+                                    }}
+                                    onOpenCreateParty={onOpenCreateParty}
+                                    details={toDetails}
+                                />
                             </div>
                         </div>
 
@@ -221,14 +393,13 @@ export default function AddPersonalTemplateModal({ isOpen, onClose, onSave }) {
                                 >
                                     <option value="Text">Text</option>
                                     <option value="Number">Number</option>
-                                    <option value="Date">Date</option>
                                 </select>
                                 <button 
                                     type="button" 
-                                    onClick={handleAddCustomColumn} 
-                                    className="px-4 py-2 bg-indigo-50 text-indigo-600 font-semibold rounded-lg hover:bg-indigo-100 transition-colors text-sm"
+                                    onClick={handleAddCustomColumn}
+                                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors flex items-center gap-1"
                                 >
-                                    Add Column
+                                    <FiPlus size={16} /> Add Column
                                 </button>
                             </div>
 
@@ -311,13 +482,55 @@ export default function AddPersonalTemplateModal({ isOpen, onClose, onSave }) {
                                 ))}
                             </div>
                         </div>
+
+                        {/* Payment Proof Upload */}
+                        <div className="bg-gray-50 p-5 rounded-xl border border-gray-200">
+                            <div className="flex items-center justify-between mb-4 border-b pb-2">
+                                <div>
+                                    <h3 className="text-lg font-bold text-gray-800">Payment Proof (Optional)</h3>
+                                    <p className="text-xs text-gray-500 mt-0.5">Upload transaction screenshot or receipt to display in a new page in the invoice PDF.</p>
+                                </div>
+                                {paymentProof && (
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setPaymentProof(null)} 
+                                        className="text-xs font-semibold text-red-600 hover:text-red-700 hover:bg-red-50 px-2.5 py-1 rounded-lg transition-colors border border-red-200 cursor-pointer"
+                                    >
+                                        Remove Proof
+                                    </button>
+                                )}
+                            </div>
+
+                            {paymentProof ? (
+                                <div className="flex items-center gap-4 bg-white p-3.5 rounded-xl border border-gray-200 shadow-2xs">
+                                    <img src={paymentProof} alt="Payment Proof" className="w-20 h-20 object-contain rounded-lg border border-gray-200 bg-gray-50 shrink-0" />
+                                    <div>
+                                        <p className="text-xs font-bold text-gray-800">Payment Proof Attached</p>
+                                        <p className="text-[11px] text-gray-500 mt-0.5">Will be printed on a dedicated second page in the invoice PDF.</p>
+                                        <label className="mt-2 inline-flex items-center gap-1 cursor-pointer text-xs font-semibold text-indigo-600 hover:text-indigo-800">
+                                            <FiUpload size={12} /> Change Image
+                                            <input type="file" accept="image/*" className="hidden" onChange={handlePaymentProofUpload} />
+                                        </label>
+                                    </div>
+                                </div>
+                            ) : (
+                                <label className="flex flex-col items-center justify-center p-6 bg-white border-2 border-dashed border-gray-300 hover:border-indigo-400 rounded-xl cursor-pointer hover:bg-indigo-50/20 transition-all text-center group">
+                                    <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
+                                        <FiUpload size={18} />
+                                    </div>
+                                    <span className="text-xs font-bold text-gray-700">Click to upload Payment Proof</span>
+                                    <span className="text-[11px] text-gray-400 mt-0.5">Supports PNG, JPG, JPEG, WEBP</span>
+                                    <input type="file" accept="image/*" className="hidden" onChange={handlePaymentProofUpload} />
+                                </label>
+                            )}
+                        </div>
                     </form>
                 </div>
 
                 <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-between items-center gap-4">
                     <div className="text-xs text-red-500 font-medium">
-                        {!hasValidFrom && <p>• Add at least one valid 'From' detail</p>}
-                        {!hasValidTo && <p>• Add at least one valid 'To' detail</p>}
+                        {!hasValidFrom && <p>• Select a 'From' party</p>}
+                        {!hasValidTo && <p>• Select a Client ('To') party</p>}
                         {!hasColumns && <p>• Add at least one column</p>}
                         {(hasColumns && hasNumberColumn && !isTotalValid) && <p>• Select a Grand Total Calculating Column</p>}
                     </div>

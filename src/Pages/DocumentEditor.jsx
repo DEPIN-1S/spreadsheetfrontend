@@ -1275,24 +1275,26 @@ export default function DocumentEditor({ docName, setActivePath, returnPath, isN
         
         if (newValue) {
             const requiredColumns = [
-                { name: "Product Name", type: "text" },
-                { name: "Selling Rate", type: "number" },
-                { name: "Discount", type: "formula" },
-                { name: "MRP", type: "number" },
-                { name: "GST", type: "number" }
+                { names: ["Product Name"], types: ["text"], label: "Product Name", displayType: "text" },
+                { names: ["Purchase Rate", "Purchase"], types: ["currency"], label: "Purchase Rate", displayType: "currency" },
+                { names: ["Profit", "Profit%", "Profit %"], types: ["formula"], label: "Profit", displayType: "formula" },
+                { names: ["Selling Rate"], types: ["currency"], label: "Selling Rate", displayType: "currency" },
+                { names: ["Discount", "Discount%", "Discount %"], types: ["formula"], label: "Discount", displayType: "formula" },
+                { names: ["MRP"], types: ["currency", "number"], label: "MRP", displayType: "currency" },
+                { names: ["GST", "GST%"], types: ["number", "formula"], label: "GST", displayType: "number or formula" }
             ];
             
             const missingOrWrongTypeColumns = requiredColumns.filter(req => {
                 const col = columns.find(c => {
-                    const cName = (typeof c === 'string' ? c : c.name) || '';
-                    return cName.trim().toLowerCase() === req.name.toLowerCase();
+                    const cName = ((typeof c === 'string' ? c : c.name) || '').trim().toLowerCase();
+                    return req.names.some(n => n.toLowerCase() === cName);
                 });
                 if (!col) return true;
-                return col.type !== req.type;
+                return !req.types.includes(col.type);
             });
             
             if (missingOrWrongTypeColumns.length > 0) {
-                const errorMessages = missingOrWrongTypeColumns.map(req => `${req.name} (needs to be ${req.type})`);
+                const errorMessages = missingOrWrongTypeColumns.map(req => `${req.label} (needs to be ${req.displayType})`);
                 Swal.fire({
                     title: 'Cannot Enable Invoice Generation',
                     text: `This document is missing required columns or has incorrect types: ${errorMessages.join(', ')}. Please update your columns to match the standard format before enabling.`,

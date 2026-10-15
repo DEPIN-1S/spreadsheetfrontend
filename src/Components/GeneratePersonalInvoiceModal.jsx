@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { FiX, FiPlus, FiTrash2, FiPrinter, FiSave } from 'react-icons/fi';
+import { FiX, FiPlus, FiTrash2, FiPrinter, FiSave, FiEdit2, FiUpload, FiImage, FiFileText } from 'react-icons/fi';
 
-export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template, onSaveInvoice, mode, savedInvoice, allInvoices = [] }) {
+export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template, onSaveInvoice, mode, savedInvoice, allInvoices = [], parties = [], onEdit }) {
     const [invoiceNo, setInvoiceNo] = useState('');
     const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
     const [toDetailsData, setToDetailsData] = useState({});
@@ -12,9 +12,23 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
     const [gstPercentage, setGstPercentage] = useState('');
     const [sealImage, setSealImage] = useState('');
     const [signatureImage, setSignatureImage] = useState('');
+    const [paymentProofImage, setPaymentProofImage] = useState('');
     const [isSaving, setIsSaving] = useState(false);
     const [paymentMethod, setPaymentMethod] = useState('');
     const isViewMode = mode === 'view';
+    const isEditMode = !isViewMode && !!savedInvoice;
+
+    const handlePaymentProofUpload = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (uploadEvent) => {
+                setPaymentProofImage(uploadEvent.target.result);
+            };
+            reader.readAsDataURL(file);
+        }
+        e.target.value = '';
+    };
 
     if (typeof template === 'string') {
         try { template = JSON.parse(template); } catch(e) { template = {}; }
@@ -22,15 +36,17 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
 
     
     useEffect(() => {
+        if (!isOpen) return;
+
         if (savedInvoice) {
-            setInvoiceNo(savedInvoice.invoiceNo);
-            setInvoiceDate(savedInvoice.date);
+            setInvoiceNo(savedInvoice.invoiceNo || '');
+            setInvoiceDate(savedInvoice.date || new Date().toISOString().split('T')[0]);
 
             let parsedItems = savedInvoice.items;
             if (typeof parsedItems === 'string') {
                 try { parsedItems = JSON.parse(parsedItems); } catch(e) { parsedItems = [{}]; }
             }
-            if (!Array.isArray(parsedItems)) parsedItems = [{}];
+            if (!Array.isArray(parsedItems) || parsedItems.length === 0) parsedItems = [{}];
             setItems(parsedItems);
 
             let parsedTotals = savedInvoice.totals;
@@ -58,12 +74,11 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
             setPaymentMethod(parsedTemplate?.paymentMethod || '');
             setSealImage(parsedTemplate?.sealImage || '');
             setSignatureImage(parsedTemplate?.signatureImage || '');
+            setPaymentProofImage(parsedTemplate?.paymentProofImage || parsedTemplate?.paymentProof || savedInvoice?.paymentProofImage || savedInvoice?.paymentProof || '');
         } else if (template) {
+            setPaymentProofImage(template?.paymentProofImage || template?.paymentProof || '');
             let maxId = 0;
-            let lastSeal = '';
-            let lastSignature = '';
             if (allInvoices && allInvoices.length > 0) {
-                // Find max ID and also try to find the last used seal/signature
                 allInvoices.forEach(inv => {
                     if (inv.invoiceNo) {
                         const match = inv.invoiceNo.match(/INV-PI-(\d+)/);
@@ -72,19 +87,12 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
                             if (num > maxId) maxId = num;
                         }
                     }
-                    if (inv.template) {
-                        let t = inv.template;
-                        if (typeof t === 'string') {
-                            try { t = JSON.parse(t); } catch(e) { t = {}; }
-                        }
-                        if (t.sealImage) lastSeal = t.sealImage;
-                        if (t.signatureImage) lastSignature = t.signatureImage;
-                    }
                 });
             }
             setInvoiceNo(`INV-PI-${maxId + 1}`);
-            setSealImage(lastSeal);
-            setSignatureImage(lastSignature);
+            setInvoiceDate(new Date().toISOString().split('T')[0]);
+            setSealImage('');
+            setSignatureImage('');
             const initialToDetails = {};
             if (template.toDetails && Array.isArray(template.toDetails)) {
                 template.toDetails.forEach(detail => {
@@ -97,7 +105,7 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
                 totalNo: '', grossAmt: '', disAmt: '', addlChg: '', gstAmt: '', rOff: '', grandTotal: ''
             });
         }
-    }, [template, savedInvoice, allInvoices]);
+    }, [isOpen, template, savedInvoice]);
 
     if (!isOpen || !template) return null;
 
@@ -202,10 +210,10 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
         try {
             setIsSaving(true);
             const invoiceData = {
-                id: Date.now(),
+                id: savedInvoice?.id || Date.now(),
                 invoiceNo,
                 date: invoiceDate,
-                clientName: toDetailsData[template?.toDetails?.[0]?.key || 'Client Name'] || template?.toDetails?.[0]?.value || 'Unknown Client',
+                clientName: (template?.toDetails?.[0]?.key ? toDetailsData[template.toDetails[0].key] : null) || template?.toDetails?.[0]?.value || Object.values(toDetailsData).find(v => v) || 'Unknown Client',
                 templateName: template?.templateName || 'Personal Template',
                 grandTotal: finalGrandTotal.toFixed(2),
                 items,
@@ -217,6 +225,8 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
             delete templateClone.signatureImage;
             delete templateClone.seal;
             delete templateClone.sealImage;
+            delete templateClone.paymentProof;
+            delete templateClone.paymentProofImage;
             delete templateClone.logo;
             delete templateClone.bgImage;
             delete templateClone.background;
@@ -228,6 +238,10 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
             invoiceData.template = JSON.parse(JSON.stringify(templateClone));
             if (sealImage) invoiceData.template.sealImage = sealImage;
             if (signatureImage) invoiceData.template.signatureImage = signatureImage;
+            if (paymentProofImage) {
+                invoiceData.template.paymentProofImage = paymentProofImage;
+                invoiceData.paymentProofImage = paymentProofImage;
+            }
 
             if (onSaveInvoice) {
                 onSaveInvoice(invoiceData);
@@ -277,9 +291,32 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
                         margin: 0 !important;
                         padding: 0 !important;
                         box-shadow: none !important;
-                        border: 2px solid #000 !important;
+                        border: none !important;
                         box-sizing: border-box !important;
                         background: #fff !important;
+                    }
+                    
+                    tr {
+                        page-break-inside: avoid !important;
+                        break-inside: avoid !important;
+                    }
+
+                    .invoice-page-break {
+                        page-break-before: always !important;
+                        break-before: page !important;
+                        page-break-inside: avoid !important;
+                        break-inside: avoid !important;
+                        page-break-after: avoid !important;
+                        break-after: avoid !important;
+                        width: 100% !important;
+                    }
+
+                    .invoice-proof-img {
+                        max-height: 250mm !important;
+                        max-width: 100% !important;
+                        object-fit: contain !important;
+                        display: block !important;
+                        margin: 0 auto !important;
                     }
                     
                     /* HOLY GRAIL FIX: Shrink the physical layout space of everything EXCEPT the print area */
@@ -306,14 +343,16 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
                 {/* Modal Action Bar (Hidden in Print) */}
                 {!isViewMode && (<div className="px-6 py-4 bg-gray-900 text-white flex items-center justify-between no-print border-b border-gray-800 shrink-0">
                     <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-0.5 bg-indigo-600 text-xs font-bold rounded uppercase tracking-wider">
-                            Generate Invoice
+                        <span className={`px-2.5 py-0.5 ${isEditMode ? 'bg-amber-500' : 'bg-indigo-600'} text-xs font-bold rounded uppercase tracking-wider`}>
+                            {isEditMode ? 'Edit Saved Invoice' : 'Generate Invoice'}
                         </span>
-                        <h3 className="text-base font-semibold">{template.templateName || "Personal Template"}</h3>
+                        <h3 className="text-base font-semibold">
+                            {template?.templateName || "Personal Template"} {isEditMode && invoiceNo ? `(${invoiceNo})` : ''}
+                        </h3>
                     </div>
                     <div className="flex items-center gap-3">
-                        <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm">
-                            <FiSave /> {isSaving ? 'Saving...' : 'Save Invoice'}
+                        <button onClick={handleSave} disabled={isSaving} className={`flex items-center gap-2 px-4 py-2 ${isEditMode ? 'bg-amber-600 hover:bg-amber-700' : 'bg-indigo-600 hover:bg-indigo-700'} text-white text-xs font-semibold rounded-lg transition-colors shadow-sm`}>
+                            <FiSave /> {isSaving ? (isEditMode ? 'Updating...' : 'Saving...') : (isEditMode ? 'Update & Save' : 'Save Invoice')}
                         </button>
                         <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 text-white text-xs font-semibold rounded-lg transition-colors">
                             <FiPrinter /> Print / PDF
@@ -324,24 +363,41 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
                     </div>
                 </div>)}
 
-                {/* Editable Invoice Sheet */}
-                
+                {/* View Mode Header */}
                 {isViewMode && (
                     <div className="px-6 py-4 bg-white text-gray-900 flex items-center justify-between no-print border-b border-gray-200 shrink-0">
-                        <h2 className="text-lg font-bold">View Invoice</h2>
-                        <div className="flex gap-2">
-                            <button onClick={() => window.print()} className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm">
+                        <div className="flex items-center gap-3">
+                            <h2 className="text-lg font-bold">View Invoice</h2>
+                            {invoiceNo && (
+                                <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2.5 py-0.5 rounded-full border border-gray-200">
+                                    {invoiceNo}
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            {onEdit && (
+                                <button 
+                                    onClick={() => onEdit(savedInvoice)}
+                                    className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors shadow-xs"
+                                >
+                                    <FiEdit2 size={14} /> Edit Invoice
+                                </button>
+                            )}
+                            <button onClick={() => window.print()} className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors shadow-xs">
                                 Print / Save PDF
                             </button>
-                            <button onClick={onClose} className="p-2 text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">
-                                <svg stroke="currentColor" fill="none" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" height="20" width="20" xmlns="http://www.w3.org/2000/svg"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" title="Close">
+                                <FiX size={20} />
                             </button>
                         </div>
                     </div>
                 )}
 
                 <div className="overflow-y-auto p-6 flex-1 bg-gray-100">
-                    <div id="personal-invoice-print-area" className="bg-white mx-auto border-2 border-black text-black font-sans text-xs shadow-lg max-w-[900px] w-full">
+                    <div id="personal-invoice-print-area" className="max-w-[900px] w-full mx-auto space-y-8 print:space-y-0">
+                        
+                        {/* PAGE 1: INVOICE */}
+                        <div className="bg-white border-2 border-black text-black font-sans text-xs shadow-lg w-full print:shadow-none print:border-2 print:border-black">
                         
                         {/* 1. Header Grid */}
                         <div className="grid grid-cols-12 border-b-2 border-black shrink-0">
@@ -351,7 +407,7 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
                                 <div className="flex items-center gap-2 mb-2">
                                     {template.logo && <img src={template.logo} alt="Logo" className="h-12 object-contain" />}
                                     {template.fromDetails?.[0] && (
-                                        <span className="font-extrabold text-lg">{template.fromDetails[0].value}</span>
+                                        <span className="font-extrabold text-lg">{template.fromDetails[0].value || template.fromDetails[0].key}</span>
                                     )}
                                 </div>
                                 <div className="space-y-1 mt-1">
@@ -375,15 +431,6 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
                                                 type="text" 
                                                 value={invoiceNo} 
                                                 onChange={(e) => setInvoiceNo(e.target.value)}
-                                                readOnly={isViewMode} className="bg-transparent border-none outline-none w-full text-[11px] text-gray-900 m-0 p-0"
-                                            />
-                                        </div>
-                                        <div className="flex items-center gap-1">
-                                            <b className="whitespace-nowrap">Inv. Date :</b> 
-                                            <input 
-                                                type="date" 
-                                                value={invoiceDate} 
-                                                onChange={(e) => setInvoiceDate(e.target.value)}
                                                 readOnly={isViewMode} className="bg-transparent border-none outline-none w-full text-[11px] text-gray-900 m-0 p-0"
                                             />
                                         </div>
@@ -411,7 +458,7 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
                             {/* Right Box: Buyer / Customer */}
                             <div className="col-span-4 p-2.5 space-y-1 text-[11px] flex flex-col justify-between">
                                 <div className="space-y-1.5">
-                                    <div className="text-center font-black text-[11px] underline uppercase tracking-wide text-black mb-2">
+                                    <div className="text-center font-black text-[11px] underline uppercase tracking-wide text-black mb-1">
                                         Billed To
                                     </div>
                                     {template.toDetails?.map((detail, idx) => (
@@ -601,8 +648,8 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
                                                     <button onClick={() => setSignatureImage('')} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity no-print"><FiX size={10} /></button>
                                                 </div>
                                             ) : !isViewMode ? (
-                                                <label className="cursor-pointer text-indigo-500 hover:text-indigo-700 flex items-center gap-1 no-print border border-dashed border-indigo-300 px-2 py-1 rounded mb-1">
-                                                    <FiPlus size={10} /> Add Signature
+                                                <label className="cursor-pointer text-indigo-600 hover:text-indigo-700 font-semibold flex items-center gap-1.5 no-print border border-dashed border-indigo-300 hover:border-indigo-400 px-2.5 py-1 rounded-lg text-[11px] bg-indigo-50/60 hover:bg-indigo-50 shadow-2xs transition-colors mb-1.5">
+                                                    <FiPlus size={12} /> Add Signature
                                                     <input type="file" accept="image/*" className="hidden" onChange={(e) => {
                                                         const file = e.target.files[0];
                                                         if (file) {
@@ -620,6 +667,58 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
                                 </div>
                             </div>
                         </div>
+                    </div>
+
+                    {/* PAGE 2: PAYMENT PROOF */}
+                    {paymentProofImage && (
+                        <div className="invoice-page-break bg-white w-full print:w-full flex flex-col items-center justify-center min-h-[900px] print:min-h-[1050px] relative group p-4 print:p-0">
+                            <div className="w-full text-center mb-3 print:mb-2">
+                                <span className="text-sm font-bold text-gray-800 uppercase tracking-wider">
+                                    Payment Proof
+                                </span>
+                            </div>
+                            <img 
+                                src={paymentProofImage} 
+                                alt="Payment Proof" 
+                                className="invoice-proof-img max-h-[85vh] print:max-h-[250mm] max-w-full object-contain mx-auto block"
+                            />
+                            {!isViewMode && (
+                                <div className="no-print absolute top-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity bg-white/95 backdrop-blur-xs p-1.5 rounded-lg shadow-md border border-gray-200">
+                                    <label className="cursor-pointer text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-2.5 py-1 hover:bg-indigo-50 rounded transition-colors flex items-center gap-1">
+                                        <FiUpload size={13} /> Change Proof
+                                        <input type="file" accept="image/*" className="hidden" onChange={handlePaymentProofUpload} />
+                                    </label>
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setPaymentProofImage('')} 
+                                        className="text-xs font-semibold text-red-600 hover:text-red-800 px-2.5 py-1 hover:bg-red-50 rounded transition-colors flex items-center gap-1 cursor-pointer"
+                                    >
+                                        <FiTrash2 size={13} /> Remove
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Upload Banner in preview if no proof attached yet */}
+                    {!paymentProofImage && !isViewMode && (
+                        <div className="no-print bg-white border-2 border-dashed border-gray-300 hover:border-indigo-400 rounded-xl p-6 transition-all text-center max-w-[900px] w-full mx-auto shadow-xs group">
+                            <label className="cursor-pointer flex flex-col items-center justify-center gap-2">
+                                <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:scale-105 transition-transform shadow-2xs border border-indigo-100">
+                                    <FiUpload size={22} />
+                                </div>
+                                <div>
+                                    <h4 className="text-sm font-bold text-gray-800">Add Payment Proof</h4>
+                                    <p className="text-xs text-gray-500 mt-0.5">Upload payment receipt or transaction screenshot to print as a new page in the PDF</p>
+                                </div>
+                                <span className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-lg transition-colors border border-indigo-200">
+                                    <FiPlus size={14} /> Select Payment Proof Image
+                                </span>
+                                <input type="file" accept="image/*" className="hidden" onChange={handlePaymentProofUpload} />
+                            </label>
+                        </div>
+                    )}
+
                     </div>
                 </div>
             </div>

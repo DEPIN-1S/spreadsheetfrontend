@@ -131,15 +131,27 @@ export const businessApi = {
 };
 
 export const freelanceApi = {
+    // Businesses
+    getBusinesses: () => apiClient.get('/freelance/businesses'),
+    createBusiness: (data) => apiClient.post('/freelance/businesses', data),
+    updateBusiness: (businessId, data) => apiClient.put(`/freelance/businesses/${businessId}`, data),
+    deleteBusiness: (businessId) => apiClient.delete(`/freelance/businesses/${businessId}`),
+
     // Templates
-    getTemplates: () => apiClient.get(`/freelance/templates`),
-    createTemplate: (data) => apiClient.post(`/freelance/templates`, data),
+    getTemplates: () => apiClient.get('/freelance/templates'),
+    createTemplate: (data) => apiClient.post('/freelance/templates', data),
     updateTemplate: (templateId, data) => apiClient.put(`/freelance/templates/${templateId}`, data),
     deleteTemplate: (templateId) => apiClient.delete(`/freelance/templates/${templateId}`),
     
+    // Parties
+    getParties: (businessId, type) => apiClient.get('/freelance/parties', { params: { ...(businessId ? { businessId } : {}), ...(type ? { type } : {}) } }),
+    createParty: (data) => apiClient.post('/freelance/parties', data),
+    updateParty: (partyId, data) => apiClient.put(`/freelance/parties/${partyId}`, data),
+    deleteParty: (partyId) => apiClient.delete(`/freelance/parties/${partyId}`),
+
     // Invoices
-    getInvoices: () => apiClient.get(`/freelance/invoices`),
-    createInvoice: (data) => apiClient.post(`/freelance/invoices`, data),
+    getInvoices: (businessId) => apiClient.get('/freelance/invoices', { params: businessId ? { businessId } : {} }),
+    createInvoice: (data) => apiClient.post('/freelance/invoices', data),
     updateInvoice: (invoiceId, data) => apiClient.put(`/freelance/invoices/${invoiceId}`, data),
     deleteInvoice: (invoiceId) => apiClient.delete(`/freelance/invoices/${invoiceId}`)
 };

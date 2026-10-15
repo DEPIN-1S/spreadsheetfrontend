@@ -4,6 +4,7 @@ import InvoiceTemplateModal from '../Components/InvoiceTemplateModal';
 import AddBusinessModal from '../Components/AddBusinessModal';
 import AddBusinessPartyModal from '../Components/AddBusinessPartyModal';
 import ViewBusinessPartyModal from '../Components/ViewBusinessPartyModal';
+import PartyInvoicesModal from '../Components/PartyInvoicesModal';
 import SelectPartyModal from '../Components/SelectPartyModal';
 import GenerateInvoiceModal from '../Components/GenerateInvoiceModal';
 import ViewSavedInvoiceModal from '../Components/ViewSavedInvoiceModal';
@@ -213,6 +214,7 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
     const [isPartyModalOpen, setIsPartyModalOpen] = useState(false);
     const [editingParty, setEditingParty] = useState(null);
     const [viewingParty, setViewingParty] = useState(null);
+    const [partyForInvoices, setPartyForInvoices] = useState(null);
     const [currentPage, setCurrentPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
     const [searchQuery, setSearchQuery] = useState("");
@@ -552,132 +554,6 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                             </div>
                         </div>
 
-                    {/* Parties Section */}
-                    <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mt-6">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                            <h2 className="text-lg font-bold text-gray-900">Party Details</h2>
-                            <div className="flex items-center gap-3">
-                                <div className="relative">
-                                    <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                                    <input
-                                        type="text"
-                                        placeholder="Search name or phone..."
-                                        value={searchQuery}
-                                        onChange={(e) => {
-                                            setSearchQuery(e.target.value);
-                                            if (currentPage !== 1) setCurrentPage(1);
-                                        }}
-                                        className="pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all w-full sm:w-64"
-                                    />
-                                </div>
-                                <button 
-                                    onClick={() => {
-                                        setEditingParty(null);
-                                        setIsPartyModalOpen(true);
-                                    }}
-                                    className="flex items-center justify-center gap-2 bg-indigo-600 text-white hover:bg-indigo-700 px-4 py-2 rounded-xl text-sm font-medium transition-colors shadow-sm shrink-0"
-                                >
-                                    <FiPlus size={16} />
-                                    <span className="hidden sm:inline">Add New Party</span>
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left border-collapse min-w-[800px]">
-                                <thead>
-                                    <tr className="bg-gray-50 border-b border-gray-200 text-xs uppercase tracking-wider text-gray-500 font-semibold">
-                                        <th className="px-6 py-3">Party Name</th>
-                                        <th className="px-6 py-3">Contact</th>
-                                        <th className="px-6 py-3">Place</th>
-                                        <th className="px-6 py-3">Age</th>
-                                        <th className="px-6 py-3">Gender</th>
-                                        <th className="px-6 py-3 text-right">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-200 text-sm">
-                                    {(Array.isArray(parties) ? parties : []).map((party) => {
-                                        let extraData = [];
-                                        try {
-                                            if (party.additionalData) {
-                                                extraData = typeof party.additionalData === 'string' ? JSON.parse(party.additionalData) : party.additionalData;
-                                            }
-                                        } catch(e) {}
-                                        return (
-                                        <tr key={party.id} className="hover:bg-gray-50 transition-colors">
-                                            <td className="px-6 py-4 font-medium text-gray-900">{party.name}</td>
-                                            <td className="px-6 py-4 text-gray-600">{party.contact}</td>
-                                            <td className="px-6 py-4 text-gray-600">{party.place ? <span className="font-medium text-gray-900">{party.place}</span> : <span className="text-gray-400 italic">-</span>}</td>
-                                            <td className="px-6 py-4 text-gray-600">
-                                                {party.age ? <span className="font-medium text-gray-900">{party.age}</span> : <span className="text-gray-400 italic">-</span>}
-                                            </td>
-                                            <td className="px-6 py-4 text-gray-600">
-                                                {party.gender ? <span className="font-medium text-gray-900">{party.gender}</span> : <span className="text-gray-400 italic">-</span>}
-                                            </td>
-                                            <td className="px-6 py-4 text-right space-x-2">
-                                                <button 
-                                                    className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors inline-flex"
-                                                    onClick={() => setViewingParty(party)}
-                                                    title="View Details"
-                                                >
-                                                    <FiEye size={16} />
-                                                </button>
-                                                <button 
-                                                    className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors inline-flex"
-                                                    onClick={() => {
-                                                        setEditingParty(party);
-                                                        setIsPartyModalOpen(true);
-                                                    }}
-                                                    title="Edit"
-                                                >
-                                                    <FiEdit2 size={16} />
-                                                </button>
-                                                <button 
-                                                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors inline-flex"
-                                                    onClick={() => handleDeleteParty(party.id)}
-                                                    title="Delete"
-                                                >
-                                                    <FiTrash2 size={16} />
-                                                </button>
-                                            </td>
-                                        </tr>
-                                        );
-                                    })}
-                                    {(!Array.isArray(parties) || parties.length === 0) && (
-                                        <tr>
-                                            <td colSpan={isSuperAdmin ? 6 : 5} className="px-6 py-8 text-center text-gray-500">
-                                                No parties found for this business.
-                                            </td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                        {totalPages > 0 && (
-                            <div className="flex items-center justify-between mt-4 px-2">
-                                <span className="text-sm text-gray-500">
-                                    Page {currentPage} of {totalPages}
-                                </span>
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                                        disabled={currentPage === 1}
-                                        className="px-3 py-1 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                    >
-                                        Previous
-                                    </button>
-                                    <button
-                                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                                        disabled={currentPage === totalPages}
-                                        className="px-3 py-1 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                    >
-                                        Next
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
                     {/* Recent Invoices Section */}
                     <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mt-6">
                         <div className="flex flex-col sm:flex-row justify-between items-center mb-6">
@@ -854,6 +730,140 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                             </div>
                         )}
                     </div>
+
+                    {/* Parties Section */}
+                    <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mt-6">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                            <h2 className="text-lg font-bold text-gray-900">Party Details</h2>
+                            <div className="flex items-center gap-3">
+                                <div className="relative">
+                                    <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                                    <input
+                                        type="text"
+                                        placeholder="Search name or phone..."
+                                        value={searchQuery}
+                                        onChange={(e) => {
+                                            setSearchQuery(e.target.value);
+                                            if (currentPage !== 1) setCurrentPage(1);
+                                        }}
+                                        className="pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all w-full sm:w-64"
+                                    />
+                                </div>
+                                <button 
+                                    onClick={() => {
+                                        setEditingParty(null);
+                                        setIsPartyModalOpen(true);
+                                    }}
+                                    className="flex items-center justify-center gap-2 bg-indigo-600 text-white hover:bg-indigo-700 px-4 py-2 rounded-xl text-sm font-medium transition-colors shadow-sm shrink-0"
+                                >
+                                    <FiPlus size={16} />
+                                    <span className="hidden sm:inline">Add New Party</span>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse min-w-[800px]">
+                                <thead>
+                                    <tr className="bg-gray-50 border-b border-gray-200 text-xs uppercase tracking-wider text-gray-500 font-semibold">
+                                        <th className="px-6 py-3">Party Name</th>
+                                        <th className="px-6 py-3">Contact</th>
+                                        <th className="px-6 py-3">Place</th>
+                                        <th className="px-6 py-3">Age</th>
+                                        <th className="px-6 py-3">Gender</th>
+                                        <th className="px-6 py-3 text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200 text-sm">
+                                    {(Array.isArray(parties) ? parties : []).map((party) => {
+                                        let extraData = [];
+                                        try {
+                                            if (party.additionalData) {
+                                                extraData = typeof party.additionalData === 'string' ? JSON.parse(party.additionalData) : party.additionalData;
+                                            }
+                                        } catch(e) {}
+                                        return (
+                                        <tr key={party.id} className="hover:bg-gray-50 transition-colors">
+                                            <td className="px-6 py-4 font-medium text-gray-900">{party.name}</td>
+                                            <td className="px-6 py-4 text-gray-600">{party.contact}</td>
+                                            <td className="px-6 py-4 text-gray-600">{party.place ? <span className="font-medium text-gray-900">{party.place}</span> : <span className="text-gray-400 italic">-</span>}</td>
+                                            <td className="px-6 py-4 text-gray-600">
+                                                {party.age ? <span className="font-medium text-gray-900">{party.age}</span> : <span className="text-gray-400 italic">-</span>}
+                                            </td>
+                                            <td className="px-6 py-4 text-gray-600">
+                                                {party.gender ? <span className="font-medium text-gray-900">{party.gender}</span> : <span className="text-gray-400 italic">-</span>}
+                                            </td>
+                                            <td className="px-6 py-4 text-right space-x-2">
+                                                <button 
+                                                    className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors inline-flex"
+                                                    onClick={() => setPartyForInvoices(party)}
+                                                    title="View Invoices"
+                                                >
+                                                    <FiFileText size={16} />
+                                                </button>
+                                                <button 
+                                                    className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors inline-flex"
+                                                    onClick={() => setViewingParty(party)}
+                                                    title="View Details"
+                                                >
+                                                    <FiEye size={16} />
+                                                </button>
+                                                <button 
+                                                    className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors inline-flex"
+                                                    onClick={() => {
+                                                        setEditingParty(party);
+                                                        setIsPartyModalOpen(true);
+                                                    }}
+                                                    title="Edit"
+                                                >
+                                                    <FiEdit2 size={16} />
+                                                </button>
+                                                <button 
+                                                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors inline-flex"
+                                                    onClick={() => handleDeleteParty(party.id)}
+                                                    title="Delete"
+                                                >
+                                                    <FiTrash2 size={16} />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        );
+                                    })}
+                                    {(!Array.isArray(parties) || parties.length === 0) && (
+                                        <tr>
+                                            <td colSpan={isSuperAdmin ? 6 : 5} className="px-6 py-8 text-center text-gray-500">
+                                                No parties found for this business.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                        {totalPages > 0 && (
+                            <div className="flex items-center justify-between mt-4 px-2">
+                                <span className="text-sm text-gray-500">
+                                    Page {currentPage} of {totalPages}
+                                </span>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                        disabled={currentPage === 1}
+                                        className="px-3 py-1 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        Previous
+                                    </button>
+                                    <button
+                                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                        disabled={currentPage === totalPages}
+                                        className="px-3 py-1 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
                 </div>
             </main>
 
@@ -892,6 +902,15 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                 isOpen={!!viewingParty}
                 onClose={() => setViewingParty(null)}
                 party={viewingParty}
+                onViewInvoices={(p) => setPartyForInvoices(p)}
+            />
+
+            <PartyInvoicesModal
+                isOpen={!!partyForInvoices}
+                onClose={() => setPartyForInvoices(null)}
+                party={partyForInvoices}
+                allInvoices={recentInvoices}
+                onViewInvoice={(inv) => setViewingSavedInvoice(inv)}
             />
 
             <SelectPartyModal
