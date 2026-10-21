@@ -38,6 +38,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { FiX, FiPrinter, FiSettings, FiTrash2, FiPlus, FiEdit2 } from 'react-icons/fi';
 import apiClient from '../api/apiClient';
 import { parseGstPercent } from '../utils/gst';
+import { printInvoiceWithTitle, formatDateDMY, toDateInputValue, isDateColumn } from '../utils/invoicePdfHelper';
 
 export default function GenerateInvoiceModal({ isOpen, onClose, business, party: propParty, template: propTemplate, onSaveInvoice, existingInvoices = [], editingInvoice = null }) {
     const resolvedFullData = (() => {
@@ -186,7 +187,7 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
     const [invoiceNo, setInvoiceNo] = useState(() => editingInvoice?.invoiceNo || getNextInvoiceNo());
 
     useEffect(() => {
-        const fetchSheetsList = async () => {
+        const fetchSheetsList = () => {
             try {
                 let targetSheetIds = [];
                 if (Array.isArray(template?.spreadsheetIds) && template.spreadsheetIds.length > 0) {
@@ -207,23 +208,17 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
                     targetSheetIds = [template.spreadsheetId];
                 }
 
-                let sheetsList = [];
-                if (targetSheetIds.length === 0) {
-                    const sheetsRes = await apiClient.get('/sheets?forInvoiceGenerator=true');
-                    const sheetsData = sheetsRes.data?.data;
-                    sheetsList = Array.isArray(sheetsData) ? sheetsData : (sheetsData?.files || []);
-                } else {
-                    sheetsList = targetSheetIds.map(id => ({ id }));
-                }
-                sheetsToFetchCacheRef.current = sheetsList;
+                // If specific sheets are targeted, keep them; otherwise leave empty to search all sheets via fast backend API
+                sheetsToFetchCacheRef.current = targetSheetIds.map(id => ({ id }));
             } catch (err) {
-                console.error("Failed to fetch sheets list:", err);
+                console.error("Failed to parse template sheet IDs:", err);
             }
         };
 
         if (isOpen) {
             fetchSheetsList();
             setInventoryData([]);
+            setIsSearching(false);
         }
     }, [isOpen, template]);
 
@@ -276,7 +271,7 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
     const formattedInvTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
     const todayIso = new Date().toISOString().split('T')[0];
     const [invoiceDate, setInvoiceDate] = useState(todayIso);
-    const formatDateDMY = (iso) => { if (!iso) return ''; const [y, m, d] = iso.split('-'); return d + '/' + m + '/' + y; };
+    // formatDateDMY imported from invoicePdfHelper
     const isWholesale = template?.isProductBased;
 
     // visible columns state for the settings dropdown
@@ -449,45 +444,60 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
         }
         setItems(items.map(item => item.id === id ? { ...item, ...updatedItem } : item));
 
-        if (field === 'Product Name' && value.length >= 1) {
+        if (field === 'Product Name' && value && value.trim().length >= 1) {
             if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+            setIsSearching(true);
             searchTimeoutRef.current = setTimeout(async () => {
                 try {
-                    const currentSheets = sheetsToFetchCacheRef.current; if (currentSheets.length === 0) { return; }
+                    const targetIds = (sheetsToFetchCacheRef.current || []).map(s => s.id).filter(Boolean);
+                    const sheetIdsParam = targetIds.length > 0 && targetIds.length < 30 ? targetIds.join(',') : '';
+                    
+                    const res = await apiClient.get(`/sheets/products/search?q=${encodeURIComponent(value.trim())}${sheetIdsParam ? `&sheetIds=${sheetIdsParam}` : ''}`);
+                    const results = res.data?.data || [];
 
-                    const fetchPromises = currentSheets.map(sheet => apiClient.get('/sheets/' + sheet.id + '/data?search=' + encodeURIComponent(value)));
-                    const responses = await Promise.all(fetchPromises);
+                    // Pre-resolve image URLs once upon response
+                    const baseUrl = (apiClient && apiClient.defaults && apiClient.defaults.baseURL) ? apiClient.defaults.baseURL : 'http://localhost:6041/api';
+                    const serverBase = baseUrl.replace('/api', '');
 
-                    let allParsedData = [];
-                    responses.forEach(res => {
-                        const { grid = [] } = res.data.data;
-                        const parsedData = grid.map(row => {
-                            const rowData = {};
-                            (row.cells || []).forEach(cell => {
-                                let colName = (cell.columnName || '').trim();
-                                const upperColName = colName.toUpperCase();
-
-                                if (upperColName === 'GST%' || upperColName === 'GST') colName = 'GST';
-                                else if (upperColName === 'PRODUCT NAME') colName = 'Product Name';
-                                else if (upperColName === 'MRP') colName = 'MRP';
-                                else if (upperColName === 'DISCOUNT') colName = 'Discount';
-                                else if (upperColName === 'SELLING RATE') colName = 'Selling Rate';
-                                else if (upperColName === 'IMAGE' || upperColName === 'PRODUCT IMAGE') colName = 'Image';
-                                else if (upperColName === 'COMPOSITION') colName = 'Composition';
-
-                                rowData[colName] = cell.computedValue || cell.rawValue || '';
-                            });
-                            return rowData;
-                        });
-                        allParsedData = [...allParsedData, ...parsedData];
+                    const cleanedResults = results.map(prod => {
+                        let imgSrc = prod['Image'] || prod['image'] || prod['IMAGE'] || prod['Product Image'] || '';
+                        if (imgSrc) {
+                            if (typeof imgSrc === 'string' && imgSrc.includes('=')) {
+                                const match = imgSrc.match(/IMAGE\(["'](.*?)["']\)/i);
+                                if (match) imgSrc = match[1];
+                            }
+                            let parseAttempts = 0;
+                            while (typeof imgSrc === 'string' && (imgSrc.startsWith('[') || imgSrc.startsWith('{') || imgSrc.startsWith('"')) && parseAttempts < 3) {
+                                try {
+                                    const parsed = JSON.parse(imgSrc);
+                                    if (typeof parsed === 'string' && parsed === imgSrc) break;
+                                    imgSrc = parsed;
+                                } catch (e) { break; }
+                                parseAttempts++;
+                            }
+                            if (Array.isArray(imgSrc) && imgSrc.length > 0) imgSrc = imgSrc[0];
+                            if (typeof imgSrc === 'object' && imgSrc !== null) imgSrc = imgSrc.url || imgSrc.src || '';
+                            if (typeof imgSrc === 'string') {
+                                imgSrc = imgSrc.trim();
+                                if (imgSrc && !imgSrc.startsWith('http') && !imgSrc.startsWith('data:')) {
+                                    if (!imgSrc.startsWith('/uploads/')) imgSrc = '/uploads/' + imgSrc.replace(/^\/?uploads\/?/, '');
+                                    imgSrc = serverBase + imgSrc;
+                                }
+                            }
+                        }
+                        return { ...prod, _resolvedImgSrc: imgSrc || '' };
                     });
 
-                    allParsedData = allParsedData.filter(d => d['Product Name']);
-                    setInventoryData(allParsedData);
+                    setInventoryData(cleanedResults);
                 } catch (err) {
                     console.error('Failed to fetch inventory search results:', err);
+                } finally {
+                    setIsSearching(false);
                 }
-            }, 300);
+            }, 200);
+        } else if (field === 'Product Name' && (!value || value.trim() === '')) {
+            setInventoryData([]);
+            setIsSearching(false);
         }
     };
 
@@ -622,9 +632,7 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
     };
 
     const handleSaveInvoice = async () => {
-        try {
-            alert('Save clicked! canSave=' + canSave + ' validRows=' + validRows.length);
-        } catch(e) {}
+        // Save invoice
         if (!canSave) {
             alert(validRows.length === 0 ? "Please add at least one product with a name." : "Please enter a product name for all rows or delete empty rows.");
             return;
@@ -934,26 +942,109 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
                                     <div className="text-gray-800 leading-tight">
                                         <b>Name : </b>
                                         <span>{party?.name || 'CASH CUSTOMER'}</span>
+                                        {Boolean(party?.isCardioDiabetic || party?.cardioDiabetic) && (
+                                            <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold bg-red-600 text-white ml-1.5 shadow-xs align-middle" title="Cardio Diabetic (CD)">
+                                                CD
+                                            </span>
+                                        )}
                                     </div>
-                                    {party?.contact && (
+                                    {(party?.contact || party?.phone) && (
                                         <div className="text-gray-800 leading-tight">
                                             <b>Phone : </b>
-                                            <span>{party.contact}</span>
+                                            <span>{party?.contact || party?.phone}</span>
                                         </div>
                                     )}
-                                    {(party?.age || party?.gender) && (
+                                    {(party?.place || (!party?.address && party?.email && !party?.email.includes('@'))) && (
                                         <div className="text-gray-800 leading-tight">
-                                            {party?.age && <span><b>Age : </b>{party.age}</span>}
-                                            {party?.age && party?.gender && <span> &nbsp;|&nbsp; </span>}
+                                            <b>Place : </b>
+                                            <span>{party?.place || party?.email}</span>
+                                        </div>
+                                    )}
+                                    {(() => {
+                                        const billing = party?.billingAddress || party?.address || '';
+                                        const shipping = party?.shippingAddress || '';
+                                        if (shipping && billing && shipping.trim().toLowerCase() !== billing.trim().toLowerCase()) {
+                                            return (
+                                                <React.Fragment>
+                                                    <div className="text-gray-800 leading-tight">
+                                                        <b>Billing Address : </b>
+                                                        <span>{billing}</span>
+                                                    </div>
+                                                    <div className="text-gray-800 leading-tight">
+                                                        <b>Shipping Address : </b>
+                                                        <span>{shipping}</span>
+                                                    </div>
+                                                </React.Fragment>
+                                            );
+                                        }
+                                        const singleAddr = billing || shipping;
+                                        if (singleAddr) {
+                                            return (
+                                                <div className="text-gray-800 leading-tight">
+                                                    <b>Address : </b>
+                                                    <span>{singleAddr}</span>
+                                                </div>
+                                            );
+                                        }
+                                        return null;
+                                    })()}
+                                    {(party?.age || party?.gender || party?.dobYear) && (
+                                        <div className="text-gray-800 leading-tight">
+                                            {(party?.age || party?.dobYear) && (
+                                                <span>
+                                                    <b>Age : </b>
+                                                    {party?.age ? party.age : `${new Date().getFullYear() - Number(party.dobYear)}`}
+                                                </span>
+                                            )}
+                                            {(party?.age || party?.dobYear) && party?.gender && <span> &nbsp;|&nbsp; </span>}
                                             {party?.gender && <span><b>Gender : </b>{party.gender}</span>}
                                         </div>
                                     )}
-
-                                    {/* Additional Data or Fallbacks */}
+                                    {party?.email && party.email.includes('@') && party.email !== party?.place && (
+                                        <div className="text-gray-800 leading-tight">
+                                            <b>Email : </b>
+                                            <span>{party.email}</span>
+                                        </div>
+                                    )}
+                                    {(party?.dlNo || party?.dl) && (
+                                        <div className="text-gray-800 leading-tight">
+                                            <b>DL No : </b>
+                                            <span>{party?.dlNo || party?.dl}</span>
+                                        </div>
+                                    )}
+                                    {(party?.gstinNo || party?.gstin) && (
+                                        <div className="text-gray-800 leading-tight">
+                                            <b>GSTIN : </b>
+                                            <span>{party?.gstinNo || party?.gstin}</span>
+                                        </div>
+                                    )}
+                                    {(party?.panNo || party?.pan) && (
+                                        <div className="text-gray-800 leading-tight">
+                                            <b>PAN : </b>
+                                            <span>{party?.panNo || party?.pan}</span>
+                                        </div>
+                                    )}
+                                    {party?.notes && (
+                                        <div className="text-gray-800 leading-tight">
+                                            <b>Notes : </b>
+                                            <span>{party.notes}</span>
+                                        </div>
+                                    )}
+                                    {/* Additional Data */}
                                     {(() => {
                                         let pData = party?.additionalData;
                                         if (typeof pData === 'string') {
-                                            try { pData = JSON.parse(pData); } catch (e) { pData = []; }
+                                            try { pData = JSON.parse(pData); } catch (e) {
+                                                if (pData.includes(':')) {
+                                                    const parts = pData.split(':');
+                                                    pData = [{ key: parts[0].trim(), value: parts.slice(1).join(':').trim() }];
+                                                } else {
+                                                    pData = [{ key: '', value: pData }];
+                                                }
+                                            }
+                                        }
+                                        if (typeof pData === 'object' && pData !== null && !Array.isArray(pData)) {
+                                            pData = Object.entries(pData).map(([key, value]) => ({ key, value }));
                                         }
                                         if (Array.isArray(pData) && pData.length > 0) {
                                             return pData.map((data, idx) => {
@@ -961,39 +1052,41 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
                                                 const key = isObj ? data.key : (typeof data === 'string' && data.includes(':') ? data.split(':')[0].trim() : '');
                                                 const val = isObj ? data.value : (typeof data === 'string' && data.includes(':') ? data.split(':').slice(1).join(':').trim() : data);
                                                 if (!val && !key) return null;
+                                                if ((key && key.toLowerCase() === 'age') || (!key && party?.age && String(val).trim() === String(party.age).trim())) {
+                                                    return null;
+                                                }
                                                 const displayKey = key ? (key.trim().endsWith(':') ? key.trim().slice(0, -1).trim() : key.trim()) : '';
                                                 return (
-                                                    <div key={idx} className="text-gray-800 leading-tight">
+                                                    <div key={`extra-${idx}`} className="text-gray-800 leading-tight">
                                                         {displayKey ? <b>{displayKey} : </b> : null}
                                                         <span>{val}</span>
                                                     </div>
                                                 );
                                             });
                                         }
-                                        return (
-                                            <React.Fragment>
-                                                {party?.address && (
-                                                    <div className="leading-tight uppercase text-gray-800">
-                                                        <b>Address : </b>
-                                                        <span>{party.address}</span>
+                                        return null;
+                                    })()}
+                                    {/* Custom Fields */}
+                                    {(() => {
+                                        let cFields = party?.customFields;
+                                        if (typeof cFields === 'string') {
+                                            try { cFields = JSON.parse(cFields); } catch (e) { cFields = []; }
+                                        }
+                                        if (Array.isArray(cFields) && cFields.length > 0) {
+                                            return cFields.map((field, idx) => {
+                                                if (!field) return null;
+                                                const key = field.key || field.label || '';
+                                                const val = field.value !== undefined ? field.value : String(field);
+                                                if (!val && !key) return null;
+                                                return (
+                                                    <div key={`custom-${idx}`} className="text-gray-800 leading-tight">
+                                                        {key ? <b>{key} : </b> : null}
+                                                        <span>{val}</span>
                                                     </div>
-                                                )}
-                                                {(party?.place || (!party?.address && party?.email)) && (
-                                                    <div className="leading-tight uppercase text-gray-800">
-                                                        <b>Place : </b>
-                                                        <span>{party?.place || party?.email}</span>
-                                                    </div>
-                                                )}
-
-                                                {isWholesale && (
-                                                    <React.Fragment>
-                                                        {party?.dlNo && <div className="text-gray-800">{party.dlNo}</div>}
-                                                        {party?.gstinNo && <div className="text-gray-800">{party.gstinNo}</div>}
-                                                    </React.Fragment>
-                                                )}
-                                                {party?.panNo && <div className="text-gray-800">{party.panNo}</div>}
-                                            </React.Fragment>
-                                        );
+                                                );
+                                            });
+                                        }
+                                        return null;
                                     })()}
                                 </div>
                             </div>
@@ -1036,57 +1129,15 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
                                                                     className="w-full bg-transparent border-none outline-none text-center text-[10px] font-mono text-black m-0 p-0 h-full resize-none overflow-hidden block" style={{ minHeight: '30px', lineHeight: '1.2' }}
                                                                     placeholder={col}
                                                                 />
-                                                                {activeDropdownRow === item.id && inventoryData.length > 0 && (
-                                                                    <div className="absolute z-[100] bg-white border border-gray-200 shadow-xl max-h-60 overflow-y-auto min-w-[350px] max-w-[500px] w-max top-full left-0 mt-1 rounded text-left no-print">
-                                                                        {isSearching ? (
-                                                                            <div className="p-4 text-center text-gray-500 text-xs flex justify-center items-center gap-2">
-                                                                                <div className="w-3 h-3 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-                                                                                Searching...
+                                                                {activeDropdownRow === item.id && (inventoryData.length > 0 || isSearching) && (
+                                                                    <div className="absolute z-[100] bg-white border border-gray-200 shadow-xl max-h-64 overflow-y-auto min-w-[350px] max-w-[500px] w-max top-full left-0 mt-1 rounded text-left no-print">
+                                                                        {isSearching && inventoryData.length === 0 ? (
+                                                                            <div className="p-3 text-center text-gray-500 text-xs flex justify-center items-center gap-2">
+                                                                                <div className="w-3.5 h-3.5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                                                                                Searching inventory...
                                                                             </div>
-                                                                        ) : inventoryData.map((prod, idx) => {
-                                                                            let imgSrc = prod['Image'] || prod['image'] || prod['IMAGE'] || prod['Img'] || prod['img'] || prod['IMG'] || prod['Product Image'] || prod['product image'];
-
-                                                                            if (imgSrc) {
-                                                                                if (typeof imgSrc === 'string' && imgSrc.includes('=')) {
-                                                                                    const match = imgSrc.match(/IMAGE\(["'](.*?)["']\)/i);
-                                                                                    if (match) imgSrc = match[1];
-                                                                                }
-
-                                                                                let parseAttempts = 0;
-                                                                                while (typeof imgSrc === 'string' && (imgSrc.startsWith('[') || imgSrc.startsWith('{') || imgSrc.startsWith('"')) && parseAttempts < 3) {
-                                                                                    try {
-                                                                                        const parsed = JSON.parse(imgSrc);
-                                                                                        if (typeof parsed === 'string' && parsed === imgSrc) break;
-                                                                                        imgSrc = parsed;
-                                                                                    } catch (e) {
-                                                                                        break;
-                                                                                    }
-                                                                                    parseAttempts++;
-                                                                                }
-
-                                                                                if (Array.isArray(imgSrc) && imgSrc.length > 0) {
-                                                                                    imgSrc = imgSrc[0];
-                                                                                }
-
-                                                                                if (typeof imgSrc === 'object' && imgSrc !== null) {
-                                                                                    imgSrc = imgSrc.url || imgSrc.src || '';
-                                                                                }
-
-                                                                                if (typeof imgSrc === 'string') {
-                                                                                    imgSrc = imgSrc.trim();
-                                                                                    if (imgSrc && !imgSrc.startsWith('http') && !imgSrc.startsWith('data:')) {
-                                                                                        let path = imgSrc;
-                                                                                        if (!path.startsWith('/uploads/') && !path.startsWith('uploads/')) {
-                                                                                            path = '/uploads/' + path;
-                                                                                        } else if (path.startsWith('uploads/')) {
-                                                                                            path = '/' + path;
-                                                                                        }
-                                                                                        const baseUrl = (apiClient && apiClient.defaults && apiClient.defaults.baseURL) ? apiClient.defaults.baseURL : 'http://localhost:6041/api';
-                                                                                        imgSrc = baseUrl.replace('/api', '') + path;
-                                                                                    }
-                                                                                }
-                                                                            }
-
+                                                                        ) : inventoryData.slice(0, 25).map((prod, idx) => {
+                                                                            const imgSrc = prod._resolvedImgSrc;
                                                                             return (
                                                                                 <div
                                                                                     key={idx}
@@ -1103,28 +1154,38 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
                                                                                         {prod['Composition'] && (
                                                                                             <div className="text-[9px] text-gray-500 mt-0.5 whitespace-normal leading-tight break-words">{prod['Composition']}</div>
                                                                                         )}
+                                                                                        <div className="flex items-center gap-2 mt-0.5 text-[9px] text-gray-600 font-medium">
+                                                                                            {prod['Selling Rate'] && <span>Rate: ₹{prod['Selling Rate']}</span>}
+                                                                                            {prod['MRP'] && <span className="line-through text-gray-400">MRP: ₹{prod['MRP']}</span>}
+                                                                                            {prod['GST'] && <span className="text-emerald-600 font-semibold">GST: {prod['GST']}%</span>}
+                                                                                        </div>
                                                                                     </div>
                                                                                 </div>
-                                                                            )
+                                                                            );
                                                                         })}
                                                                     </div>
                                                                 )}
                                                             </div>
-                                                        ) : colTypes && colTypes[col] === "date" ? (
-                                                            <span className="relative inline-flex items-center justify-center w-full h-full">
-                                                                <span className="text-[10px] font-mono text-black">{item[col] ? formatDateDMY(item[col]) : col}</span>
+                                                        ) : isDateColumn(col, colTypes) ? (
+                                                            <span className="relative inline-flex items-center justify-center w-full h-full min-h-[30px]">
+                                                                {item[col] ? (
+                                                                    <span className="text-[10px] font-mono text-black">{formatDateDMY(item[col])}</span>
+                                                                ) : (
+                                                                    <span className="text-[10px] font-mono text-gray-400 no-print">{col}</span>
+                                                                )}
                                                                 <input
                                                                     type="date"
-                                                                    value={item[col] || ""}
+                                                                    value={toDateInputValue(item[col])}
                                                                     onChange={(e) => handleItemChange(item.id, col, e.target.value)}
                                                                     onFocus={(e) => e.target.showPicker && e.target.showPicker()}
+                                                                    onClick={(e) => e.target.showPicker && e.target.showPicker()}
                                                                     className="absolute left-0 top-0 w-full h-full opacity-0 cursor-pointer"
                                                                     title={`Set ${col}`}
                                                                 />
                                                             </span>
                                                         ) : (
                                                             <input
-                                                                type={colTypes && colTypes[col] === "number" ? "number" : "text"}
+                                                                type={colTypes && (colTypes[col] === "number" || colTypes[col] === "currency") ? "number" : "text"}
                                                                 value={item[col] || ""}
                                                                 onChange={(e) => handleItemChange(item.id, col, e.target.value)}
                                                                 onBlur={col === "Qty" ? (e) => handleQtyBlur(item.id, e.target.value) : undefined}

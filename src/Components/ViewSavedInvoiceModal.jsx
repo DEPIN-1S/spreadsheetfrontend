@@ -3,6 +3,7 @@ import { FiX, FiPrinter, FiEdit2 } from 'react-icons/fi';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { parseGstPercent } from '../utils/gst';
+import { getInvoicePdfFilename, printInvoiceWithTitle, formatDateDMY, isDateColumn } from '../utils/invoicePdfHelper';
 
 export default function ViewSavedInvoiceModal({ isOpen, onClose, savedInvoice, currentBusiness, onEdit }) {
     const printAreaRef = useRef(null);
@@ -86,7 +87,7 @@ export default function ViewSavedInvoiceModal({ isOpen, onClose, savedInvoice, c
     const initialCols = cols.reduce((acc, c) => ({ ...acc, [c]: true }), { slNo: true });
     const visibleColumns = template?.visibleColumns ? (typeof template.visibleColumns === 'string' ? JSON.parse(template.visibleColumns) : template.visibleColumns) : initialCols;
     const templateName = template?.name || 'Standard Invoice';
-    const formatDateDMY = (d) => d;
+    // formatDateDMY imported from invoicePdfHelper
 
     // Auto-calculate financial numbers from items if not present in totals
     const totalNoCalc = (items || []).reduce((sum, item) => sum + (parseFloat(item.Qty) || 0), 0);
@@ -208,7 +209,7 @@ export default function ViewSavedInvoiceModal({ isOpen, onClose, savedInvoice, c
             <!DOCTYPE html>
             <html>
             <head>
-                <title>${invoiceNo || 'Tax Invoice'}</title>
+                <title>${getInvoicePdfFilename(invoiceNo, date)}</title>
                 ${styles}
                 <style>
                     @page {
@@ -275,7 +276,7 @@ export default function ViewSavedInvoiceModal({ isOpen, onClose, savedInvoice, c
             const pdfWidth = pdf.internal.pageSize.getWidth();
             const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
             pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-            pdf.save(`${invoiceNo || 'Invoice'}.pdf`);
+            pdf.save(`${getInvoicePdfFilename(invoiceNo, date)}.pdf`);
         } catch (e) {
             console.error('Error generating PDF', e);
             window.print();
@@ -454,72 +455,157 @@ export default function ViewSavedInvoiceModal({ isOpen, onClose, savedInvoice, c
                                 <div className="col-span-4 p-2.5 space-y-1 text-[11px] flex flex-col justify-between">
                                     <div className="space-y-1.5">
                                         <div className="text-center font-black text-[11px] underline uppercase tracking-wide text-black">
-                                            Customer Details
-                                        </div>
+                                        Customer Details
+                                    </div>
+                                    <div className="text-gray-800 leading-tight">
+                                        <b>Name : </b>
+                                        <span>{party?.name || 'CASH CUSTOMER'}</span>
+                                        {Boolean(party?.isCardioDiabetic || party?.cardioDiabetic) && (
+                                            <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold bg-red-600 text-white ml-1.5 shadow-xs align-middle" title="Cardio Diabetic (CD)">
+                                                CD
+                                            </span>
+                                        )}
+                                    </div>
+                                    {(party?.contact || party?.phone) && (
                                         <div className="text-gray-800 leading-tight">
-                                            <b>Name : </b>
-                                            <span>{party?.name || 'CASH CUSTOMER'}</span>
+                                            <b>Phone : </b>
+                                            <span>{party?.contact || party?.phone}</span>
                                         </div>
-                                        {party?.contact && (
-                                            <div className="text-gray-800 leading-tight">
-                                                <b>Phone : </b>
-                                                <span>{party.contact}</span>
-                                            </div>
-                                        )}
-                                        {(party?.age || party?.gender) && (
-                                            <div className="text-gray-800 leading-tight">
-                                                {party?.age && <span><b>Age : </b>{party.age}</span>}
-                                                {party?.age && party?.gender && <span> &nbsp;|&nbsp; </span>}
-                                                {party?.gender && <span><b>Gender : </b>{party.gender}</span>}
-                                            </div>
-                                        )}
-
-                                        {/* Additional Data or Fallbacks */}
-                                        {(() => {
-                                            let pData = party?.additionalData;
-                                            if (typeof pData === 'string') {
-                                                try { pData = JSON.parse(pData); } catch { pData = []; }
-                                            }
-                                            if (Array.isArray(pData) && pData.length > 0) {
-                                                return pData.map((data, idx) => {
-                                                    const isObj = typeof data === 'object' && data !== null;
-                                                    const key = isObj ? data.key : (typeof data === 'string' && data.includes(':') ? data.split(':')[0].trim() : '');
-                                                    const val = isObj ? data.value : (typeof data === 'string' && data.includes(':') ? data.split(':').slice(1).join(':').trim() : data);
-                                                    if (!val && !key) return null;
-                                                    const displayKey = key ? (key.trim().endsWith(':') ? key.trim().slice(0, -1).trim() : key.trim()) : '';
-                                                    return (
-                                                        <div key={idx} className="text-gray-800 leading-tight">
-                                                            {displayKey ? <b>{displayKey} : </b> : null}
-                                                            <span>{val}</span>
-                                                        </div>
-                                                    );
-                                                });
-                                            }
+                                    )}
+                                    {(party?.place || (!party?.address && party?.email && !party?.email.includes('@'))) && (
+                                        <div className="text-gray-800 leading-tight">
+                                            <b>Place : </b>
+                                            <span>{party?.place || party?.email}</span>
+                                        </div>
+                                    )}
+                                    {(() => {
+                                        const billing = party?.billingAddress || party?.address || '';
+                                        const shipping = party?.shippingAddress || '';
+                                        if (shipping && billing && shipping.trim().toLowerCase() !== billing.trim().toLowerCase()) {
                                             return (
                                                 <React.Fragment>
-                                                    {party?.address && (
-                                                        <div className="leading-tight uppercase text-gray-800">
-                                                            <b>Address : </b>
-                                                            <span>{party.address}</span>
-                                                        </div>
-                                                    )}
-                                                    {(party?.place || (!party?.address && party?.email)) && (
-                                                        <div className="leading-tight uppercase text-gray-800">
-                                                            <b>Place : </b>
-                                                            <span>{party?.place || party?.email}</span>
-                                                        </div>
-                                                    )}
-
-                                                    {isWholesale && (
-                                                        <React.Fragment>
-                                                            {party?.dlNo && <div className="text-gray-800">{party.dlNo}</div>}
-                                                            {party?.gstinNo && <div className="text-gray-800">{party.gstinNo}</div>}
-                                                        </React.Fragment>
-                                                    )}
-                                                    {party?.panNo && <div className="text-gray-800">{party.panNo}</div>}
+                                                    <div className="text-gray-800 leading-tight">
+                                                        <b>Billing Address : </b>
+                                                        <span>{billing}</span>
+                                                    </div>
+                                                    <div className="text-gray-800 leading-tight">
+                                                        <b>Shipping Address : </b>
+                                                        <span>{shipping}</span>
+                                                    </div>
                                                 </React.Fragment>
                                             );
-                                        })()}
+                                        }
+                                        const singleAddr = billing || shipping;
+                                        if (singleAddr) {
+                                            return (
+                                                <div className="text-gray-800 leading-tight">
+                                                    <b>Address : </b>
+                                                    <span>{singleAddr}</span>
+                                                </div>
+                                            );
+                                        }
+                                        return null;
+                                    })()}
+                                    {(party?.age || party?.gender || party?.dobYear) && (
+                                        <div className="text-gray-800 leading-tight">
+                                            {(party?.age || party?.dobYear) && (
+                                                <span>
+                                                    <b>Age : </b>
+                                                    {party?.age ? party.age : `${new Date().getFullYear() - Number(party.dobYear)}`}
+                                                </span>
+                                            )}
+                                            {(party?.age || party?.dobYear) && party?.gender && <span> &nbsp;|&nbsp; </span>}
+                                            {party?.gender && <span><b>Gender : </b>{party.gender}</span>}
+                                        </div>
+                                    )}
+                                    {party?.email && party.email.includes('@') && party.email !== party?.place && (
+                                        <div className="text-gray-800 leading-tight">
+                                            <b>Email : </b>
+                                            <span>{party.email}</span>
+                                        </div>
+                                    )}
+                                    {(party?.dlNo || party?.dl) && (
+                                        <div className="text-gray-800 leading-tight">
+                                            <b>DL No : </b>
+                                            <span>{party?.dlNo || party?.dl}</span>
+                                        </div>
+                                    )}
+                                    {(party?.gstinNo || party?.gstin) && (
+                                        <div className="text-gray-800 leading-tight">
+                                            <b>GSTIN : </b>
+                                            <span>{party?.gstinNo || party?.gstin}</span>
+                                        </div>
+                                    )}
+                                    {(party?.panNo || party?.pan) && (
+                                        <div className="text-gray-800 leading-tight">
+                                            <b>PAN : </b>
+                                            <span>{party?.panNo || party?.pan}</span>
+                                        </div>
+                                    )}
+                                    {party?.notes && (
+                                        <div className="text-gray-800 leading-tight">
+                                            <b>Notes : </b>
+                                            <span>{party.notes}</span>
+                                        </div>
+                                    )}
+                                    {/* Additional Data */}
+                                    {(() => {
+                                        let pData = party?.additionalData;
+                                        if (typeof pData === 'string') {
+                                            try { pData = JSON.parse(pData); } catch (e) {
+                                                if (pData.includes(':')) {
+                                                    const parts = pData.split(':');
+                                                    pData = [{ key: parts[0].trim(), value: parts.slice(1).join(':').trim() }];
+                                                } else {
+                                                    pData = [{ key: '', value: pData }];
+                                                }
+                                            }
+                                        }
+                                        if (typeof pData === 'object' && pData !== null && !Array.isArray(pData)) {
+                                            pData = Object.entries(pData).map(([key, value]) => ({ key, value }));
+                                        }
+                                        if (Array.isArray(pData) && pData.length > 0) {
+                                            return pData.map((data, idx) => {
+                                                const isObj = typeof data === 'object' && data !== null;
+                                                const key = isObj ? data.key : (typeof data === 'string' && data.includes(':') ? data.split(':')[0].trim() : '');
+                                                const val = isObj ? data.value : (typeof data === 'string' && data.includes(':') ? data.split(':').slice(1).join(':').trim() : data);
+                                                if (!val && !key) return null;
+                                                if ((key && key.toLowerCase() === 'age') || (!key && party?.age && String(val).trim() === String(party.age).trim())) {
+                                                    return null;
+                                                }
+                                                const displayKey = key ? (key.trim().endsWith(':') ? key.trim().slice(0, -1).trim() : key.trim()) : '';
+                                                return (
+                                                    <div key={`extra-${idx}`} className="text-gray-800 leading-tight">
+                                                        {displayKey ? <b>{displayKey} : </b> : null}
+                                                        <span>{val}</span>
+                                                    </div>
+                                                );
+                                            });
+                                        }
+                                        return null;
+                                    })()}
+                                    {/* Custom Fields */}
+                                    {(() => {
+                                        let cFields = party?.customFields;
+                                        if (typeof cFields === 'string') {
+                                            try { cFields = JSON.parse(cFields); } catch (e) { cFields = []; }
+                                        }
+                                        if (Array.isArray(cFields) && cFields.length > 0) {
+                                            return cFields.map((field, idx) => {
+                                                if (!field) return null;
+                                                const key = field.key || field.label || '';
+                                                const val = field.value !== undefined ? field.value : String(field);
+                                                if (!val && !key) return null;
+                                                return (
+                                                    <div key={`custom-${idx}`} className="text-gray-800 leading-tight">
+                                                        {key ? <b>{key} : </b> : null}
+                                                        <span>{val}</span>
+                                                    </div>
+                                                );
+                                            });
+                                        }
+                                        return null;
+                                    })()}
                                     </div>
                                 </div>
                             </div>
@@ -550,13 +636,13 @@ export default function ViewSavedInvoiceModal({ isOpen, onClose, savedInvoice, c
                                                                 <div className="relative w-full h-full">
                                                                     <div className="w-full text-center text-[10px] font-mono text-black m-0 p-0 h-full">{item[col] || ""}</div>
                                                                 </div>
-                                                            ) : colTypes && colTypes[col] === "date" ? (
-                                                                <span className="relative inline-flex items-center justify-center w-full h-full">
-                                                                    <span className="text-[10px] font-mono text-black">{item[col] ? formatDateDMY(item[col]) : col}</span>
+                                                            ) : isDateColumn(col, colTypes) ? (
+                                                                <span className="relative inline-flex items-center justify-center w-full h-full min-h-[24px]">
+                                                                    <span className="text-[10px] font-mono text-black">{item[col] ? formatDateDMY(item[col]) : ''}</span>
                                                                 </span>
                                                             ) : (
                                                                 <input
-                                                                    type={colTypes && colTypes[col] === "number" ? "number" : "text"}
+                                                                    type={colTypes && (colTypes[col] === "number" || colTypes[col] === "currency") ? "number" : "text"}
                                                                     value={item[col] || ""}
                                                                     readOnly
                                                                     className="w-full bg-transparent border-none outline-none text-center text-[10px] font-mono text-black m-0 p-0 h-full cursor-default"

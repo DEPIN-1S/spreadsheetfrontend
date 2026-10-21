@@ -37,3 +37,23 @@
 .animate-swing {
   animation: swing 1.8s ease-in-out infinite;
 }
+
+/* Sleek custom scrollbar for sidebar */
+.sidebar-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.sidebar-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 9999px;
+}
+.sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+.sidebar-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}

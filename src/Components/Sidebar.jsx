@@ -100,15 +100,15 @@ export default function Sidebar({ isCollapsed, toggleCollapse, mobileOpen, setMo
 
             {/* Sidebar */}
             <aside
-                className={`fixed top-0 left-0 h-screen bg-[#0F172A] text-white transition-all duration-300 ease-in-out z-50
+                className={`fixed top-0 left-0 h-screen bg-[#0F172A] text-white transition-all duration-300 ease-in-out z-50 overflow-hidden
                     ${isCollapsed ? "w-20" : "w-64"}
                     ${mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
                 `}
             >
-                <div className="flex flex-col h-full">
+                <div className="flex flex-col h-full overflow-hidden">
 
                     {/* Logo */}
-                    <div className={`p-6 flex items-center ${isCollapsed ? "justify-center px-2" : "gap-4"}`}>
+                    <div className={`p-6 flex items-center shrink-0 ${isCollapsed ? "justify-center px-2" : "gap-4"}`}>
                         <div className="h-10 w-10 rounded-full bg-teal-500 flex items-center justify-center shrink-0 text-white">
                             <LuFileSpreadsheet size={20} />
                         </div>
@@ -119,7 +119,7 @@ export default function Sidebar({ isCollapsed, toggleCollapse, mobileOpen, setMo
                     </div>
 
                     {/* User profile */}
-                    <div className={`mx-4 mb-6 p-3 rounded-xl bg-white/5 border border-white/5 flex items-center transition-all duration-300 ${isCollapsed ? "justify-center px-2" : "gap-3"}`}>
+                    <div className={`mx-4 mb-4 p-3 rounded-xl bg-white/5 border border-white/5 flex items-center shrink-0 transition-all duration-300 ${isCollapsed ? "justify-center px-2" : "gap-3"}`}>
                         <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center shrink-0 border-2 border-indigo-500 text-sm font-semibold uppercase text-white">
                             {userInitial}
                         </div>
@@ -129,7 +129,8 @@ export default function Sidebar({ isCollapsed, toggleCollapse, mobileOpen, setMo
                         </div>
                     </div>
 
-                    <nav className="flex-1 px-4 space-y-2">
+                    <nav className="flex-1 min-h-0 px-4 space-y-2 overflow-y-auto overflow-x-auto sidebar-scrollbar pb-3">
+
                         {navItems
                             .filter(item => {
                                 const isSuperOrAdmin = user?.role === 'admin' || user?.role === 'superadmin';
@@ -223,13 +224,17 @@ export default function Sidebar({ isCollapsed, toggleCollapse, mobileOpen, setMo
                                 </div>
                             );
                         })}
+                    
+                        {/* Notifications in the scrollable section */}
+                        {user && user.role !== 'admin' && (
+                            <div className="pt-1">
+                                <NotificationBell isCollapsed={isCollapsed} activePath={activePath} setActivePath={setActivePath} />
+                            </div>
+                        )}
                     </nav>
 
-                    {/* Footer */}
-                    <div className="p-4 border-t border-white/5 space-y-2">
-                        {user && user.role !== 'admin' && (
-                            <NotificationBell isCollapsed={isCollapsed} />
-                        )}
+                    {/* Footer - Fixed at bottom */}
+                    <div className="p-4 border-t border-white/5 space-y-2 shrink-0 bg-[#0F172A] z-10">
                         <button
                             onClick={toggleCollapse}
                             className={`hidden lg:flex w-full items-center p-3 rounded-lg text-gray-400 hover:bg-white/5 hover:text-white transition-all

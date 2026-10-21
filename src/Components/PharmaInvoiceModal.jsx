@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { FiX, FiPrinter, FiDownload, FiCheckCircle, FiSettings } from 'react-icons/fi';
 import { invInvoicesApi } from '../api/inventoryApiClient';
 import { parseGstPercent } from '../utils/gst';
+import { printInvoiceWithTitle } from '../utils/invoicePdfHelper';
 import rxLogo from '../assets/RX-pharma-logo.png';
 
 export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
@@ -365,27 +366,110 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                     </div>
                                     <div className="text-gray-800 leading-tight">
                                         <b>Name : </b>
-                                        <span>{partyName}</span>
+                                        <span>{(currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.name || partyName || 'WALK-IN CUSTOMER'}</span>
+                                        {Boolean((currentInv.party || {})?.isCardioDiabetic || (currentInv.party || {})?.cardioDiabetic) && (
+                                            <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold bg-red-600 text-white ml-1.5 shadow-xs align-middle" title="Cardio Diabetic (CD)">
+                                                CD
+                                            </span>
+                                        )}
                                     </div>
-                                    {partyContact && (
+                                    {((currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.contact || (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.phone) && (
                                         <div className="text-gray-800 leading-tight">
                                             <b>Phone : </b>
-                                            <span>{partyContact}</span>
+                                            <span>{(currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.contact || (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.phone}</span>
                                         </div>
                                     )}
-                                    {(partyAge || (currentInv.party && currentInv.party.gender)) && (
+                                    {((currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.place || (!(currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.address && (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.email && !(currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.email.includes('@'))) && (
                                         <div className="text-gray-800 leading-tight">
-                                            {partyAge && <span><b>Age : </b>{partyAge}</span>}
-                                            {partyAge && currentInv.party?.gender && <span> &nbsp;|&nbsp; </span>}
-                                            {currentInv.party?.gender && <span><b>Gender : </b>{currentInv.party.gender}</span>}
+                                            <b>Place : </b>
+                                            <span>{(currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.place || (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.email}</span>
                                         </div>
                                     )}
-
-                                    {/* Additional Data or Fallbacks */}
                                     {(() => {
-                                        let pData = partyAdditionalData;
+                                        const billing = (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.billingAddress || (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.address || '';
+                                        const shipping = (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.shippingAddress || '';
+                                        if (shipping && billing && shipping.trim().toLowerCase() !== billing.trim().toLowerCase()) {
+                                            return (
+                                                <React.Fragment>
+                                                    <div className="text-gray-800 leading-tight">
+                                                        <b>Billing Address : </b>
+                                                        <span>{billing}</span>
+                                                    </div>
+                                                    <div className="text-gray-800 leading-tight">
+                                                        <b>Shipping Address : </b>
+                                                        <span>{shipping}</span>
+                                                    </div>
+                                                </React.Fragment>
+                                            );
+                                        }
+                                        const singleAddr = billing || shipping;
+                                        if (singleAddr) {
+                                            return (
+                                                <div className="text-gray-800 leading-tight">
+                                                    <b>Address : </b>
+                                                    <span>{singleAddr}</span>
+                                                </div>
+                                            );
+                                        }
+                                        return null;
+                                    })()}
+                                    {((currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.age || (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.gender || (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.dobYear) && (
+                                        <div className="text-gray-800 leading-tight">
+                                            {((currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.age || (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.dobYear) && (
+                                                <span>
+                                                    <b>Age : </b>
+                                                    {(currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.age ? (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData }).age : `${new Date().getFullYear() - Number((currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData }).dobYear)}`}
+                                                </span>
+                                            )}
+                                            {((currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.age || (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.dobYear) && (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.gender && <span> &nbsp;|&nbsp; </span>}
+                                            {(currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.gender && <span><b>Gender : </b>{(currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData }).gender}</span>}
+                                        </div>
+                                    )}
+                                    {(currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.email && (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData }).email.includes('@') && (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData }).email !== (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.place && (
+                                        <div className="text-gray-800 leading-tight">
+                                            <b>Email : </b>
+                                            <span>{(currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData }).email}</span>
+                                        </div>
+                                    )}
+                                    {((currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.dlNo || (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.dl) && (
+                                        <div className="text-gray-800 leading-tight">
+                                            <b>DL No : </b>
+                                            <span>{(currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.dlNo || (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.dl}</span>
+                                        </div>
+                                    )}
+                                    {((currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.gstinNo || (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.gstin) && (
+                                        <div className="text-gray-800 leading-tight">
+                                            <b>GSTIN : </b>
+                                            <span>{(currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.gstinNo || (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.gstin}</span>
+                                        </div>
+                                    )}
+                                    {((currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.panNo || (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.pan) && (
+                                        <div className="text-gray-800 leading-tight">
+                                            <b>PAN : </b>
+                                            <span>{(currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.panNo || (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.pan}</span>
+                                        </div>
+                                    )}
+                                    {(currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.notes && (
+                                        <div className="text-gray-800 leading-tight">
+                                            <b>Notes : </b>
+                                            <span>{(currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData }).notes}</span>
+                                        </div>
+                                    )}
+                                    {/* Additional Data */}
+                                    {(() => {
+                                        let pData = (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.additionalData;
                                         if (typeof pData === 'string') {
-                                            try { pData = JSON.parse(pData); } catch (e) { pData = []; }
+                                            try { pData = JSON.parse(pData); } catch (e) {
+                                                if (pData.includes(':')) {
+                                                    const parts = pData.split(':');
+                                                    pData = [{ key: parts[0].trim(), value: parts.slice(1).join(':').trim() }];
+                                                } else {
+                                                    pData = [{ key: '', value: pData }];
+                                                }
+                                            }
+                                        }
+                                        if (typeof pData === 'object' && pData !== null && !Array.isArray(pData)) {
+                                            pData = Object.entries(pData).map(([key, value]) => ({ key, value }));
                                         }
                                         if (Array.isArray(pData) && pData.length > 0) {
                                             return pData.map((data, idx) => {
@@ -393,62 +477,41 @@ export default function PharmaInvoiceModal({ isOpen, onClose, invoice }) {
                                                 const key = isObj ? data.key : (typeof data === 'string' && data.includes(':') ? data.split(':')[0].trim() : '');
                                                 const val = isObj ? data.value : (typeof data === 'string' && data.includes(':') ? data.split(':').slice(1).join(':').trim() : data);
                                                 if (!val && !key) return null;
-                                                // Prevent duplicate age if already displayed above
-                                                if ((key && key.toLowerCase() === 'age') || (!key && partyAge && String(val).trim() === String(partyAge).trim())) {
+                                                if ((key && key.toLowerCase() === 'age') || (!key && (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.age && String(val).trim() === String((currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData }).age).trim())) {
                                                     return null;
                                                 }
                                                 const displayKey = key ? (key.trim().endsWith(':') ? key.trim().slice(0, -1).trim() : key.trim()) : '';
                                                 return (
-                                                    <div key={idx} className="text-gray-800 leading-tight">
+                                                    <div key={`extra-${idx}`} className="text-gray-800 leading-tight">
                                                         {displayKey ? <b>{displayKey} : </b> : null}
                                                         <span>{val}</span>
                                                     </div>
                                                 );
                                             });
                                         }
-                                        return (
-                                            <>
-                                                {/* Shipping Address for wholesale when different */}
-                                                {showShipping ? (
-                                                    <>
-                                                        {partyBillingAddress && (
-                                                            <div className="leading-tight uppercase text-gray-800">
-                                                                <b>Billing Address : </b>
-                                                                <span>{partyBillingAddress}</span>
-                                                            </div>
-                                                        )}
-                                                        {partyShippingAddress && (
-                                                            <div className="pt-1 mt-1 border-t border-dashed border-gray-300 leading-tight uppercase text-gray-800">
-                                                                <b>Shipping Address : </b>
-                                                                <span>{partyShippingAddress}</span>
-                                                            </div>
-                                                        )}
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        {partyAddress && (
-                                                            <div className="leading-tight uppercase text-gray-800">
-                                                                <b>Address : </b>
-                                                                <span>{partyAddress}</span>
-                                                            </div>
-                                                        )}
-                                                        {partyPlace && (
-                                                            <div className="leading-tight uppercase text-gray-800">
-                                                                <b>Place : </b>
-                                                                <span>{partyPlace}</span>
-                                                            </div>
-                                                        )}
-                                                    </>
-                                                )}
-                                                {isWholesale && (
-                                                    <>
-                                                        {partyDl && <div className="text-gray-800"><b>DL : </b><span>{partyDl}</span></div>}
-                                                        {partyGstin && <div className="text-gray-800"><b>GSTIN : </b><span>{partyGstin}</span></div>}
-                                                    </>
-                                                )}
-                                                {partyPan && <div className="text-gray-800"><b>PAN : </b><span>{partyPan}</span></div>}
-                                            </>
-                                        );
+                                        return null;
+                                    })()}
+                                    {/* Custom Fields */}
+                                    {(() => {
+                                        let cFields = (currentInv.party || { name: partyName, contact: partyContact, place: partyPlace, address: partyAddress, billingAddress: partyBillingAddress, shippingAddress: partyShippingAddress, age: partyAge, dlNo: partyDl, gstinNo: partyGstin, panNo: partyPan, additionalData: partyAdditionalData })?.customFields;
+                                        if (typeof cFields === 'string') {
+                                            try { cFields = JSON.parse(cFields); } catch (e) { cFields = []; }
+                                        }
+                                        if (Array.isArray(cFields) && cFields.length > 0) {
+                                            return cFields.map((field, idx) => {
+                                                if (!field) return null;
+                                                const key = field.key || field.label || '';
+                                                const val = field.value !== undefined ? field.value : String(field);
+                                                if (!val && !key) return null;
+                                                return (
+                                                    <div key={`custom-${idx}`} className="text-gray-800 leading-tight">
+                                                        {key ? <b>{key} : </b> : null}
+                                                        <span>{val}</span>
+                                                    </div>
+                                                );
+                                            });
+                                        }
+                                        return null;
                                     })()}
                                 </div>
                             </div>

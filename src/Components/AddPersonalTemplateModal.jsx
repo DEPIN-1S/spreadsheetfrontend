@@ -77,7 +77,7 @@ function PartySearchSelect({
                         <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                             {details.map((d, idx) => (
                                 <div key={idx} className="bg-gray-50 px-2.5 py-1.5 rounded-lg border border-gray-100 flex items-center justify-between">
-                                    <span className="text-gray-400 font-medium truncate">{d.key}</span>
+                                    <span className="text-gray-400 font-medium truncate">{d.key || "Party Name"}</span>
                                     <span className="text-gray-800 font-semibold truncate ml-2">{d.value || '—'}</span>
                                 </div>
                             ))}
@@ -157,7 +157,6 @@ export default function AddPersonalTemplateModal({ isOpen, onClose, onSave, part
     const [selectedFromPartyId, setSelectedFromPartyId] = useState('');
     const [selectedToPartyId, setSelectedToPartyId] = useState('');
     const [paymentModes, setPaymentModes] = useState({ cash: false, upi: false, bank: false });
-    const [paymentProof, setPaymentProof] = useState(null);
     const [columns, setColumns] = useState([]);
     const [newColumnName, setNewColumnName] = useState('');
     const [newColumnType, setNewColumnType] = useState('Text');
@@ -187,8 +186,13 @@ export default function AddPersonalTemplateModal({ isOpen, onClose, onSave, part
         }
         const party = parties.find(p => p.id === partyId);
         if (party) {
+            const isInd = Boolean(party.isIndividual || party.type === 'individual');
             const fields = [];
-            fields.push({ key: 'Name', value: party.name });
+            fields.push({ 
+                key: isInd ? 'Name' : '', 
+                value: party.name,
+                isIndividual: isInd 
+            });
             if (Array.isArray(party.customFields)) {
                 party.customFields.forEach(f => {
                     if (f.key && f.key.trim()) {
@@ -208,8 +212,13 @@ export default function AddPersonalTemplateModal({ isOpen, onClose, onSave, part
         }
         const party = parties.find(p => p.id === partyId);
         if (party) {
+            const isInd = Boolean(party.isIndividual || party.type === 'individual');
             const fields = [];
-            fields.push({ key: 'Client Name', value: party.name });
+            fields.push({ 
+                key: isInd ? 'Name' : '', 
+                value: party.name,
+                isIndividual: isInd 
+            });
             if (Array.isArray(party.customFields)) {
                 party.customFields.forEach(f => {
                     if (f.key && f.key.trim()) {
@@ -223,7 +232,12 @@ export default function AddPersonalTemplateModal({ isOpen, onClose, onSave, part
 
     const handleAddCustomColumn = () => {
         if (newColumnName.trim()) {
-            setColumns(prev => [...prev, { name: newColumnName.trim(), type: newColumnType }]);
+            const colName = newColumnName.trim();
+            const colType = newColumnType;
+            setColumns(prev => [...prev, { name: colName, type: colType }]);
+            if (colType === 'Currency' && !grandTotalColumn) {
+                setGrandTotalColumn(colName);
+            }
             setNewColumnName('');
             setNewColumnType('Text');
         }
@@ -231,24 +245,14 @@ export default function AddPersonalTemplateModal({ isOpen, onClose, onSave, part
 
     const removeColumn = (index) => {
         setColumns(prev => {
+            const removedCol = prev[index];
             const newCols = prev.filter((_, i) => i !== index);
-            if (grandTotalColumn === prev[index].name) {
-                setGrandTotalColumn('');
+            if (grandTotalColumn === removedCol?.name) {
+                const nextCurrency = newCols.find(c => c.type === 'Currency');
+                setGrandTotalColumn(nextCurrency ? nextCurrency.name : '');
             }
             return newCols;
         });
-    };
-
-    const handlePaymentProofUpload = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setPaymentProof(reader.result);
-            };
-            reader.readAsDataURL(file);
-        }
-        e.target.value = '';
     };
 
     const handleGstToggle = (e) => {
@@ -284,8 +288,8 @@ export default function AddPersonalTemplateModal({ isOpen, onClose, onSave, part
     const hasValidFrom = !!selectedFromPartyId && fromDetails.length > 0;
     const hasValidTo = !!selectedToPartyId && toDetails.length > 0;
     const hasColumns = columns.length > 0;
-    const hasNumberColumn = columns.some(c => c.type === 'Number');
-    const isTotalValid = hasNumberColumn ? !!grandTotalColumn : true;
+    const hasCurrencyColumn = columns.some(c => c.type === 'Currency');
+    const isTotalValid = hasCurrencyColumn ? !!grandTotalColumn : true;
 
     const isFormValid = hasValidFrom && hasValidTo && hasColumns && isTotalValid;
 
@@ -393,6 +397,8 @@ export default function AddPersonalTemplateModal({ isOpen, onClose, onSave, part
                                 >
                                     <option value="Text">Text</option>
                                     <option value="Number">Number</option>
+                                    <option value="Currency">Currency</option>
+                                    <option value="Date">Date</option>
                                 </select>
                                 <button 
                                     type="button" 
@@ -422,14 +428,14 @@ export default function AddPersonalTemplateModal({ isOpen, onClose, onSave, part
 
                             <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
                                 <h4 className="text-sm font-bold text-gray-800 mb-1 uppercase tracking-wider">Grand Total Of</h4>
-                                <p className="text-xs text-gray-500 mb-3">Select a numeric column to calculate the grand total automatically.</p>
+                                <p className="text-xs text-gray-500 mb-3">Select a currency column to calculate the grand total automatically.</p>
                                 <select 
                                     value={grandTotalColumn}
                                     onChange={(e) => setGrandTotalColumn(e.target.value)}
                                     className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 bg-white"
                                 >
                                     <option value="">None</option>
-                                    {columns.filter(c => c.type === 'Number').map((col, idx) => (
+                                    {columns.filter(c => c.type === 'Currency').map((col, idx) => (
                                         <option key={idx} value={col.name}>{col.name}</option>
                                     ))}
                                 </select>
@@ -482,48 +488,6 @@ export default function AddPersonalTemplateModal({ isOpen, onClose, onSave, part
                                 ))}
                             </div>
                         </div>
-
-                        {/* Payment Proof Upload */}
-                        <div className="bg-gray-50 p-5 rounded-xl border border-gray-200">
-                            <div className="flex items-center justify-between mb-4 border-b pb-2">
-                                <div>
-                                    <h3 className="text-lg font-bold text-gray-800">Payment Proof (Optional)</h3>
-                                    <p className="text-xs text-gray-500 mt-0.5">Upload transaction screenshot or receipt to display in a new page in the invoice PDF.</p>
-                                </div>
-                                {paymentProof && (
-                                    <button 
-                                        type="button" 
-                                        onClick={() => setPaymentProof(null)} 
-                                        className="text-xs font-semibold text-red-600 hover:text-red-700 hover:bg-red-50 px-2.5 py-1 rounded-lg transition-colors border border-red-200 cursor-pointer"
-                                    >
-                                        Remove Proof
-                                    </button>
-                                )}
-                            </div>
-
-                            {paymentProof ? (
-                                <div className="flex items-center gap-4 bg-white p-3.5 rounded-xl border border-gray-200 shadow-2xs">
-                                    <img src={paymentProof} alt="Payment Proof" className="w-20 h-20 object-contain rounded-lg border border-gray-200 bg-gray-50 shrink-0" />
-                                    <div>
-                                        <p className="text-xs font-bold text-gray-800">Payment Proof Attached</p>
-                                        <p className="text-[11px] text-gray-500 mt-0.5">Will be printed on a dedicated second page in the invoice PDF.</p>
-                                        <label className="mt-2 inline-flex items-center gap-1 cursor-pointer text-xs font-semibold text-indigo-600 hover:text-indigo-800">
-                                            <FiUpload size={12} /> Change Image
-                                            <input type="file" accept="image/*" className="hidden" onChange={handlePaymentProofUpload} />
-                                        </label>
-                                    </div>
-                                </div>
-                            ) : (
-                                <label className="flex flex-col items-center justify-center p-6 bg-white border-2 border-dashed border-gray-300 hover:border-indigo-400 rounded-xl cursor-pointer hover:bg-indigo-50/20 transition-all text-center group">
-                                    <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
-                                        <FiUpload size={18} />
-                                    </div>
-                                    <span className="text-xs font-bold text-gray-700">Click to upload Payment Proof</span>
-                                    <span className="text-[11px] text-gray-400 mt-0.5">Supports PNG, JPG, JPEG, WEBP</span>
-                                    <input type="file" accept="image/*" className="hidden" onChange={handlePaymentProofUpload} />
-                                </label>
-                            )}
-                        </div>
                     </form>
                 </div>
 
@@ -532,7 +496,7 @@ export default function AddPersonalTemplateModal({ isOpen, onClose, onSave, part
                         {!hasValidFrom && <p>• Select a 'From' party</p>}
                         {!hasValidTo && <p>• Select a Client ('To') party</p>}
                         {!hasColumns && <p>• Add at least one column</p>}
-                        {(hasColumns && hasNumberColumn && !isTotalValid) && <p>• Select a Grand Total Calculating Column</p>}
+                        {(hasColumns && hasCurrencyColumn && !isTotalValid) && <p>• Select a Grand Total Calculating Column</p>}
                     </div>
                     <div className="flex gap-3 shrink-0">
                         <button type="button" onClick={onClose} className="px-5 py-2 text-sm font-bold text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">

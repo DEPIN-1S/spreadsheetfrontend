@@ -154,11 +154,18 @@ export default function PartyInvoicesModal({
                                         return (
                                             <tr 
                                                 key={inv.id || Math.random()} 
-                                                className={inv.isCb ? 'hover:bg-indigo-50/40 transition-colors bg-amber-50/70 border-l-4 border-l-amber-500' : 'hover:bg-indigo-50/40 transition-colors'}
+                                                className={inv.isCb ? 'bg-amber-50/80 hover:bg-amber-100/70 border-l-4 border-l-amber-500 transition-colors' : 'hover:bg-indigo-50/40 transition-colors'}
                                             >
                                                 <td className="px-5 py-3.5">
-                                                    <div className="font-bold text-indigo-600 text-xs">
-                                                        {inv.invoiceNo || 'N/A'}
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-bold text-indigo-600 text-xs">
+                                                            {inv.invoiceNo || 'N/A'}
+                                                        </span>
+                                                        {inv.isCb && (
+                                                            <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-amber-100 text-amber-800 border border-amber-300 uppercase tracking-wide">
+                                                                CB
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     {tName && (
                                                         <div className="text-[11px] text-gray-400 mt-0.5 font-normal">

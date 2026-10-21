@@ -758,7 +758,14 @@ export default function FreelanceInvoices({ setMobileOpen, setActivePath }) {
                                                 paginatedParties.map((p) => (
                                                     <tr key={p.id} className="hover:bg-gray-50/80 transition-colors">
                                                         <td className="px-6 py-4 font-semibold text-gray-900 whitespace-nowrap">
-                                                            {p.name}
+                                                            <div className="flex items-center gap-2">
+                                                                <span>{p.name}</span>
+                                                                {(p.isIndividual || p.type === 'individual') && (
+                                                                    <span className="px-2 py-0.5 text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full">
+                                                                        Individual
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                         </td>
                                                         <td className="px-6 py-4">
                                                             {Array.isArray(p.customFields) && p.customFields.length > 0 ? (

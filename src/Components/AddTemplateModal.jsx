@@ -127,12 +127,21 @@ export default function AddTemplateModal({ isOpen, onClose, onSave, initialData 
             return;
         }
         setColumns([...columns, { name, type: newColumnType }]);
+        if (newColumnType === "currency" && !grandTotalCol) {
+            setGrandTotalCol(name);
+        }
         setNewColumnName("");
         setNewColumnType("text");
     };
 
     const handleRemoveColumn = (colToRemove) => {
-        setColumns(columns.filter(col => col !== colToRemove));
+        const colName = typeof colToRemove === "string" ? colToRemove : colToRemove.name;
+        const newCols = columns.filter(col => col !== colToRemove);
+        setColumns(newCols);
+        if (grandTotalCol === colName) {
+            const nextCurrency = newCols.find(c => typeof c !== "string" && c.type === "currency");
+            setGrandTotalCol(nextCurrency ? nextCurrency.name : "");
+        }
     };
 
     const handleToggleSheet = (sheetId) => {
@@ -374,10 +383,10 @@ export default function AddTemplateModal({ isOpen, onClose, onSave, initialData 
                                         {col}
                                     </div>
                                 ))}
-                                {columns.map((col, idx) => {
+                                {!isProductBased && columns.map((col, idx) => {
                                     const colName = typeof col === "string" ? col : col.name;
                                     const colType = typeof col === "string" ? null : col.type;
-                                    const typeColors = { text: "bg-gray-100 text-gray-500", number: "bg-blue-100 text-blue-600", date: "bg-orange-100 text-orange-600" };
+                                    const typeColors = { text: "bg-gray-100 text-gray-500", number: "bg-blue-100 text-blue-600", currency: "bg-emerald-100 text-emerald-600", date: "bg-orange-100 text-orange-600" };
                                     return (
                                         <div key={`cust-${idx}`} className="flex items-center gap-2 px-3 py-2 border rounded-lg text-sm font-medium bg-indigo-50 border-indigo-100 text-indigo-800">
                                             <FiCheckCircle className="text-indigo-500" />
@@ -397,6 +406,7 @@ export default function AddTemplateModal({ isOpen, onClose, onSave, initialData 
                                     );
                                 })}
                             </div>
+                              {!isProductBased && (
                               <div className="flex flex-wrap items-center gap-3 mt-4">
                                 <input 
                                     type="text" 
@@ -413,6 +423,7 @@ export default function AddTemplateModal({ isOpen, onClose, onSave, initialData 
                                 >
                                     <option value="text">Text</option>
                                     <option value="number">Number</option>
+                                    <option value="currency">Currency</option>
                                     <option value="date">Date</option>
                                 </select>
                                 <button 
@@ -424,6 +435,7 @@ export default function AddTemplateModal({ isOpen, onClose, onSave, initialData 
                                     Add Column
                                 </button>
                             </div>
+                            )}
                                                 </section>
 
                         {/* Grand Total Selector */}
@@ -432,14 +444,14 @@ export default function AddTemplateModal({ isOpen, onClose, onSave, initialData 
                                 <h3 className="text-sm font-bold uppercase tracking-wider text-gray-400 flex items-center gap-2 mb-2">
                                     Grand Total Of
                                 </h3>
-                                <p className="text-xs text-gray-500 mb-4">Select a numeric column to calculate the grand total automatically.</p>
+                                <p className="text-xs text-gray-500 mb-4">Select a currency column to calculate the grand total automatically.</p>
                                 <select 
                                     value={grandTotalCol} 
                                     onChange={(e) => setGrandTotalCol(e.target.value)}
                                     className="px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer text-gray-700 w-full max-w-xs"
                                 >
                                     <option value="">None</option>
-                                    {columns.filter(col => (typeof col !== "string" && col.type === "number") && !defaultColsUpper.includes((col.name || "").toUpperCase())).map((col, idx) => (
+                                    {columns.filter(col => (typeof col !== "string" && col.type === "currency") && !defaultColsUpper.includes((col.name || "").toUpperCase())).map((col, idx) => (
                                         <option key={idx} value={col.name}>{col.name}</option>
                                     ))}
                                 </select>
@@ -458,7 +470,7 @@ export default function AddTemplateModal({ isOpen, onClose, onSave, initialData 
                     </button>
                     <button 
                         onClick={() => {
-                                                                                    const baseFinalColumns = isProductBased ? [...defaultCols, ...columns] : columns;
+                                                                                    const baseFinalColumns = isProductBased ? defaultCols : columns;
                             const finalColumns = baseFinalColumns.map(c => {
                                 if (typeof c === "string") return c;
                                 if (c.name === grandTotalCol && !isProductBased) return { ...c, isGrandTotal: true };

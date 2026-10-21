@@ -63,33 +63,67 @@ export default function SelectPartyModal({ isOpen, onClose, onSelect, businessId
                         ) : parties.length === 0 ? (
                             <p className="text-center text-sm text-gray-500 py-4">No parties found.</p>
                         ) : (
-                            parties.map(party => (
+                            parties.map(party => {
+                                let extraData = [];
+                                try {
+                                    if (party.additionalData) {
+                                        extraData = typeof party.additionalData === 'string' ? JSON.parse(party.additionalData) : party.additionalData;
+                                    }
+                                } catch(e) {}
+                                const isCd = Boolean(
+                                    party.isCardioDiabetic || 
+                                    party.cardioDiabetic || 
+                                    (Array.isArray(extraData) && extraData.some(d => (d?.key || '').toLowerCase().includes('cardio') && String(d?.value).toLowerCase() === 'true'))
+                                );
+
+                                return (
                                 <button
                                     key={party.id}
                                     onClick={() => {
                                         onSelect(party);
                                     }}
-                                    className="w-full flex items-center justify-between gap-3 p-3 rounded-xl border border-gray-100 hover:border-indigo-200 hover:bg-indigo-50 transition-all text-left group"
+                                    className={`w-full flex items-center justify-between gap-3 p-3 rounded-xl border transition-all text-left group ${
+                                        isCd 
+                                            ? 'bg-red-50/80 border-red-200 hover:bg-red-100/80' 
+                                            : 'border-gray-100 hover:border-indigo-200 hover:bg-indigo-50'
+                                    }`}
                                 >
                                     <div className="flex items-center gap-3 min-w-0">
-                                        <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-200 shrink-0">
+                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                                            isCd ? 'bg-red-100 text-red-600' : 'bg-indigo-100 text-indigo-600 group-hover:bg-indigo-200'
+                                        }`}>
                                             <FiUser size={18} />
                                         </div>
                                         <div className="min-w-0">
-                                            <h4 className="font-semibold text-gray-900 text-sm truncate">{party.name}</h4>
+                                            <div className="flex items-center gap-2">
+                                                <h4 className="font-semibold text-gray-900 text-sm truncate">{party.name}</h4>
+                                                {isCd && (
+                                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-600 text-white shadow-xs shrink-0">
+                                                        CD
+                                                    </span>
+                                                )}
+                                            </div>
                                             <p className="text-xs text-gray-500 mt-0.5">{party.contact || party.place || party.email || 'No contact info'}</p>
                                         </div>
                                     </div>
 
-                                    {(party.age || party.gender) && (
-                                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200/80 shrink-0">
-                                            {party.age && <span>{party.age}</span>}
-                                            {party.age && party.gender && <span className="mx-1 text-indigo-300">/</span>}
-                                            {party.gender && <span>{party.gender}</span>}
-                                        </span>
-                                    )}
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                        {isCd && (
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-red-600 text-white shadow-xs">
+                                                CD
+                                            </span>
+                                        )}
+                                        {(party.age || party.gender) && (
+                                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200/80">
+                                                {party.age && <span>{party.age}</span>}
+                                                {party.age && party.gender && <span className="mx-1 text-indigo-300">/</span>}
+                                                {party.gender && <span>{party.gender}</span>}
+                                            </span>
+                                        )}
+                                    </div>
                                 </button>
-                            ))
+                                );
+                            })
                         )}
                     </div>
                 </div>

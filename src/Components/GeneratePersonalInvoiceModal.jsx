@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { FiX, FiPlus, FiTrash2, FiPrinter, FiSave, FiEdit2, FiUpload, FiImage, FiFileText } from 'react-icons/fi';
+import { FiX, FiPlus, FiTrash2, FiPrinter, FiSave, FiEdit2, FiUpload, FiImage, FiFileText, FiCalendar } from 'react-icons/fi';
+import { printInvoiceWithTitle, toDateInputValue } from '../utils/invoicePdfHelper';
 
 export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template, onSaveInvoice, mode, savedInvoice, allInvoices = [], parties = [], onEdit }) {
     const [invoiceNo, setInvoiceNo] = useState('');
@@ -13,6 +14,20 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
     const [sealImage, setSealImage] = useState('');
     const [signatureImage, setSignatureImage] = useState('');
     const [paymentProofImage, setPaymentProofImage] = useState('');
+
+    const formatDateDMY = (dateStr) => {
+        if (!dateStr) return '';
+        const parts = String(dateStr).split('-');
+        if (parts.length === 3) {
+            const [y, m, d] = parts;
+            return `${d}/${m}/${y}`;
+        }
+        return dateStr;
+    };
+
+    const handlePrint = () => {
+        printInvoiceWithTitle(invoiceNo, invoiceDate);
+    };
     const [isSaving, setIsSaving] = useState(false);
     const [paymentMethod, setPaymentMethod] = useState('');
     const isViewMode = mode === 'view';
@@ -65,8 +80,10 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
             if (!initialToDetails || Object.keys(initialToDetails).length === 0) {
                 initialToDetails = {};
                 if (parsedTemplate?.toDetails && Array.isArray(parsedTemplate.toDetails)) {
-                    parsedTemplate.toDetails.forEach(detail => {
-                        initialToDetails[detail.key] = detail.value || '';
+                    parsedTemplate.toDetails.forEach((detail, idx) => {
+                        const k = detail.key || `_name_field_${idx}`;
+                        initialToDetails[k] = detail.value || '';
+                        if (detail.key) initialToDetails[detail.key] = detail.value || '';
                     });
                 }
             }
@@ -95,8 +112,10 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
             setSignatureImage('');
             const initialToDetails = {};
             if (template.toDetails && Array.isArray(template.toDetails)) {
-                template.toDetails.forEach(detail => {
-                    initialToDetails[detail.key] = detail.value || '';
+                template.toDetails.forEach((detail, idx) => {
+                    const k = detail.key || `_name_field_${idx}`;
+                    initialToDetails[k] = detail.value || '';
+                    if (detail.key) initialToDetails[detail.key] = detail.value || '';
                 });
                 setToDetailsData(initialToDetails);
             }
@@ -354,7 +373,7 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
                         <button onClick={handleSave} disabled={isSaving} className={`flex items-center gap-2 px-4 py-2 ${isEditMode ? 'bg-amber-600 hover:bg-amber-700' : 'bg-indigo-600 hover:bg-indigo-700'} text-white text-xs font-semibold rounded-lg transition-colors shadow-sm`}>
                             <FiSave /> {isSaving ? (isEditMode ? 'Updating...' : 'Saving...') : (isEditMode ? 'Update & Save' : 'Save Invoice')}
                         </button>
-                        <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 text-white text-xs font-semibold rounded-lg transition-colors">
+                        <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 text-white text-xs font-semibold rounded-lg transition-colors">
                             <FiPrinter /> Print / PDF
                         </button>
                         <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-white rounded-lg transition-colors" title="Close">
@@ -383,7 +402,7 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
                                     <FiEdit2 size={14} /> Edit Invoice
                                 </button>
                             )}
-                            <button onClick={() => window.print()} className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors shadow-xs">
+                            <button onClick={handlePrint} className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors shadow-xs">
                                 Print / Save PDF
                             </button>
                             <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" title="Close">
@@ -406,9 +425,22 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
                             <div className="col-span-5 border-r-2 border-black p-2.5 space-y-1.5">
                                 <div className="flex items-center gap-2 mb-2">
                                     {template.logo && <img src={template.logo} alt="Logo" className="h-12 object-contain" />}
-                                    {template.fromDetails?.[0] && (
-                                        <span className="font-extrabold text-lg">{template.fromDetails[0].value || template.fromDetails[0].key}</span>
-                                    )}
+                                    {template.fromDetails?.[0] && (() => {
+                                        const isInd = template.fromDetails[0].isIndividual || template.fromDetails[0].key === 'Name';
+                                        if (isInd) {
+                                            return (
+                                                <div className="text-[15px] leading-tight text-gray-800">
+                                                    <b className="font-bold text-[15px]">Name : </b>
+                                                    <span className="font-bold text-[16px] text-gray-900">{template.fromDetails[0].value || template.fromDetails[0].key}</span>
+                                                </div>
+                                            );
+                                        }
+                                        return (
+                                            <span className="font-extrabold text-lg leading-tight text-gray-900 block">
+                                                {template.fromDetails[0].value || template.fromDetails[0].key}
+                                            </span>
+                                        );
+                                    })()}
                                 </div>
                                 <div className="space-y-1 mt-1">
                                     {template.fromDetails?.slice(1).map((detail, idx) => (
@@ -434,6 +466,22 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
                                                 readOnly={isViewMode} className="bg-transparent border-none outline-none w-full text-[11px] text-gray-900 m-0 p-0"
                                             />
                                         </div>
+                                        <div className="flex items-center gap-1">
+                                            <b className="whitespace-nowrap">Inv. Date :</b> 
+                                            <span className="relative inline-flex items-center gap-1 cursor-pointer text-gray-900">
+                                                <span>{formatDateDMY(invoiceDate)}</span>
+                                                {!isViewMode && (
+                                                    <input 
+                                                        type="date" 
+                                                        value={invoiceDate} 
+                                                        onChange={(e) => setInvoiceDate(e.target.value)} 
+                                                        onClick={(e) => { try { e.target.showPicker && e.target.showPicker(); } catch(err){} }}
+                                                        onFocus={(e) => { try { e.target.showPicker && e.target.showPicker(); } catch(err){} }}
+                                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                                                    />
+                                                )}
+                                            </span>
+                                        </div>
                                     </div>
 
                                     {template?.paymentModes && (template.paymentModes.cash || template.paymentModes.upi || template.paymentModes.bank) && (
@@ -441,7 +489,7 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
                                             {[
                                                 template.paymentModes.cash && 'Cash',
                                                 template.paymentModes.upi && 'UPI',
-                                                template.paymentModes.bank && 'Bank'
+                                                template.paymentModes.bank && 'Bank Transfer'
                                             ].filter(Boolean).map(mode => (
                                                 <span
                                                     key={mode}
@@ -457,22 +505,35 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
 
                             {/* Right Box: Buyer / Customer */}
                             <div className="col-span-4 p-2.5 space-y-1 text-[11px] flex flex-col justify-between">
-                                <div className="space-y-1.5">
+                                <div className="space-y-1">
                                     <div className="text-center font-black text-[11px] underline uppercase tracking-wide text-black mb-1">
                                         Billed To
                                     </div>
-                                    {template.toDetails?.map((detail, idx) => (
-                                        <div key={idx} className="flex items-center gap-1 leading-tight text-gray-800">
-                                            {detail.key ? <b className="whitespace-nowrap">{detail.key} : </b> : null}
-                                            <input 
-                                                type="text" 
-                                                value={toDetailsData[detail.key] || ''}
-                                                onChange={(e) => handleToDetailChange(detail.key, e.target.value)}
-                                                placeholder={`Enter ${detail.key}`}
-                                                readOnly={isViewMode} className="bg-transparent border-none outline-none w-full text-[11px] text-gray-900 m-0 p-0"
-                                            />
-                                        </div>
-                                    ))}
+                                    {template.toDetails?.map((detail, idx) => {
+                                        const fieldKey = detail.key || `_name_field_${idx}`;
+                                        const val = toDetailsData[fieldKey] !== undefined 
+                                            ? toDetailsData[fieldKey] 
+                                            : (detail.key && toDetailsData[detail.key] !== undefined ? toDetailsData[detail.key] : (detail.value || ''));
+                                        
+                                        const isNameField = idx === 0 || detail.key === 'Name' || detail.key === 'Client Name' || detail.key === '';
+                                        const showKey = isNameField
+                                            ? Boolean(detail.isIndividual || detail.key === 'Name')
+                                            : Boolean(detail.key && detail.key.trim() !== '');
+
+                                        return (
+                                            <div key={idx} className="flex items-center gap-1 leading-tight text-gray-800 text-[11px]">
+                                                {showKey ? <b className="whitespace-nowrap">{detail.key || 'Name'} : </b> : null}
+                                                <input 
+                                                    type="text" 
+                                                    value={val}
+                                                    onChange={(e) => handleToDetailChange(fieldKey, e.target.value)}
+                                                    placeholder={showKey ? `Enter ${detail.key || 'Name'}` : 'Enter Party Name'}
+                                                    readOnly={isViewMode} 
+                                                    className="bg-transparent border-none outline-none w-full text-[11px] text-gray-900 m-0 p-0"
+                                                />
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </div>
@@ -499,22 +560,28 @@ export default function GeneratePersonalInvoiceModal({ isOpen, onClose, template
                                             </td>
                                             {displayColumns.map(col => (
                                                 <td key={col.name} className="border-r border-black py-0 px-1 text-center font-mono relative">
-                                                    {col.type === 'Date' || col.name.toLowerCase().includes('date') ? (
-                                                        <input 
-                                                            type="date"
-                                                            value={item[col.name] || ''}
-                                                            onChange={(e) => handleItemChange(index, col.name, e.target.value)}
-                                                            readOnly={isViewMode}
-                                                            className="w-full bg-transparent border-none outline-none text-center text-[10px] font-mono text-black m-0 p-0 h-full"
-                                                            style={{ minHeight: '30px', lineHeight: '1.2' }}
-                                                        />
+                                                    {col.type?.toLowerCase() === 'date' || col.name?.toLowerCase().includes('date') ? (
+                                                        <span className="relative inline-flex items-center justify-center w-full h-full min-h-[30px]">
+                                                            <span className="text-[10px] font-mono text-black">{item[col.name] ? formatDateDMY(item[col.name]) : (isViewMode ? '' : col.name)}</span>
+                                                            {!isViewMode && (
+                                                                <input
+                                                                    type="date"
+                                                                    value={toDateInputValue(item[col.name])}
+                                                                    onChange={(e) => handleItemChange(index, col.name, e.target.value)}
+                                                                    onFocus={(e) => e.target.showPicker && e.target.showPicker()}
+                                                                    onClick={(e) => e.target.showPicker && e.target.showPicker()}
+                                                                    className="absolute left-0 top-0 w-full h-full opacity-0 cursor-pointer"
+                                                                    title={`Set ${col.name}`}
+                                                                />
+                                                            )}
+                                                        </span>
                                                     ) : (
                                                         <textarea 
                                                             rows={2}
                                                             value={item[col.name] || ''}
                                                             onChange={(e) => {
                                                                 let val = e.target.value;
-                                                                if (col.type === 'Number') {
+                                                                if (col.type === 'Number' || col.type === 'Currency') {
                                                                     val = val.replace(/[^0-9.]/g, '');
                                                                     const parts = val.split('.');
                                                                     if (parts.length > 2) val = parts[0] + '.' + parts.slice(1).join('');

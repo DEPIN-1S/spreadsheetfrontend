@@ -17,6 +17,7 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
     const [isUpdating, setIsUpdating] = useState(false);
     const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
     const isSuperAdmin = currentUser?.role === 'superadmin' || currentUser?.role === 'super_admin';
+    const isAdmin = currentUser?.role === 'admin' || isSuperAdmin;
     const [isSelectPartyOpen, setIsSelectPartyOpen] = useState(false);
     const [isGenerateInvoiceOpen, setIsGenerateInvoiceOpen] = useState(false);
     const [viewingSavedInvoice, setViewingSavedInvoice] = useState(null);
@@ -56,7 +57,7 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
     };
 
     const handleToggleCb = async (inv) => {
-        if (!isSuperAdmin || !business?.id || !inv?.id) return;
+        if (!isAdmin || !business?.id || !inv?.id) return;
         const newCb = !inv.isCb;
         setRecentInvoices(prev => prev.map(item => item.id === inv.id ? { ...item, isCb: newCb } : item));
         try {
@@ -70,7 +71,8 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
 
     const sortedAndFilteredInvoices = React.useMemo(() => {
         let result = [...(recentInvoices || [])].filter(Boolean);
-        if (!isSuperAdmin) {
+        // Hide CB-applied invoices in Recent Invoices for staff
+        if (!isAdmin) {
             result = result.filter(inv => !inv.isCb);
         }
         if (filterMonth) {
@@ -98,7 +100,7 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                 return `${y}-${m}-${d}` === filterDate;
             });
         }
-        if (sortOption === 'cb-newest' || sortOption === 'cb-oldest' || sortOption === 'cb-only') {
+        if (isAdmin && (sortOption === 'cb-newest' || sortOption === 'cb-oldest' || sortOption === 'cb-only')) {
             result = result.filter(inv => isCbTemplateInvoice(inv));
         }
 
@@ -135,7 +137,7 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
             return isNewest ? timeB - timeA : timeA - timeB;
         });
         return result;
-    }, [recentInvoices, filterMonth, filterDate, sortOption, isSuperAdmin]);
+    }, [recentInvoices, filterMonth, filterDate, sortOption, isAdmin]);
 
     const totalInvoicePages = Math.max(1, Math.ceil((sortedAndFilteredInvoices?.length || 0) / invoicePageSize));
     const paginatedInvoices = (sortedAndFilteredInvoices || []).slice((invoicePage - 1) * invoicePageSize, invoicePage * invoicePageSize);
@@ -225,9 +227,10 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
             const res = await businessApi.listParties(business.id, page, 10, search);
             const fetchedParties = res.data?.data?.parties || res.data?.parties || (Array.isArray(res.data?.data) ? res.data.data : []);
             setParties(fetchedParties);
-            if (res.data?.pagination) {
-                setTotalPages(res.data.pagination.totalPages || 1);
-                setCurrentPage(res.data.pagination.currentPage || 1);
+            const pagination = res.data?.data?.pagination || res.data?.pagination;
+            if (pagination) {
+                setTotalPages(pagination.totalPages || 1);
+                setCurrentPage(pagination.currentPage || 1);
             }
         } catch (error) {
             console.error("Failed to load business parties:", error);
@@ -260,6 +263,11 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
         if (business?.id) {
             fetchBusinessDetails();
             fetchTemplates();
+        }
+    }, [business?.id]);
+
+    useEffect(() => {
+        if (business?.id) {
             const delayDebounceFn = setTimeout(() => {
                 fetchParties(currentPage, searchQuery);
             }, 300);
@@ -597,8 +605,12 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                     >
                                         <option value="newest">Newest First</option>
                                         <option value="oldest">Oldest First</option>
-                                        <option value="cb-newest">Only CB Newest First</option>
-                                        <option value="cb-oldest">Only CB Oldest First</option>
+                                        {isAdmin && (
+                                            <>
+                                                <option value="cb-newest">Only CB Newest First</option>
+                                                <option value="cb-oldest">Only CB Oldest First</option>
+                                            </>
+                                        )}
                                     </select>
                                 </div>
                             </div>
@@ -611,13 +623,20 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                         <th className="px-6 py-3">Date & Time</th>
                                         <th className="px-6 py-3">Party Name</th>
                                         <th className="px-6 py-3 text-right">Total Amount</th>
-                                        {isSuperAdmin && <th className="px-6 py-3 text-center">CB</th>}
+                                        {isAdmin && <th className="px-6 py-3 text-center">CB</th>}
                                         <th className="px-6 py-3 text-right">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200 text-sm">
                                     {paginatedInvoices.length > 0 ? paginatedInvoices.map((inv) => {
                                         if (!inv) return null;
+                                        const matchedParty = (parties || []).find(p => p.name === inv.partyName || p.id === inv.partyId) || inv.party || inv.fullData?.party || null;
+                                        const isPartyCd = Boolean(
+                                            matchedParty?.isCardioDiabetic || 
+                                            matchedParty?.cardioDiabetic ||
+                                            inv.isCardioDiabetic ||
+                                            inv.party?.isCardioDiabetic
+                                        );
                                         return (
                                         <tr key={inv.id || Math.random()} className={`${inv.isCb ? 'bg-amber-50/70 hover:bg-amber-100/70 border-l-4 border-l-amber-500' : 'hover:bg-gray-50/80'} transition-colors group`}>
                                             <td className="px-6 py-4">
@@ -633,7 +652,19 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                                 {inv.date}
                                                 {inv.time && <div className="text-xs text-gray-400 mt-0.5">{inv.time}</div>}
                                             </td>
-                                            <td className="px-6 py-4 text-gray-900 font-semibold">{inv.partyName}</td>
+                                            <td className="px-6 py-4 text-gray-900 font-semibold">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span>{inv.partyName}</span>
+                                                    {isPartyCd && (
+                                                        <span 
+                                                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-600 text-white shadow-xs tracking-wider"
+                                                            title="Cardio Diabetic (CD)"
+                                                        >
+                                                            CD
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </td>
                                             <td className="px-6 py-4 text-right font-black text-gray-900">
                                                 ₹{(() => {
                                                     if (!inv) return '0.00';
@@ -661,16 +692,16 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                                     return inv.total || '0.00';
                                                 })()}
                                             </td>
-                                            {isSuperAdmin && (
+                                            {isAdmin && (
                                                 <td className="px-6 py-4 text-center">
-                                                    {isCbTemplateInvoice(inv) ? (
+                                                    {isCbTemplateInvoice(inv) || inv.isCb !== undefined ? (
                                                         <button 
                                                             type="button"
                                                             onClick={() => handleToggleCb(inv)} 
                                                             className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
                                                                 inv.isCb ? 'bg-amber-500 hover:bg-amber-600' : 'bg-gray-200 hover:bg-gray-300'
                                                             }`} 
-                                                            title={inv.isCb ? "CB Applied: Hidden from non-superadmin users (Click to turn OFF)" : "Apply CB: Hide from non-superadmin users (Click to turn ON)"}
+                                                            title={inv.isCb ? "CB Applied: Hidden from staff (Click to turn OFF)" : "Apply CB: Hide from staff (Click to turn ON)"}
                                                         >
                                                             <span className="sr-only">Toggle CB</span>
                                                             <span 
@@ -698,7 +729,7 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                         </tr>
                                     ); }) : (
                                         <tr>
-                                            <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
+                                            <td colSpan={isAdmin ? 6 : 5} className="px-6 py-8 text-center text-gray-500">
                                                 No recent invoices saved in this session.
                                             </td>
                                         </tr>
@@ -782,9 +813,33 @@ export default function BusinessDetails({ business, setActivePath, setCurrentBus
                                                 extraData = typeof party.additionalData === 'string' ? JSON.parse(party.additionalData) : party.additionalData;
                                             }
                                         } catch(e) {}
+                                        const isCd = Boolean(
+                                            party.isCardioDiabetic || 
+                                            party.cardioDiabetic || 
+                                            (Array.isArray(extraData) && extraData.some(d => (d?.key || '').toLowerCase().includes('cardio') && String(d?.value).toLowerCase() === 'true'))
+                                        );
                                         return (
-                                        <tr key={party.id} className="hover:bg-gray-50 transition-colors">
-                                            <td className="px-6 py-4 font-medium text-gray-900">{party.name}</td>
+                                        <tr 
+                                            key={party.id} 
+                                            className={`${
+                                                isCd 
+                                                    ? 'bg-red-50/80 hover:bg-red-100/80 border-l-4 border-l-red-500' 
+                                                    : 'hover:bg-gray-50'
+                                            } transition-colors group`}
+                                        >
+                                            <td className="px-6 py-4 font-medium text-gray-900">
+                                                <div className="flex items-center gap-2">
+                                                    <span>{party.name}</span>
+                                                    {isCd && (
+                                                        <span 
+                                                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold bg-red-600 text-white shadow-xs tracking-wider"
+                                                            title="Cardio Diabetic (CD)"
+                                                        >
+                                                            CD
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </td>
                                             <td className="px-6 py-4 text-gray-600">{party.contact}</td>
                                             <td className="px-6 py-4 text-gray-600">{party.place ? <span className="font-medium text-gray-900">{party.place}</span> : <span className="text-gray-400 italic">-</span>}</td>
                                             <td className="px-6 py-4 text-gray-600">

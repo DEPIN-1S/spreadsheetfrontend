@@ -3,6 +3,7 @@ import { FiX, FiPlus, FiTrash2, FiUser, FiTag } from 'react-icons/fi';
 
 export default function PersonalPartyModal({ isOpen, onClose, onSave, party = null, businessName = '' }) {
     const [name, setName] = useState('');
+    const [isIndividual, setIsIndividual] = useState(false);
     const [customFields, setCustomFields] = useState([{ key: '', value: '' }]);
     const [error, setError] = useState('');
     const [isSaving, setIsSaving] = useState(false);
@@ -11,12 +12,14 @@ export default function PersonalPartyModal({ isOpen, onClose, onSave, party = nu
         if (isOpen) {
             if (party) {
                 setName(party.name || '');
+                setIsIndividual(Boolean(party.isIndividual || party.type === 'individual'));
                 const fields = Array.isArray(party.customFields) && party.customFields.length > 0
                     ? party.customFields.map(f => ({ key: f.key || '', value: f.value || '' }))
                     : [{ key: '', value: '' }];
                 setCustomFields(fields);
             } else {
                 setName('');
+                setIsIndividual(false);
                 setCustomFields([{ key: '', value: '' }]);
             }
             setError('');
@@ -60,6 +63,8 @@ export default function PersonalPartyModal({ isOpen, onClose, onSave, party = nu
         try {
             await onSave({
                 name: name.trim(),
+                type: isIndividual ? 'individual' : 'party',
+                isIndividual: Boolean(isIndividual),
                 customFields: cleanedFields
             });
             onClose();
@@ -109,6 +114,27 @@ export default function PersonalPartyModal({ isOpen, onClose, onSave, party = nu
 
                     <form id="party-form" onSubmit={handleSubmit} className="space-y-6">
                         
+                        {/* Individual Toggle */}
+                        <div className="flex items-center justify-between p-3.5 bg-gray-50 border border-gray-200 rounded-xl transition-all">
+                            <div>
+                                <label className="text-xs font-bold text-gray-800 uppercase tracking-wider block">
+                                    Individual
+                                </label>
+                                <p className="text-[11px] text-gray-500 mt-0.5">
+                                    Toggle on if this party is an individual person (displays "Name :" on invoices).
+                                </p>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer select-none">
+                                <input 
+                                    type="checkbox" 
+                                    checked={isIndividual} 
+                                    onChange={(e) => setIsIndividual(e.target.checked)} 
+                                    className="sr-only peer"
+                                />
+                                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-hidden peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                            </label>
+                        </div>
+
                         {/* Party Name */}
                         <div>
                             <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
@@ -116,7 +142,7 @@ export default function PersonalPartyModal({ isOpen, onClose, onSave, party = nu
                             </label>
                             <input
                                 type="text"
-                                placeholder="e.g. Acme Corporation, John Doe, SkyTech LLC"
+                                placeholder={isIndividual ? "e.g. John Doe, Jane Smith" : "e.g. Acme Corporation, John Doe, SkyTech LLC"}
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
                                 autoFocus

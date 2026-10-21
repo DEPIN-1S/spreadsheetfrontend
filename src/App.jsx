@@ -24,6 +24,7 @@ import Ledger from "./Pages/Ledger";
 import InvoiceGenerator from "./Pages/InvoiceGenerator";
 import BusinessDetails from "./Pages/BusinessDetails";
 import FreelanceInvoices from "./Pages/FreelanceInvoices";
+import Notifications from "./Pages/Notifications";
 import { ClipboardProvider } from "./context/ClipboardContext";
 
 
@@ -175,6 +176,9 @@ function App() {
                     )}
                     {activePath === "/business-details" && (
                         <BusinessDetails business={currentBusiness} setActivePath={setActivePath} setMobileOpen={setMobileOpen} setCurrentBusiness={setCurrentBusiness} />
+                    )}
+                    {activePath === "/notifications" && (
+                        <Notifications setMobileOpen={setMobileOpen} setActivePath={setActivePath} />
                     )}
                     {activePath === "/messages" && (
                         <Messages setMobileOpen={setMobileOpen} />

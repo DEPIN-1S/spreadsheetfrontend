@@ -32,9 +32,20 @@ export default function ViewPersonalPartyModal({ isOpen, onClose, party, onEdit 
                 {/* Body */}
                 <div className="p-6 space-y-5 overflow-y-auto max-h-[70vh]">
                     <div>
-                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
-                            Party Name
-                        </label>
+                        <div className="flex items-center justify-between mb-1">
+                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                Party Name
+                            </label>
+                            {(party.isIndividual || party.type === 'individual') ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                    Individual
+                                </span>
+                            ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-600 border border-gray-200">
+                                    Organization / Business
+                                </span>
+                            )}
+                        </div>
                         <p className="text-base font-bold text-gray-900 bg-gray-50 px-4 py-2.5 rounded-xl border border-gray-200">
                             {party.name}
                         </p>

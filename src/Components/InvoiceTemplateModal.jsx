@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FiX, FiPrinter, FiDownload, FiSettings } from 'react-icons/fi';
+import { printInvoiceWithTitle } from '../utils/invoicePdfHelper';
 
 export default function InvoiceTemplateModal({ isOpen, onClose, business, template }) {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -218,16 +219,14 @@ export default function InvoiceTemplateModal({ isOpen, onClose, business, templa
                                         <span>SAMPLE CUSTOMER</span>
                                     </div>
                                     <div className="text-gray-800 leading-tight"><b>Phone : </b><span>9876543210</span></div>
-                                    <div className="leading-tight uppercase text-gray-800">123 SAMPLE ADDRESS, CITY, ST 12345</div>
-                                    {!isWholesale && <div className="text-gray-800">AGE 30</div>}
-                                    {isWholesale && (
-                                        <>
-                                            <div className="text-gray-800">SAMPLE-DL-123</div>
-                                            <div className="text-gray-800">SAMPLE-GST-123</div>
-                                        </>
-                                    )}
-                                    <div className="text-gray-800">DATA 1</div>
-                                    <div className="text-gray-800">DATA 2</div>
+                                    <div className="text-gray-800 leading-tight"><b>Place : </b><span>SAMPLE CITY</span></div>
+                                    <div className="text-gray-800 leading-tight"><b>Address : </b><span>123 SAMPLE ADDRESS, CITY, ST 12345</span></div>
+                                    <div className="text-gray-800 leading-tight"><b>Age : </b>30 &nbsp;|&nbsp; <b>Gender : </b>Male</div>
+                                    <div className="text-gray-800 leading-tight"><b>DL No : </b>SAMPLE-DL-123</div>
+                                    <div className="text-gray-800 leading-tight"><b>GSTIN : </b>SAMPLE-GST-123</div>
+                                    <div className="text-gray-800 leading-tight"><b>PAN : </b>SAMPLE-PAN-123</div>
+                                    <div className="text-gray-800 leading-tight"><b>DATA 1 : </b>ADDITIONAL INFO 1</div>
+                                    <div className="text-gray-800 leading-tight"><b>DATA 2 : </b>ADDITIONAL INFO 2</div>
                                 </div>
                             </div>
                         </div>

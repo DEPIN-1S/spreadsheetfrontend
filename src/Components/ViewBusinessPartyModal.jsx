@@ -11,6 +11,16 @@ export default function ViewBusinessPartyModal({ isOpen, onClose, party, onViewI
         }
     } catch(e) {}
 
+    const isCd = Boolean(
+        party.isCardioDiabetic || 
+        party.cardioDiabetic || 
+        (Array.isArray(extraData) && extraData.some(d => (d?.key || '').toLowerCase().includes('cardio') && String(d?.value).toLowerCase() === 'true'))
+    );
+
+    const displayExtraData = Array.isArray(extraData) 
+        ? extraData.filter(d => !((d?.key || '').toLowerCase().includes('cardio')))
+        : [];
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col">
@@ -20,7 +30,17 @@ export default function ViewBusinessPartyModal({ isOpen, onClose, party, onViewI
                             <FiUsers size={20} />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold text-gray-900">Party Details</h2>
+                            <div className="flex items-center gap-2.5">
+                                <h2 className="text-xl font-bold text-gray-900">Party Details</h2>
+                                {isCd && (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-black bg-red-600 text-white shadow-xs tracking-wider">
+                                        CD
+                                    </span>
+                                )}
+                            </div>
+                            {isCd && (
+                                <p className="text-xs text-red-600 font-semibold mt-0.5">Cardio Diabetic Patient / Party</p>
+                            )}
                         </div>
                     </div>
                     <button
@@ -35,7 +55,14 @@ export default function ViewBusinessPartyModal({ isOpen, onClose, party, onViewI
                     <div className="grid grid-cols-2 gap-4">
                         <div className={(party.age || party.gender) ? "col-span-1" : "col-span-1"}>
                             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Party Name</label>
-                            <p className="text-sm font-medium text-gray-900 bg-gray-50 px-3 py-2.5 rounded-xl border border-gray-100">{party.name}</p>
+                            <div className="flex items-center justify-between bg-gray-50 px-3 py-2.5 rounded-xl border border-gray-100">
+                                <span className="text-sm font-medium text-gray-900">{party.name}</span>
+                                {isCd && (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-red-600 text-white shadow-xs tracking-wider">
+                                        CD
+                                    </span>
+                                )}
+                            </div>
                         </div>
                         
                         <div className={(party.age || party.gender) ? "col-span-1" : "col-span-1"}>
@@ -59,11 +86,11 @@ export default function ViewBusinessPartyModal({ isOpen, onClose, party, onViewI
                             </div>
                     </div>
 
-                    {Array.isArray(extraData) && extraData.length > 0 && (
+                    {Array.isArray(displayExtraData) && displayExtraData.length > 0 && (
                         <div>
                             <h3 className="text-sm font-bold text-gray-700 mb-3 border-b border-gray-100 pb-2">Additional Information</h3>
                             <div className="space-y-2">
-                                {extraData.map((data, idx) => {
+                                {displayExtraData.map((data, idx) => {
                                     const isObj = typeof data === 'object' && data !== null;
                                     let key = isObj ? data.key : '';
                                     let value = isObj ? data.value : String(data);

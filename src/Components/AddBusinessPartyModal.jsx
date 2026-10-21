@@ -39,6 +39,7 @@ export default function AddBusinessPartyModal({ isOpen, onClose, onSave, initial
     const [place, setPlace] = useState("");
     const [age, setAge] = useState("");
     const [gender, setGender] = useState("");
+    const [isCardioDiabetic, setIsCardioDiabetic] = useState(false);
     const [additionalData, setAdditionalData] = useState([]);
     const [errors, setErrors] = useState({});
     const [serverError, setServerError] = useState("");
@@ -51,6 +52,15 @@ export default function AddBusinessPartyModal({ isOpen, onClose, onSave, initial
             setPlace(initialData.place || "");
             setAge(initialData.age ? String(initialData.age) : "");
             setGender(initialData.gender || "");
+            setIsCardioDiabetic(Boolean(
+                initialData.isCardioDiabetic ||
+                initialData.cardioDiabetic ||
+                (initialData.additionalData && (
+                    Array.isArray(initialData.additionalData)
+                        ? initialData.additionalData.some(d => (d?.key || "").toLowerCase().includes("cardio") && String(d?.value).toLowerCase() === "true")
+                        : String(initialData.additionalData).includes("cardio")
+                ))
+            ));
             setAdditionalData(parseAdditionalData(initialData.additionalData));
             setErrors({});
             setServerError("");
@@ -60,6 +70,8 @@ export default function AddBusinessPartyModal({ isOpen, onClose, onSave, initial
             setContact("");
             setAge("");
             setGender("");
+            setPlace("");
+            setIsCardioDiabetic(false);
             setAdditionalData([]);
             setErrors({});
             setServerError("");
@@ -140,15 +152,16 @@ export default function AddBusinessPartyModal({ isOpen, onClose, onSave, initial
         const cleanedData = additionalData
             .map(d => ({ key: (d.key || '').trim(), value: (d.value || '').trim() }))
             .filter(d => d.key !== "" && d.value !== "");
-        
+
         try {
             await onSave({
                 ...(initialData?.id ? { id: initialData.id } : {}),
                 name: name.trim(),
                 contact: contact.trim(),
-                  place: place ? place.trim() : null,
+                place: place ? place.trim() : null,
                 age: (age && age !== '.' && age !== '0.' && age !== '0') ? String(age).trim() : null,
                 gender: gender || null,
+                isCardioDiabetic: Boolean(isCardioDiabetic),
                 additionalData: cleanedData
             });
             onClose();
@@ -181,7 +194,7 @@ export default function AddBusinessPartyModal({ isOpen, onClose, onSave, initial
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
             {/* Backdrop */}
-            <div 
+            <div
                 className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
                 onClick={onClose}
             ></div>
@@ -205,7 +218,7 @@ export default function AddBusinessPartyModal({ isOpen, onClose, onSave, initial
                         <FiX size={20} />
                     </button>
                 </div>
-                
+
                 <form onSubmit={handleSubmit} noValidate className="p-6 flex-1 overflow-y-auto">
                     <div className="space-y-5">
 
@@ -218,8 +231,34 @@ export default function AddBusinessPartyModal({ isOpen, onClose, onSave, initial
                                 </button>
                             </div>
                         )}
-                        
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Cardio Diabetic Toggle */}
+                            <div className="md:col-span-2 flex items-center justify-between p-3.5 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100/70 transition-colors">
+                                <div className="flex items-center gap-3">
+                                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-black text-xs transition-colors ${isCardioDiabetic ? 'bg-red-600 text-white shadow-xs' : 'bg-gray-200 text-gray-500'
+                                        }`}>
+                                        CD
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm font-bold text-gray-900">Cardio Diabetic</span>
+
+                                        </div>
+                                        <p className="text-xs text-gray-500">Categorize this party under Cardio Diabetic (CD)</p>
+                                    </div>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                                    <input
+                                        type="checkbox"
+                                        checked={isCardioDiabetic}
+                                        onChange={(e) => setIsCardioDiabetic(e.target.checked)}
+                                        className="sr-only peer"
+                                    />
+                                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
+                                </label>
+                            </div>
+
                             <div className="md:col-span-2">
                                 <label className="block text-sm font-semibold text-gray-700 mb-1">
                                     Party Name <span className="text-red-500">*</span>
@@ -231,11 +270,10 @@ export default function AddBusinessPartyModal({ isOpen, onClose, onSave, initial
                                         setName(e.target.value);
                                         if (errors.name) setErrors(prev => ({ ...prev, name: '' }));
                                     }}
-                                    className={`w-full px-4 py-2.5 border rounded-lg outline-none transition-all text-sm ${
-                                        errors.name 
-                                            ? "border-red-400 bg-red-50/20 focus:ring-2 focus:ring-red-400/20 focus:border-red-500" 
+                                    className={`w-full px-4 py-2.5 border rounded-lg outline-none transition-all text-sm ${errors.name
+                                            ? "border-red-400 bg-red-50/20 focus:ring-2 focus:ring-red-400/20 focus:border-red-500"
                                             : "border-gray-300 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                    }`}
+                                        }`}
                                     placeholder="Enter party name"
                                     required
                                 />
@@ -245,7 +283,7 @@ export default function AddBusinessPartyModal({ isOpen, onClose, onSave, initial
                                     </p>
                                 )}
                             </div>
-                            
+
                             <div>
                                 <label className="block text-sm font-semibold text-gray-700 mb-1">
                                     Contact Number <span className="text-red-500">*</span>
@@ -257,11 +295,10 @@ export default function AddBusinessPartyModal({ isOpen, onClose, onSave, initial
                                         setContact(e.target.value);
                                         if (errors.contact) setErrors(prev => ({ ...prev, contact: '' }));
                                     }}
-                                    className={`w-full px-4 py-2.5 border rounded-lg outline-none transition-all text-sm ${
-                                        errors.contact 
-                                            ? "border-red-400 bg-red-50/20 focus:ring-2 focus:ring-red-400/20 focus:border-red-500" 
+                                    className={`w-full px-4 py-2.5 border rounded-lg outline-none transition-all text-sm ${errors.contact
+                                            ? "border-red-400 bg-red-50/20 focus:ring-2 focus:ring-red-400/20 focus:border-red-500"
                                             : "border-gray-300 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                    }`}
+                                        }`}
                                     placeholder="Phone/Mobile (10 digits)"
                                     required
                                 />
@@ -272,7 +309,7 @@ export default function AddBusinessPartyModal({ isOpen, onClose, onSave, initial
                                 )}
                             </div>
 
-                                                        <div>
+                            <div>
                                 <label className="block text-sm font-semibold text-gray-700 mb-1">
                                     Place <span className="text-xs text-gray-400 font-normal">(Optional)</span>
                                 </label>
@@ -319,11 +356,10 @@ export default function AddBusinessPartyModal({ isOpen, onClose, onSave, initial
                                             setAge('');
                                         }
                                     }}
-                                    className={`w-full px-4 py-2.5 border rounded-lg outline-none transition-all text-sm ${
-                                        errors.age 
-                                            ? "border-red-400 bg-red-50/20 focus:ring-2 focus:ring-red-400/20 focus:border-red-500" 
+                                    className={`w-full px-4 py-2.5 border rounded-lg outline-none transition-all text-sm ${errors.age
+                                            ? "border-red-400 bg-red-50/20 focus:ring-2 focus:ring-red-400/20 focus:border-red-500"
                                             : "border-gray-300 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                    }`}
+                                        }`}
                                     placeholder="e.g. 28 or .2 (<1 yr)"
                                 />
                                 {errors.age && (
@@ -358,7 +394,7 @@ export default function AddBusinessPartyModal({ isOpen, onClose, onSave, initial
                                     <h3 className="text-sm font-bold text-gray-700">Additional Information</h3>
                                     <p className="text-xs text-gray-500 mt-0.5">Add extra details as key-value pairs (e.g. GSTIN, DL No, Address)</p>
                                 </div>
-                                <button 
+                                <button
                                     type="button"
                                     onClick={handleAddDataField}
                                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors border border-indigo-100 shadow-sm"
@@ -386,8 +422,8 @@ export default function AddBusinessPartyModal({ isOpen, onClose, onSave, initial
                                 {additionalData.map((data, index) => (
                                     <div key={index} className="flex items-center gap-2 bg-gray-50/70 p-2 rounded-xl border border-gray-100 hover:border-gray-200 transition-colors">
                                         <div className="w-1/3 min-w-[130px]">
-                                            <input 
-                                                type="text" 
+                                            <input
+                                                type="text"
                                                 value={data.key}
                                                 onChange={(e) => handleDataChange(index, 'key', e.target.value)}
                                                 placeholder="e.g. GSTIN, DL No"
@@ -396,15 +432,15 @@ export default function AddBusinessPartyModal({ isOpen, onClose, onSave, initial
                                         </div>
                                         <span className="text-gray-400 font-bold">:</span>
                                         <div className="flex-1">
-                                            <input 
-                                                type="text" 
+                                            <input
+                                                type="text"
                                                 value={data.value}
                                                 onChange={(e) => handleDataChange(index, 'value', e.target.value)}
                                                 placeholder="Enter value"
                                                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all bg-white"
                                             />
                                         </div>
-                                        <button 
+                                        <button
                                             type="button"
                                             onClick={() => handleRemoveData(index)}
                                             className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0"
@@ -423,7 +459,7 @@ export default function AddBusinessPartyModal({ isOpen, onClose, onSave, initial
                         </div>
 
                     </div>
-                    
+
                     <div className="mt-8 flex justify-end gap-3 pt-4 border-t border-gray-100 shrink-0">
                         <button
                             type="button"
