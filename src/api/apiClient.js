@@ -8,9 +8,28 @@ const apiClient = axios.create({
     }
 });
 
+function isFormDataBody(data) {
+    return typeof FormData !== "undefined" && data instanceof FormData;
+}
+
+function stripContentType(headers) {
+    if (!headers) return;
+    if (typeof headers.delete === "function") {
+        headers.delete("Content-Type");
+        return;
+    }
+    delete headers["Content-Type"];
+    delete headers["content-type"];
+}
+
 // Request interceptor to attach the access token
 apiClient.interceptors.request.use(
     (config) => {
+        if (isFormDataBody(config.data)) {
+            // Browser must set multipart boundary. A hardcoded Content-Type
+            // makes multer reject the upload as a validation/size error.
+            stripContentType(config.headers);
+        }
         const token = localStorage.getItem('accessToken');
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
@@ -50,6 +69,15 @@ apiClient.interceptors.response.use(
     (response) => response,
     async (error) => {
         const originalRequest = error.config;
+
+        if (error.response?.status === 429) {
+            const friendly = 'Too many requests. Wait a few minutes and try again.';
+            error.message = error.response?.data?.message || error.response?.data?.error || friendly;
+            if (error.response.data && typeof error.response.data === 'object' && !error.response.data.message) {
+                error.response.data.message = error.message;
+            }
+            return Promise.reject(error);
+        }
 
         // If 401 and we haven't tried to refresh yet
         if (error.response && error.response.status === 401 && !originalRequest._retry) {

@@ -16,6 +16,9 @@ import apiClient from "../api/apiClient";
 import { invMastersApi, invSheetsApi } from "../api/inventoryApiClient";
 import inventoryApiClient from "../api/inventoryApiClient";
 import { getMediaUrl } from "../utils/media";
+import { IMAGE_FILE_ACCEPT, uploadErrorText } from "../utils/prepareImageFile";
+import { uploadMediaFiles } from "../utils/uploadMedia";
+import SheetImage from "../Components/SheetImage";
 import { formatCurrency, parseCurrencyInput, SUPPORTED_CURRENCIES, getCurrencySymbol } from "../utils/currencyUtils";
 import { batchStatusFromQty } from "../utils/stock";
 import ShareModal from "../Components/ShareModal";
@@ -2381,22 +2384,12 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
     };
 
     const handleImagesSelected = async (e) => {
-        if (!e.target.files?.length) return;
+        const selected = Array.from(e.target.files || []);
+        if (!selected.length) return;
         setIsUploadingImages(true);
-        const formData = new FormData();
-        Array.from(e.target.files).forEach(f => formData.append("files", f));
 
         try {
-            const resp = await apiClient.post(`/media/upload-multiple`, formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
-            });
-            const uploadedMeta = resp.data.data.map(f => ({
-                url: f.fileUrl,
-                fileName: f.originalName,
-                fileSize: f.sizeBytes,
-                mimeType: f.mimeType,
-                uploadedAt: f.createdAt || new Date().toISOString()
-            }));
+            const uploadedMeta = await uploadMediaFiles(selected, { prepareImages: true });
 
             const newImagesList = [...(activeImageCell.images || []), ...uploadedMeta];
 
@@ -2408,7 +2401,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
 
         } catch (error) {
             console.error("Failed to upload images:", error);
-            alert("Upload failed. Validation error or file too large.");
+            alert(uploadErrorText(error));
         } finally {
             setIsUploadingImages(false);
             e.target.value = null; // reset file input
@@ -2500,9 +2493,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
         files.forEach(f => formData.append("files", f));
 
         try {
-            const resp = await apiClient.post(`/media/upload-multiple`, formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
-            });
+            const resp = await apiClient.post(`/media/upload-multiple`, formData);
             const uploadedMeta = resp.data.data.map(f => ({
                 url: f.fileUrl,
                 fileName: f.originalName,
@@ -2521,7 +2512,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
 
         } catch (error) {
             console.error("Failed to upload PDFs:", error);
-            alert("Upload failed. Validation error or file too large.");
+            alert(uploadErrorText(error));
         } finally {
             setIsUploadingPDFs(false);
             e.target.value = null; // reset file input
@@ -3742,9 +3733,9 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                                                     }
                                                                     return (
                                                                         <div className="relative inline-flex mt-px">
-                                                                            <img
+                                                                            <SheetImage
                                                                                 src={getMediaUrl(imgs[0].url)}
-                                                                                alt="img"
+                                                                                compact
                                                                                 className="h-8 w-14 object-cover bg-white rounded border border-gray-200 shrink-0 shadow-sm"
                                                                             />
                                                                             {imgs.length > 1 && (
@@ -4903,11 +4894,10 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                                 setActivePreviewIndex(index);
                                             }}
                                         >
-                                            <img
+                                            <SheetImage
                                                 src={getMediaUrl(img.url)}
                                                 alt={img.fileName || 'Cell Image'}
                                                 className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                                                loading="lazy"
                                             />
                                             <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-2 pt-6 lg:opacity-0 lg:group-hover:opacity-100 opacity-100 transition-opacity flex justify-between items-end">
                                                 <div className="text-[10px] text-white/90 truncate pr-2">
@@ -4949,7 +4939,7 @@ export default function InventoryDocumentEditor({ docName, parentSheetId, setAct
                                                 <input
                                                     type="file"
                                                     multiple
-                                                    accept="image/*"
+                                                    accept={IMAGE_FILE_ACCEPT}
                                                     className="hidden"
                                                     ref={fileInputRef}
                                                     onChange={handleImagesSelected}

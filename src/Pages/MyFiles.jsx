@@ -22,6 +22,7 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
     const [items, setItems] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [fetchError, setFetchError] = useState("");
+    const [rateLimited, setRateLimited] = useState(false);
 
     // Modal States
     const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
@@ -43,6 +44,7 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
     const fetchItems = useCallback(async () => {
         setIsLoading(true);
         setFetchError("");
+        setRateLimited(false);
         try {
             // Fetch folders tree and ALL sheets in parallel
             const [folderRes, sheetsRes] = await Promise.all([
@@ -96,7 +98,16 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
             setItems(fetchedItems);
         } catch (error) {
             console.error("Error fetching items:", error);
-            setFetchError(error.response?.data?.message || error.message || "Could not load files. Pull to refresh or try again.");
+            // #region agent log
+            fetch('http://127.0.0.1:7829/ingest/b00fc416-9345-4f2c-9b2d-b996219acb62',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'55a922'},body:JSON.stringify({sessionId:'55a922',runId:'pre-fix',hypothesisId:'D',location:'MyFiles.jsx:fetchItems',message:'my files fetch failed',data:{status:error.response?.status||null,hasMessage:Boolean(error.response?.data?.message),hasErrorField:Boolean(error.response?.data?.error),axiosMessage:error.message||''},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
+            if (error.response?.status === 429) {
+                setRateLimited(true);
+                setFetchError('Too many requests. Wait a few minutes and try again.');
+            } else {
+                setRateLimited(false);
+                setFetchError(error.response?.data?.message || error.message || "Could not load files. Pull to refresh or try again.");
+            }
         } finally {
             setIsLoading(false);
         }
@@ -539,6 +550,7 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                 ) : fetchError ? (
                     <div className="flex flex-col items-center justify-center py-24 text-center px-6">
                         <p className="text-red-500 text-sm font-medium mb-3">{fetchError}</p>
+                        {!rateLimited && (
                         <button
                             type="button"
                             onClick={fetchItems}
@@ -546,6 +558,7 @@ export default function MyFiles({ setMobileOpen, setActivePath, setCurrentDocNam
                         >
                             Try again
                         </button>
+                        )}
                     </div>
                 ) : isFolderEmpty ? (
                     <div className="flex flex-col items-center justify-center py-24 text-center">

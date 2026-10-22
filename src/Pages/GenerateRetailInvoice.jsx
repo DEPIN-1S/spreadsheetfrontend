@@ -5,7 +5,7 @@ import AddRetailPartyModal from '../Components/AddRetailPartyModal';
 import SelectMedicineModal from '../Components/SelectMedicineModal';
 import PharmaInvoiceModal from '../Components/PharmaInvoiceModal';
 import { invPartiesApi, invInvoicesApi, invSheetsApi } from '../api/inventoryApiClient';
-import { parseGstPercent, inclusiveGstAmount, loadProductGstMap } from '../utils/gst';
+import { parseGstPercent, inclusiveGstAmount, gstByProductName } from '../utils/gst';
 import { clampBillQty, hasSellableStock, parseStockQty } from '../utils/stock';
 
 export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) {
@@ -125,9 +125,13 @@ export default function GenerateRetailInvoice({ setMobileOpen, setActivePath }) 
 
     useEffect(() => {
         const needsGst = items.some(i => i.description && !parseGstPercent(i.gstPercent));
+        // #region agent log
+        fetch('http://127.0.0.1:7829/ingest/b00fc416-9345-4f2c-9b2d-b996219acb62',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'55a922'},body:JSON.stringify({sessionId:'55a922',runId:'pre-fix',hypothesisId:'B',location:'GenerateRetailInvoice.jsx:gstEffect',message:'retail gst effect',data:{needsGst,itemCount:items.length},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         if (!needsGst) return;
-        Promise.all([invSheetsApi.listAllBatches(), loadProductGstMap(invSheetsApi)]).then(([res, gstByName]) => {
+        invSheetsApi.listAllBatches().then((res) => {
             const batches = res.data.data || [];
+            const gstByName = gstByProductName(batches);
             setItems(prev => {
                 let changed = false;
                 const next = prev.map(item => {
