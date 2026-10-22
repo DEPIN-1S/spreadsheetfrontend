@@ -22,13 +22,23 @@ export default function NotificationBell({ isCollapsed, activePath, setActivePat
             const rawNotifs = listRes.data?.data || [];
             setUnreadCount(rawNotifs.length);
         } catch (error) {
+<<<<<<< HEAD
             console.error("Error fetching notifications count:", error);
+=======
+            if (error.response?.status === 429) stopNotifPollRef.current = true;
+            console.error("Error fetching notifications:", error);
+>>>>>>> a7370dc (refactor: streamline API request handling, enhance GST mapping, and improve media URL resolution in invoice generation components)
         }
     };
 
+    const stopNotifPollRef = useRef(false);
+
     useEffect(() => {
         fetchNotifications();
-        const interval = setInterval(fetchNotifications, 30000); // refresh every 30s
+        const interval = setInterval(() => {
+            if (stopNotifPollRef.current) return;
+            fetchNotifications();
+        }, 30000);
         return () => clearInterval(interval);
     }, []);
 

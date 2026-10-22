@@ -327,9 +327,7 @@ export default function ChatWindow({ selectedUser, setSelectedUser, onMessageSen
             const formData = new FormData();
             formData.append('file', file);
 
-            const res = await apiClient.post(`/dm/${selectedUser.id}/file`, formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
-            });
+            const res = await apiClient.post(`/dm/${selectedUser.id}/file`, formData);
 
             const msg = res.data.data;
             const d = new Date(msg.createdAt);
@@ -387,11 +385,7 @@ export default function ChatWindow({ selectedUser, setSelectedUser, onMessageSen
                     formData.append('audio', audioBlob, 'voice-message.webm');
                     formData.append('duration', recordingTime);
 
-                    const res = await apiClient.post(`/dm/${selectedUser.id}/audio`, formData, {
-                        headers: {
-                            'Content-Type': 'multipart/form-data'
-                        }
-                    });
+                    const res = await apiClient.post(`/dm/${selectedUser.id}/audio`, formData);
 
                     const msg = res.data.data;
                     const d = new Date(msg.createdAt);

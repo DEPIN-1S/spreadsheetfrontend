@@ -14,9 +14,22 @@ const inventoryApiClient = axios.create({
     headers: { 'Content-Type': 'application/json' }
 });
 
+function stripContentType(headers) {
+    if (!headers) return;
+    if (typeof headers.delete === "function") {
+        headers.delete("Content-Type");
+        return;
+    }
+    delete headers["Content-Type"];
+    delete headers["content-type"];
+}
+
 // Attach JWT token on every request (same token as normal spreadsheet login)
 inventoryApiClient.interceptors.request.use(
     (config) => {
+        if (typeof FormData !== "undefined" && config.data instanceof FormData) {
+            stripContentType(config.headers);
+        }
         const token = localStorage.getItem('accessToken');
         if (token) config.headers.Authorization = `Bearer ${token}`;
         return config;
@@ -28,6 +41,14 @@ inventoryApiClient.interceptors.request.use(
 inventoryApiClient.interceptors.response.use(
     (response) => response,
     (error) => {
+        if (error.response?.status === 429) {
+            const friendly = 'Too many requests. Wait a few minutes and try again.';
+            error.message = error.response?.data?.message || error.response?.data?.error || friendly;
+            if (error.response.data && typeof error.response.data === 'object' && !error.response.data.message) {
+                error.response.data.message = error.message;
+            }
+            return Promise.reject(error);
+        }
         if (error.response?.status === 401) {
             localStorage.removeItem('accessToken');
             window.location.href = '/login';
@@ -47,6 +68,8 @@ export const invFoldersApi = {
     delete: (id) => inventoryApiClient.delete(`/inv-folders/${id}`)
 };
 
+let listAllBatchesPromise = null;
+
 export const invSheetsApi = {
     list: (folderId) => inventoryApiClient.get('/inv-sheets', { params: folderId !== undefined ? { folderId } : {} }),
     create: (data) => inventoryApiClient.post('/inv-sheets', data),
@@ -64,7 +87,19 @@ export const invSheetsApi = {
     updateCcCells: (sheetId, rowId, ccRowId, cells) => inventoryApiClient.put(`/inv-sheets/${sheetId}/rows/${rowId}/cc-rows/${ccRowId}/cells`, { cells }),
     updateRowStyle: (sheetId, rowId, styles) => inventoryApiClient.patch(`/inv-sheets/${sheetId}/rows/${rowId}/style`, { styles }),
     updateCcRowStyle: (sheetId, rowId, ccRowId, styles) => inventoryApiClient.patch(`/inv-sheets/${sheetId}/rows/${rowId}/cc-rows/${ccRowId}/style`, { styles }),
-    listAllBatches: () => inventoryApiClient.get('/inv-sheets/batches')
+    listAllBatches: () => {
+        if (!listAllBatchesPromise) {
+            listAllBatchesPromise = inventoryApiClient.get('/inv-sheets/batches').catch((err) => {
+                listAllBatchesPromise = null;
+                return Promise.reject(err);
+            });
+        } else {
+            // #region agent log
+            fetch('http://127.0.0.1:7829/ingest/b00fc416-9345-4f2c-9b2d-b996219acb62',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'55a922'},body:JSON.stringify({sessionId:'55a922',runId:'post-fix',hypothesisId:'C',location:'inventoryApiClient.js:listAllBatches',message:'batch list cache hit',data:{cached:true,httpRequests:0},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
+        }
+        return listAllBatchesPromise;
+    }
 };
 
 export const invMastersApi = {

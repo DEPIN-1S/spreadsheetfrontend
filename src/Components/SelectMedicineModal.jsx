@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FiX, FiSearch, FiPlus, FiCheck, FiPackage } from 'react-icons/fi';
 import { invSheetsApi } from '../api/inventoryApiClient';
-import { parseGstPercent, loadProductGstMap } from '../utils/gst';
+import { parseGstPercent, gstByProductName } from '../utils/gst';
 import { hasSellableStock, parseStockQty } from '../utils/stock';
 
 export default function SelectMedicineModal({ isOpen, onClose, onSelect, existingItemNames = [], inventoryType = 'wholesale' }) {
@@ -22,7 +22,10 @@ export default function SelectMedicineModal({ isOpen, onClose, onSelect, existin
             const res = await invSheetsApi.listAllBatches();
             const fetched = res.data.data || [];
             const missingGst = fetched.some(item => !parseGstPercent(item.gstPercent ?? item.gst));
-            const gstByName = missingGst ? await loadProductGstMap(invSheetsApi) : {};
+            // #region agent log
+            fetch('http://127.0.0.1:7829/ingest/b00fc416-9345-4f2c-9b2d-b996219acb62',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'55a922'},body:JSON.stringify({sessionId:'55a922',runId:'pre-fix',hypothesisId:'C',location:'SelectMedicineModal.jsx:fetchMedicines',message:'medicine picker load',data:{batchCount:fetched.length,missingGst,inventoryType},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
+            const gstByName = gstByProductName(fetched);
             
             // Map the API fields to the format expected by the modal
             const mapped = fetched.map(item => {

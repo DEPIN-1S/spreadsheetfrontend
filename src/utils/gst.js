@@ -5,11 +5,27 @@ export function parseGstPercent(value) {
     return match ? Number(match[1]) : 0;
 }
 
-export async function loadProductGstMap(invSheetsApi) {
+let gstMapPromise = null;
+
+export function loadProductGstMap(invSheetsApi) {
+    if (gstMapPromise) {
+        // #region agent log
+        fetch('http://127.0.0.1:7829/ingest/b00fc416-9345-4f2c-9b2d-b996219acb62',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'55a922'},body:JSON.stringify({sessionId:'55a922',runId:'post-fix',hypothesisId:'B',location:'gst.js:loadProductGstMap',message:'gst map cache hit',data:{cached:true,requestCount:0},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        return gstMapPromise;
+    }
+    gstMapPromise = buildProductGstMap(invSheetsApi);
+    return gstMapPromise;
+}
+
+async function buildProductGstMap(invSheetsApi) {
     const gstByName = {};
     try {
         const sheetsRes = await invSheetsApi.list();
         const sheets = sheetsRes.data.data || [];
+        // #region agent log
+        fetch('http://127.0.0.1:7829/ingest/b00fc416-9345-4f2c-9b2d-b996219acb62',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'55a922'},body:JSON.stringify({sessionId:'55a922',runId:'pre-fix',hypothesisId:'B',location:'gst.js:loadProductGstMap',message:'gst map sheet fan-out',data:{sheetCount:sheets.length,requestCount:1+sheets.length},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         await Promise.all(sheets.map(async (s) => {
             try {
                 const full = await invSheetsApi.get(s.id);
@@ -26,7 +42,17 @@ export async function loadProductGstMap(invSheetsApi) {
             }
         }));
     } catch {
-        /* ignore */
+        gstMapPromise = null;
+    }
+    return gstByName;
+}
+
+export function gstByProductName(batches) {
+    const gstByName = {};
+    for (const item of batches || []) {
+        const gst = parseGstPercent(item.gstPercent ?? item.gst);
+        const name = String(item.name || '').trim().toLowerCase();
+        if (gst && name) gstByName[name] = gst;
     }
     return gstByName;
 }
