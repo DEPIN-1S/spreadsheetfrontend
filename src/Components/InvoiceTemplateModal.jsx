@@ -218,10 +218,10 @@ export default function InvoiceTemplateModal({ isOpen, onClose, business, templa
                                         <b>Name : </b>
                                         <span>SAMPLE CUSTOMER</span>
                                     </div>
+                                    <div className="text-gray-800 leading-tight"><b>Age : </b>30 &nbsp;|&nbsp; <b>Gender : </b>Male</div>
                                     <div className="text-gray-800 leading-tight"><b>Phone : </b><span>9876543210</span></div>
                                     <div className="text-gray-800 leading-tight"><b>Place : </b><span>SAMPLE CITY</span></div>
                                     <div className="text-gray-800 leading-tight"><b>Address : </b><span>123 SAMPLE ADDRESS, CITY, ST 12345</span></div>
-                                    <div className="text-gray-800 leading-tight"><b>Age : </b>30 &nbsp;|&nbsp; <b>Gender : </b>Male</div>
                                     <div className="text-gray-800 leading-tight"><b>DL No : </b>SAMPLE-DL-123</div>
                                     <div className="text-gray-800 leading-tight"><b>GSTIN : </b>SAMPLE-GST-123</div>
                                     <div className="text-gray-800 leading-tight"><b>PAN : </b>SAMPLE-PAN-123</div>

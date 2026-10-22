@@ -466,6 +466,18 @@ export default function ViewSavedInvoiceModal({ isOpen, onClose, savedInvoice, c
                                             </span>
                                         )}
                                     </div>
+                                    {(party?.age || party?.gender || party?.dobYear) && (
+                                        <div className="text-gray-800 leading-tight">
+                                            {(party?.age || party?.dobYear) && (
+                                                <span>
+                                                    <b>Age : </b>
+                                                    {party?.age ? party.age : `${new Date().getFullYear() - Number(party.dobYear)}`}
+                                                </span>
+                                            )}
+                                            {(party?.age || party?.dobYear) && party?.gender && <span> &nbsp;|&nbsp; </span>}
+                                            {party?.gender && <span><b>Gender : </b>{party.gender}</span>}
+                                        </div>
+                                    )}
                                     {(party?.contact || party?.phone) && (
                                         <div className="text-gray-800 leading-tight">
                                             <b>Phone : </b>
@@ -506,18 +518,6 @@ export default function ViewSavedInvoiceModal({ isOpen, onClose, savedInvoice, c
                                         }
                                         return null;
                                     })()}
-                                    {(party?.age || party?.gender || party?.dobYear) && (
-                                        <div className="text-gray-800 leading-tight">
-                                            {(party?.age || party?.dobYear) && (
-                                                <span>
-                                                    <b>Age : </b>
-                                                    {party?.age ? party.age : `${new Date().getFullYear() - Number(party.dobYear)}`}
-                                                </span>
-                                            )}
-                                            {(party?.age || party?.dobYear) && party?.gender && <span> &nbsp;|&nbsp; </span>}
-                                            {party?.gender && <span><b>Gender : </b>{party.gender}</span>}
-                                        </div>
-                                    )}
                                     {party?.email && party.email.includes('@') && party.email !== party?.place && (
                                         <div className="text-gray-800 leading-tight">
                                             <b>Email : </b>
