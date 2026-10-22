@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { FiBell } from "react-icons/fi";
 import axios from "axios";
 
@@ -6,6 +6,7 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:6041/api
 
 export default function NotificationBell({ isCollapsed, activePath, setActivePath }) {
     const [unreadCount, setUnreadCount] = useState(0);
+    const stopNotifPollRef = useRef(false);
 
     const getHeaders = () => {
         const token = localStorage.getItem("accessToken");
@@ -22,16 +23,10 @@ export default function NotificationBell({ isCollapsed, activePath, setActivePat
             const rawNotifs = listRes.data?.data || [];
             setUnreadCount(rawNotifs.length);
         } catch (error) {
-<<<<<<< HEAD
-            console.error("Error fetching notifications count:", error);
-=======
             if (error.response?.status === 429) stopNotifPollRef.current = true;
             console.error("Error fetching notifications:", error);
->>>>>>> a7370dc (refactor: streamline API request handling, enhance GST mapping, and improve media URL resolution in invoice generation components)
         }
     };
-
-    const stopNotifPollRef = useRef(false);
 
     useEffect(() => {
         fetchNotifications();

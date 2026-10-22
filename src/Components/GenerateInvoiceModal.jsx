@@ -1,4 +1,11 @@
 
+import React, { useState, useEffect, useRef } from 'react';
+import { FiX, FiPrinter, FiSettings, FiTrash2, FiPlus, FiEdit2 } from 'react-icons/fi';
+import apiClient from '../api/apiClient';
+import { parseGstPercent } from '../utils/gst';
+import { printInvoiceWithTitle, formatDateDMY, toDateInputValue, isDateColumn } from '../utils/invoicePdfHelper';
+import { getMediaUrl } from '../utils/media';
+
 const ProductImage = ({ imgSrc, prod, setPreviewProduct }) => {
     const [status, setStatus] = useState('loading');
 
@@ -34,15 +41,6 @@ const ProductImage = ({ imgSrc, prod, setPreviewProduct }) => {
         </div>
     );
 };
-import React, { useState, useEffect, useRef } from 'react';
-import { FiX, FiPrinter, FiSettings, FiTrash2, FiPlus, FiEdit2 } from 'react-icons/fi';
-import apiClient from '../api/apiClient';
-<<<<<<< HEAD
-import { parseGstPercent } from '../utils/gst';
-import { printInvoiceWithTitle, formatDateDMY, toDateInputValue, isDateColumn } from '../utils/invoicePdfHelper';
-=======
-import { getMediaUrl } from '../utils/media';
->>>>>>> a7370dc (refactor: streamline API request handling, enhance GST mapping, and improve media URL resolution in invoice generation components)
 
 export default function GenerateInvoiceModal({ isOpen, onClose, business, party: propParty, template: propTemplate, onSaveInvoice, existingInvoices = [], editingInvoice = null }) {
     const resolvedFullData = (() => {
@@ -454,41 +452,16 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
             setIsSearching(true);
             searchTimeoutRef.current = setTimeout(async () => {
                 try {
-<<<<<<< HEAD
                     const targetIds = (sheetsToFetchCacheRef.current || []).map(s => s.id).filter(Boolean);
                     const sheetIdsParam = targetIds.length > 0 && targetIds.length < 30 ? targetIds.join(',') : '';
                     
                     const res = await apiClient.get(`/sheets/products/search?q=${encodeURIComponent(value.trim())}${sheetIdsParam ? `&sheetIds=${sheetIdsParam}` : ''}`);
                     const results = res.data?.data || [];
-=======
-                    const currentSheets = sheetsToFetchCacheRef.current; if (currentSheets.length === 0) { return; }
-                    // #region agent log
-                    fetch('http://127.0.0.1:7829/ingest/b00fc416-9345-4f2c-9b2d-b996219acb62',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'55a922'},body:JSON.stringify({sessionId:'55a922',runId:'pre-fix',hypothesisId:'A',location:'GenerateInvoiceModal.jsx:search',message:'product search fan-out',data:{sheetCount:currentSheets.length,queryLen:String(value||'').length},timestamp:Date.now()})}).catch(()=>{});
-                    // #endregion
-                    if (searchAbortRef.current) searchAbortRef.current.abort();
-                    const controller = new AbortController();
-                    searchAbortRef.current = controller;
-                    const ids = currentSheets.map(sheet => sheet.id).filter(Boolean).join(',');
-                    const res = await apiClient.get('/sheets/invoice-search', { params: { search: value, ids }, signal: controller.signal });
-                    // #region agent log
-                    fetch('http://127.0.0.1:7829/ingest/b00fc416-9345-4f2c-9b2d-b996219acb62',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'55a922'},body:JSON.stringify({sessionId:'55a922',runId:'post-fix',hypothesisId:'A',location:'GenerateInvoiceModal.jsx:search',message:'product search single request',data:{sheetCount:currentSheets.length,httpRequests:1},timestamp:Date.now()})}).catch(()=>{});
-                    // #endregion
-                    
-                    let allParsedData = [];
-                    {
-                        const { grid = [] } = res.data.data;
-                        const parsedData = grid.map(row => {
-                            const rowData = {};
-                            (row.cells || []).forEach(cell => {
-                                let colName = (cell.columnName || '').trim();
-                                const upperColName = colName.toUpperCase();
->>>>>>> a7370dc (refactor: streamline API request handling, enhance GST mapping, and improve media URL resolution in invoice generation components)
 
                     // Pre-resolve image URLs once upon response
                     const baseUrl = (apiClient && apiClient.defaults && apiClient.defaults.baseURL) ? apiClient.defaults.baseURL : 'http://localhost:6041/api';
                     const serverBase = baseUrl.replace('/api', '');
 
-<<<<<<< HEAD
                     const cleanedResults = results.map(prod => {
                         let imgSrc = prod['Image'] || prod['image'] || prod['IMAGE'] || prod['Product Image'] || '';
                         if (imgSrc) {
@@ -510,8 +483,13 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
                             if (typeof imgSrc === 'string') {
                                 imgSrc = imgSrc.trim();
                                 if (imgSrc && !imgSrc.startsWith('http') && !imgSrc.startsWith('data:')) {
-                                    if (!imgSrc.startsWith('/uploads/')) imgSrc = '/uploads/' + imgSrc.replace(/^\/?uploads\/?/, '');
-                                    imgSrc = serverBase + imgSrc;
+                                    let path = imgSrc;
+                                    if (!path.startsWith('/uploads/') && !path.startsWith('uploads/')) {
+                                        path = '/uploads/' + path;
+                                    } else if (path.startsWith('uploads/')) {
+                                        path = '/' + path;
+                                    }
+                                    imgSrc = getMediaUrl(path);
                                 }
                             }
                         }
@@ -519,17 +497,6 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
                     });
 
                     setInventoryData(cleanedResults);
-=======
-                                rowData[colName] = cell.computedValue || cell.rawValue || '';
-                            });
-                            return rowData;
-                        });
-                        allParsedData = [...allParsedData, ...parsedData];
-                    }
-                    
-                    allParsedData = allParsedData.filter(d => d['Product Name']);
-                    setInventoryData(allParsedData);
->>>>>>> a7370dc (refactor: streamline API request handling, enhance GST mapping, and improve media URL resolution in invoice generation components)
                 } catch (err) {
                     if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') return;
                     console.error('Failed to fetch inventory search results:', err);
@@ -1171,82 +1138,12 @@ export default function GenerateInvoiceModal({ isOpen, onClose, business, party:
                                                                     className="w-full bg-transparent border-none outline-none text-center text-[10px] font-mono text-black m-0 p-0 h-full resize-none overflow-hidden block" style={{ minHeight: '30px', lineHeight: '1.2' }}
                                                                     placeholder={col}
                                                                 />
-<<<<<<< HEAD
                                                                 {activeDropdownRow === item.id && (inventoryData.length > 0 || isSearching) && (
                                                                     <div className="absolute z-[100] bg-white border border-gray-200 shadow-xl max-h-64 overflow-y-auto min-w-[350px] max-w-[500px] w-max top-full left-0 mt-1 rounded text-left no-print">
                                                                         {isSearching && inventoryData.length === 0 ? (
                                                                             <div className="p-3 text-center text-gray-500 text-xs flex justify-center items-center gap-2">
                                                                                 <div className="w-3.5 h-3.5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
                                                                                 Searching inventory...
-=======
-                                                                {activeDropdownRow === item.id && inventoryData.length > 0 && (
-                                                                    <div className="absolute z-[100] bg-white border border-gray-200 shadow-xl max-h-60 overflow-y-auto min-w-[350px] max-w-[500px] w-max top-full left-0 mt-1 rounded text-left no-print">
-                                                                        {isSearching ? (
-    <div className="p-4 text-center text-gray-500 text-xs flex justify-center items-center gap-2">
-        <div className="w-3 h-3 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-        Searching...
-    </div>
-) : inventoryData.map((prod, idx) => {
-                                                                            let imgSrc = prod['Image'] || prod['image'] || prod['IMAGE'] || prod['Img'] || prod['img'] || prod['IMG'] || prod['Product Image'] || prod['product image'];
-                                                                            
-                                                                            if (imgSrc) {
-                                                                                if (typeof imgSrc === 'string' && imgSrc.includes('=')) {
-                                                                                    const match = imgSrc.match(/IMAGE\(["'](.*?)["']\)/i);
-                                                                                    if (match) imgSrc = match[1];
-                                                                                }
-                                                                                
-                                                                                let parseAttempts = 0;
-                                                                                while (typeof imgSrc === 'string' && (imgSrc.startsWith('[') || imgSrc.startsWith('{') || imgSrc.startsWith('"')) && parseAttempts < 3) {
-                                                                                    try {
-                                                                                        const parsed = JSON.parse(imgSrc);
-                                                                                        if (typeof parsed === 'string' && parsed === imgSrc) break;
-                                                                                        imgSrc = parsed;
-                                                                                    } catch (e) {
-                                                                                        break;
-                                                                                    }
-                                                                                    parseAttempts++;
-                                                                                }
-
-                                                                                if (Array.isArray(imgSrc) && imgSrc.length > 0) {
-                                                                                    imgSrc = imgSrc[0];
-                                                                                }
-
-                                                                                if (typeof imgSrc === 'object' && imgSrc !== null) {
-                                                                                    imgSrc = imgSrc.url || imgSrc.src || '';
-                                                                                }
-                                                                                
-                                                                                                                                                                if (typeof imgSrc === 'string') {
-                                                                                    imgSrc = imgSrc.trim();
-                                                                                    if (imgSrc && !imgSrc.startsWith('http') && !imgSrc.startsWith('data:')) {
-                                                                                        let path = imgSrc;
-                                                                                        if (!path.startsWith('/uploads/') && !path.startsWith('uploads/')) {
-                                                                                            path = '/uploads/' + path;
-                                                                                        } else if (path.startsWith('uploads/')) {
-                                                                                            path = '/' + path;
-                                                                                        }
-                                                                                        imgSrc = getMediaUrl(path);
-                                                                                    }
-                                                                                }
-                                                                            }
-                                                                            
-                                                                            return (
-                                                                            <div 
-                                                                                key={idx} 
-                                                                                className="p-2 border-b border-gray-100 hover:bg-indigo-50 cursor-pointer flex gap-3 items-center relative"
-                                                                                onMouseDown={(e) => e.preventDefault()}
-                                                                                onClick={() => {
-                                                                                    handleItemChange(item.id, col, prod['Product Name']);
-                                                                                    setActiveDropdownRow(null);
-                                                                                }}
-                                                                            >
-                                                                                <ProductImage imgSrc={imgSrc} prod={prod} setPreviewProduct={setPreviewProduct} />
-                                                                                <div className="flex-1 min-w-0">
-                                                                                    <div className="font-bold text-gray-900 text-[11px] leading-tight break-words">{prod['Product Name']}</div>
-                                                                                    {prod['Composition'] && (
-                                                                                        <div className="text-[9px] text-gray-500 mt-0.5 whitespace-normal leading-tight break-words">{prod['Composition']}</div>
-                                                                                    )}
-                                                                                </div>
->>>>>>> a7370dc (refactor: streamline API request handling, enhance GST mapping, and improve media URL resolution in invoice generation components)
                                                                             </div>
                                                                         ) : inventoryData.slice(0, 25).map((prod, idx) => {
                                                                             const imgSrc = prod._resolvedImgSrc;
